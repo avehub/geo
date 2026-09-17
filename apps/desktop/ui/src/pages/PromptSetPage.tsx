@@ -196,6 +196,7 @@ export default function PromptSetPage() {
         weight: draft.weight ?? current.weight,
         group_name: draft.group_name ?? null,
         repeat_count: draft.repeat_count ?? current.repeat_count,
+        tags: draft.tags ?? current.tags,
       },
       notice: '已更新',
     });

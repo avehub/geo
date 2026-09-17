@@ -562,6 +562,7 @@ fn draft(text: &str) -> PromptDraft {
         weight: 4,
         group_name: None,
         repeat_count: 2,
+        tags: vec!["核心词".to_string()],
     }
 }
 
@@ -576,15 +577,24 @@ async fn add_items_appends_manual_prompts_and_refreshes_the_snapshot() {
         .unwrap();
 
     let updated = svc
-        .add_items(set.id, vec![draft("宏宇泵业的潜水排污泵适合化粪池改造吗")], now())
+        .add_items(
+            set.id,
+            vec![draft("宏宇泵业的潜水排污泵适合化粪池改造吗")],
+            now(),
+        )
         .await
         .unwrap();
 
     assert_eq!(updated.items.len(), set.items.len() + 1);
     let added = updated.items.last().expect("新条目应追加在末尾");
-    assert_eq!(added.source, PromptSource::Manual, "人工新增必须标成 manual");
+    assert_eq!(
+        added.source,
+        PromptSource::Manual,
+        "人工新增必须标成 manual"
+    );
     assert_eq!(added.weight, 4);
     assert_eq!(added.repeat_count, 2);
+    assert_eq!(added.tags, vec!["核心词".to_string()], "人工标签要原样保留");
     assert_eq!(
         added.group_name.as_deref(),
         Some(added.intent.label_zh()),
@@ -617,7 +627,11 @@ async fn add_items_rejects_adlaw_violations_without_touching_the_set() {
 
     assert_eq!(error.code, "compliance/violation");
     let stored = svc.get(set.id).await.unwrap();
-    assert_eq!(stored.items.len(), set.items.len(), "被拒后不得留下半截数据");
+    assert_eq!(
+        stored.items.len(),
+        set.items.len(),
+        "被拒后不得留下半截数据"
+    );
     assert_eq!(stored.content_hash, set.content_hash);
 }
 
@@ -676,7 +690,11 @@ async fn delete_items_rejects_unknown_ids_and_refuses_to_empty_the_set() {
     );
 
     let stored = svc.get(set.id).await.unwrap();
-    assert_eq!(stored.items.len(), set.items.len(), "两次拒绝都不得改动数据");
+    assert_eq!(
+        stored.items.len(),
+        set.items.len(),
+        "两次拒绝都不得改动数据"
+    );
 }
 
 #[tokio::test]

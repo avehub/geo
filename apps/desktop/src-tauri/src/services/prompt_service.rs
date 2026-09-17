@@ -79,6 +79,9 @@ pub struct PromptDraft {
     pub group_name: Option<String>,
     #[serde(default = "default_repeat_count")]
     pub repeat_count: u8,
+    /// 人工标签（如「核心词」）。生成管线自己打的标签不受影响。
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 fn default_weight() -> u8 {
@@ -97,8 +100,11 @@ impl PromptDraft {
             weight,
             group_name,
             repeat_count,
+            tags,
         } = self;
-        let mut item = PromptItem::new(set_id, text, intent).with_weight(weight);
+        let mut item = PromptItem::new(set_id, text, intent)
+            .with_weight(weight)
+            .with_tags(tags);
         item.source = PromptSource::Manual;
         item.repeat_count = repeat_count;
         item.group_name = Some(
@@ -626,11 +632,9 @@ impl PromptService {
             }
         }
         if ids.len() >= set.items.len() {
-            return Err(GeoError::validation(
-                "ids",
-                "不能把题库删空：要清空请删除整个题库快照",
-            )
-            .into());
+            return Err(
+                GeoError::validation("ids", "不能把题库删空：要清空请删除整个题库快照").into(),
+            );
         }
         let mut items: Vec<PromptItem> = set
             .items

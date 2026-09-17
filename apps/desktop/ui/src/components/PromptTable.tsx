@@ -73,6 +73,22 @@ export default function PromptTable({
     },
     { title: '分组', dataIndex: 'group_name', key: 'group_name', width: 110 },
     {
+      title: '标签',
+      dataIndex: 'tags',
+      key: 'tags',
+      width: 150,
+      render: (_, item) =>
+        item.tags.length === 0 ? (
+          <Typography.Text type="secondary">—</Typography.Text>
+        ) : (
+          <Space size={4} wrap>
+            {item.tags.map((tag) => (
+              <Tag key={tag}>{tag}</Tag>
+            ))}
+          </Space>
+        ),
+    },
+    {
       title: '来源',
       dataIndex: 'source',
       key: 'source',

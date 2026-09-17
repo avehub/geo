@@ -11,6 +11,14 @@ import type { PromptDraft, PromptItem, SampleSizeGrade } from '../api/types';
 
 const ROUTE = `/projects/${PROJECT_ID}/prompts`;
 
+/**
+ * user-event 只填 `key`，不填 `keyCode`/`which`，而 antd 标签选择器（rc-select）
+ * 的 tags 模式靠 `which === 13` 判定「回车提交新标签」。真实浏览器两者都有。
+ */
+function pressEnter(element: HTMLElement) {
+  fireEvent.keyDown(element, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 });
+}
+
 const CSV = [
   'text,intent,weight,group_name,tags,source,repeat_count',
   '宏宇泵业和南方泵业哪个好？,brand_comparison,5,品牌对比,,template,1',
@@ -268,6 +276,31 @@ describe('PromptSetPage', () => {
     expect(sent.id).toBe('item-cmp-1');
     expect(sent.text).toBe('宏宇泵业和南方泵业的售后谁响应更快');
     expect(await screen.findByText(/已更新/)).toBeInTheDocument();
+  });
+
+  it('编辑时可以改标签，随条目一起提交并在表格里显示', async () => {
+    stub('sufficient');
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('第 1 版题库');
+    fireEvent.click(screen.getByRole('radio', { name: '品牌对比' }));
+    await screen.findByText('宏宇泵业和南方泵业哪个更靠谱？');
+
+    const row = screen.getByText('宏宇泵业和南方泵业哪个更靠谱？').closest('tr') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: /编\s*辑/ }));
+    const dialog = await screen.findByRole('dialog');
+    const tagsInput = within(dialog).getByLabelText('标签');
+    await user.type(tagsInput, '核心词');
+    pressEnter(tagsInput);
+    await user.click(within(dialog).getByRole('button', { name: /保\s*存/ }));
+
+    await waitFor(() => expect(mockInvoke.callsOf('prompt_item_update')).toHaveLength(1));
+    const sent = mockInvoke.lastArgsOf('prompt_item_update')!.item as PromptItem;
+    expect(sent.id).toBe('item-cmp-1');
+    expect(sent.tags).toContain('核心词');
+
+    const table = screen.getByRole('table');
+    expect(await within(table).findByText('核心词')).toBeInTheDocument();
   });
 
   it('勾选多条后一次删除，并把返回快照写回缓存', async () => {

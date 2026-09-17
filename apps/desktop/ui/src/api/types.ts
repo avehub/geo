@@ -295,6 +295,7 @@ export interface PromptDraft {
   weight?: number;
   group_name?: string | null;
   repeat_count?: number;
+  tags?: string[];
 }
 
 export interface PromptSet {

@@ -58,6 +58,7 @@ export default function PromptItemEditor({
           weight: item?.weight ?? 3,
           group_name: item?.group_name ?? null,
           repeat_count: item?.repeat_count ?? 1,
+          tags: item?.tags ?? [],
         }}
       >
         <Form.Item
@@ -87,6 +88,15 @@ export default function PromptItemEditor({
         </Space>
         <Form.Item name="group_name" label="分组" tooltip="留空则按意图自动归组">
           <Input allowClear placeholder="留空按意图归组" />
+        </Form.Item>
+        <Form.Item name="tags" label="标签" tooltip="输入后回车添加；生成管线打的标签（如「竞品同框」）也在这里改">
+          <Select
+            mode="tags"
+            open={false}
+            suffixIcon={null}
+            tokenSeparators={[',', '，']}
+            placeholder="输入标签后回车"
+          />
         </Form.Item>
       </Form>
     </Modal>

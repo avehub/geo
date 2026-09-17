@@ -145,6 +145,11 @@ fn parse_prompt_row(
     if text.chars().count() > MAX_PROMPT_CHARS {
         return Err(format!("text 不能超过 {MAX_PROMPT_CHARS} 字"));
     }
+    // 导入的清单会直接变成采集用的抽样内容，所以红线检查不能只在生成/编辑环节做：
+    // 「导出 → Excel 里改词 → 再导入」否则就是一条现成的绕过路径。
+    if let Err(error) = crate::compliance::check(&text) {
+        return Err(error.user_message());
+    }
     let intent_raw = cell("intent");
     let intent =
         IntentCategory::parse(&intent_raw).ok_or_else(|| format!("intent 非法：{intent_raw}"))?;
@@ -354,6 +359,24 @@ mod tests {
         let result = prompts_from_csv(csv, PromptSetId::new()).unwrap();
         assert_eq!(result.imported_count(), 0);
         assert!(result.errors[0].reason.contains("text"));
+    }
+
+    /// 导出 → Excel 里加一句「保证排名」→ 再导入，是绕过红线检查的现成路径，
+    /// 而导入结果会直接变成采集用的抽样清单，所以导入行必须同样过合规扫描。
+    #[test]
+    fn import_rejects_rows_hitting_the_ad_law_red_lines() {
+        let payload = "text,intent,weight,group_name,tags,source,repeat_count\n\
+                       宏宇泵业保证排名第一,category_awareness,3,品类认知,,manual,1\n\
+                       宏宇泵业的水泵多少钱一台,pricing_plan,3,价格方案,,manual,1\n";
+        let result = prompts_from_csv(payload, PromptSetId::new()).unwrap();
+        assert_eq!(result.imported_count(), 1, "干净行照常导入");
+        assert_eq!(result.error_count(), 1);
+        assert_eq!(result.errors[0].row, 2, "行号要能对上物理行");
+        assert!(
+            result.errors[0].reason.contains("保证排名"),
+            "原因里要给出命中词：{}",
+            result.errors[0].reason
+        );
     }
 
     #[test]

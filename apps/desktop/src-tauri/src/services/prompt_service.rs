@@ -559,10 +559,11 @@ impl PromptService {
         Ok(csv.strip_prefix('\u{FEFF}').unwrap_or(&csv).to_string())
     }
 
-    /// 导入 CSV：整包替换条目。表头不符整批拒绝，行级错误允许部分成功。
+    /// 导入 CSV：整包替换条目。表头不符整批拒绝，行级错误允许部分成功
+    /// （含广告法红线行，见 `csv_io::prompts_from_csv`）。
     ///
-    /// 导入的是人工整理过的清单，红线检查放在单条编辑与生成环节，
-    /// 这里只做格式与字段校验，避免把用户自己的表格悄悄改内容。
+    /// 一条有效条目都没有时**拒绝**：替换语义下一次误粘贴就能清空整个题库，
+    /// 而用户只会看到「导入 0 条」的成功提示。要清空请显式删除题库。
     pub async fn import_csv(
         &self,
         id: PromptSetId,
@@ -571,6 +572,17 @@ impl PromptService {
     ) -> Result<CsvImportResult, IpcError> {
         let set = self.get(id).await?;
         let result = prompts_from_csv(payload, id)?;
+        if result.items.is_empty() && !set.items.is_empty() {
+            tracing::warn!(set_id = %id, errors = result.error_count(), "CSV 导入没有有效条目，已保留原题库");
+            return Err(IpcError::new(
+                "prompt_set/empty_import",
+                "导入内容里没有任何有效条目，原题库保持不变（要清空请直接删除题库）",
+            )
+            .with_detail(
+                serde_json::to_value(&result.errors)
+                    .unwrap_or_else(|_| serde_json::Value::Null),
+            ));
+        }
         let mut items = result.items.clone();
         reindex(&mut items, id);
         self.sets().replace_items(id, items, now).await?;

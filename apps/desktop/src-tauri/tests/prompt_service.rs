@@ -378,6 +378,34 @@ async fn csv_import_reports_bad_rows_and_keeps_the_good_ones() {
     assert_ne!(reloaded.content_hash, set.content_hash);
 }
 
+/// 只有表头的 CSV 会解析出 0 条，而 `import_csv` 是「整包替换」语义——
+/// 一次误粘贴就能把 60+ 条题库清空，还弹「导入 0 条，失败 0 行」的成功提示。
+#[tokio::test]
+async fn csv_import_with_only_a_header_refuses_to_wipe_the_set() {
+    let (state, _server, _secrets) = offline_state().await;
+    let project = seeded_project(&state).await;
+    let svc = service(&state);
+    let set = svc
+        .generate(project.id, GenerateOptions::default(), now())
+        .await
+        .unwrap();
+    assert!(set.items.len() >= 60);
+
+    let error = svc
+        .import_csv(
+            set.id,
+            "text,intent,weight,group_name,tags,source,repeat_count\n",
+            now(),
+        )
+        .await
+        .expect_err("只有表头的导入必须被拒绝");
+    assert_eq!(error.code, "prompt_set/empty_import");
+
+    let reloaded = svc.get(set.id).await.unwrap();
+    assert_eq!(reloaded.items.len(), set.items.len(), "原题库必须原样保留");
+    assert_eq!(reloaded.content_hash, set.content_hash);
+}
+
 #[tokio::test]
 async fn csv_import_rejects_a_payload_without_the_expected_header() {
     let (state, _server, _secrets) = offline_state().await;

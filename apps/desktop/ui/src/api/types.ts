@@ -72,6 +72,14 @@ export const INTENT_LABELS: Record<IntentCategory, string> = {
   professional_long_tail: '专业长尾',
 };
 
+export const PROMPT_SOURCE_LABELS: Record<PromptSource, string> = {
+  template: '模板',
+  generated: 'AI 生成',
+  rewritten: '口语化改写',
+  manual: '人工',
+  imported: 'CSV 导入',
+};
+
 export const INDUSTRY_LABELS: Record<Industry, string> = {
   b2b_manufacturing: 'B2B 制造与工业品',
   enterprise_saas: '企业服务/SaaS',

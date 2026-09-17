@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use url::Url;
+use url::{Host, Url};
 
 use crate::error::GeoError;
 use crate::ids::{AssetId, ProjectId};
@@ -87,14 +87,14 @@ impl ProjectAsset {
     }
 }
 
-pub(crate) fn clean_optional(value: Option<String>) -> Option<String> {
+pub fn clean_optional(value: Option<String>) -> Option<String> {
     value
         .map(|raw| raw.trim().to_string())
         .filter(|text| !text.is_empty())
 }
 
 /// 校验并归一化 URL：缺协议时补 `https://`，仅允许 http/https，且必须有 host。
-pub(crate) fn normalize_url(field: &str, raw: &str) -> Result<String, GeoError> {
+pub fn normalize_url(field: &str, raw: &str) -> Result<String, GeoError> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Err(GeoError::validation(field, "不能为空"));
@@ -109,8 +109,17 @@ pub(crate) fn normalize_url(field: &str, raw: &str) -> Result<String, GeoError> 
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(GeoError::validation(field, "只支持 http/https 网址"));
     }
-    if parsed.host_str().unwrap_or_default().is_empty() {
-        return Err(GeoError::validation(field, "缺少域名"));
+    // `Url::parse` 会把「不是网址」「内网」这类串当 IDN 主机名收下，
+    // 因此这里只放行 IP 与含点号的域名，避免用户的错字变成一次真实外网请求。
+    match parsed.host() {
+        Some(Host::Ipv4(_)) | Some(Host::Ipv6(_)) => {}
+        Some(Host::Domain(host)) if host.contains('.') => {}
+        _ => {
+            return Err(GeoError::validation(
+                field,
+                "缺少合法域名，请形如 www.example.com",
+            ))
+        }
     }
     Ok(candidate)
 }
@@ -171,5 +180,22 @@ mod tests {
     #[test]
     fn normalize_url_rejects_empty() {
         assert!(normalize_url("website", "  ").is_err());
+    }
+
+    #[test]
+    fn normalize_url_rejects_a_host_that_is_neither_domain_nor_ip() {
+        // `Url::parse` 会把「不是网址」当 IDN 主机名收下来，必须在领域层拦住，
+        // 否则错字会变成一次真实的外网请求。
+        for raw in ["不是网址", "localhost", "https://内网", "http://a"] {
+            let err = normalize_url("website", raw)
+                .err()
+                .unwrap_or_else(|| panic!("{raw} 应被拒绝"));
+            assert_eq!(err.code(), "validation/failed");
+            assert!(err.user_message().contains("website"));
+        }
+        // IP 与正常域名放行（本地调试与真实站点都要能用）
+        assert!(normalize_url("website", "http://127.0.0.1:1420/x").is_ok());
+        assert!(normalize_url("website", "http://[::1]:8080").is_ok());
+        assert!(normalize_url("website", "www.example.com/about").is_ok());
     }
 }

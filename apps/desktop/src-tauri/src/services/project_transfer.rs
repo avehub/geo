@@ -1,0 +1,171 @@
+//! M1 项目全量导入导出：跨机器迁移、模板复用与人工备份。
+//!
+//! 导入的唯一纪律是 **ID 全部重新生成**：同一份导出可以反复导入成多个副本，
+//! 绝不会覆盖已有项目；`format_version` 用于将来加字段时判断兼容性。
+
+use std::collections::HashMap;
+
+use chrono::{DateTime, Utc};
+use geo_domain::{
+    Competitor, CompetitorId, EntityCard, EntityCardRevision, GeoError, Project, ProjectAsset,
+    ProjectId, PromptId, PromptSet, PromptSetId, RevisionId,
+};
+use serde::{Deserialize, Serialize};
+
+use crate::error::IpcError;
+use crate::services::project_service::{validate_project, ProjectService};
+
+/// 导出文件的格式版本：导入时按它判断兼容性（P0-B 起新增字段要升版本）。
+pub const EXPORT_FORMAT_VERSION: &str = "geo-project-export-v1";
+
+/// 项目全量导出（JSON）。竞品、资产、实体卡、修订与题库快照一起走。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectExport {
+    pub format_version: String,
+    pub project: Project,
+    pub entity_card: Option<EntityCard>,
+    #[serde(default)]
+    pub revisions: Vec<EntityCardRevision>,
+    #[serde(default)]
+    pub competitors: Vec<Competitor>,
+    #[serde(default)]
+    pub assets: Vec<ProjectAsset>,
+    #[serde(default)]
+    pub prompt_sets: Vec<PromptSet>,
+    pub exported_at: DateTime<Utc>,
+}
+
+/// 导入结果：新项目 ID + 各类对象的落库条数（前端用来给「导入了什么」的反馈）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ImportReport {
+    pub project_id: ProjectId,
+    pub counts: HashMap<String, usize>,
+}
+
+impl ProjectService {
+    pub async fn export_json(
+        &self,
+        id: ProjectId,
+        now: DateTime<Utc>,
+    ) -> Result<ProjectExport, IpcError> {
+        let detail = self.detail(id).await?;
+        let revisions = self.cards().revisions(id).await?;
+        let mut prompt_sets = Vec::new();
+        for summary in self.prompt_sets().list_by_project(id).await? {
+            prompt_sets.push(self.prompt_sets().get(summary.id).await?);
+        }
+        Ok(ProjectExport {
+            format_version: EXPORT_FORMAT_VERSION.to_string(),
+            project: detail.project,
+            entity_card: detail.entity_card,
+            revisions,
+            competitors: detail.competitors,
+            assets: detail.assets,
+            prompt_sets,
+            exported_at: now,
+        })
+    }
+
+    /// 导入项目 JSON：**所有 ID 重新生成**，因此导入不会覆盖已有项目，
+    /// 同一份导出可以反复导入成多个副本（跨机器迁移与模板复用都靠这一点）。
+    pub async fn import_json(
+        &self,
+        payload: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ImportReport, IpcError> {
+        let exported: ProjectExport = serde_json::from_str(payload).map_err(|error| {
+            GeoError::validation("payload", format!("不是合法的项目导出文件：{error}"))
+        })?;
+        if exported.format_version != EXPORT_FORMAT_VERSION {
+            return Err(GeoError::validation(
+                "format_version",
+                format!(
+                    "导出文件版本 {} 与当前 {} 不兼容",
+                    exported.format_version, EXPORT_FORMAT_VERSION
+                ),
+            )
+            .into());
+        }
+
+        let project_id = ProjectId::new();
+        let mut project = exported.project.clone();
+        let created_at = project.created_at;
+        project.id = project_id;
+        project.updated_at = now;
+        validate_project(&project)?;
+        self.projects().create(&project).await?;
+
+        let mut competitors = Vec::with_capacity(exported.competitors.len());
+        for (position, old) in exported.competitors.iter().enumerate() {
+            let mut competitor = old.clone();
+            competitor.id = CompetitorId::new();
+            competitor.project_id = project_id;
+            competitor.position = position as i32;
+            competitor.created_at = now;
+            self.competitors().upsert(&competitor).await?;
+            competitors.push(competitor);
+        }
+
+        let mut assets = Vec::with_capacity(exported.assets.len());
+        for old in &exported.assets {
+            let asset = ProjectAsset::new(
+                project_id,
+                old.kind,
+                old.url.clone(),
+                old.title.clone(),
+                old.note.clone(),
+                now,
+            )?;
+            self.assets().add(&asset).await?;
+            assets.push(asset);
+        }
+
+        let mut entity_cards = 0usize;
+        if let Some(old) = &exported.entity_card {
+            let mut card = old.clone();
+            card.project_id = project_id;
+            card.updated_at = now;
+            card.created_at = created_at.min(now);
+            self.cards().upsert(&card).await?;
+            entity_cards = 1;
+        }
+
+        let mut revisions = Vec::with_capacity(exported.revisions.len());
+        for old in &exported.revisions {
+            let mut revision = old.clone();
+            revision.id = RevisionId::new();
+            revision.project_id = project_id;
+            self.cards().save_revision(&revision).await?;
+            revisions.push(revision);
+        }
+
+        let mut prompt_items = 0usize;
+        for old in &exported.prompt_sets {
+            let mut set = old.clone();
+            set.id = PromptSetId::new();
+            set.project_id = project_id;
+            set.created_at = now;
+            for item in &mut set.items {
+                item.id = PromptId::new();
+            }
+            // `reindex` 会把条目的 `set_id`/`position` 对齐到新快照
+            set.reindex();
+            set.refresh();
+            self.prompt_sets().create(&set).await?;
+            prompt_items += set.items.len();
+        }
+
+        let mut counts = HashMap::new();
+        counts.insert("projects".to_string(), 1);
+        counts.insert("competitors".to_string(), competitors.len());
+        counts.insert("assets".to_string(), assets.len());
+        counts.insert("entity_cards".to_string(), entity_cards);
+        counts.insert("revisions".to_string(), revisions.len());
+        counts.insert("prompt_sets".to_string(), exported.prompt_sets.len());
+        counts.insert("prompt_items".to_string(), prompt_items);
+
+        tracing::info!(project_id = %project_id, ?counts, "项目导入完成");
+        Ok(ImportReport { project_id, counts })
+    }
+}

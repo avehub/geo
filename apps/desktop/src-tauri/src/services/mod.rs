@@ -2,7 +2,10 @@
 
 pub mod entity_card_service;
 pub mod project_service;
+pub mod project_transfer;
 pub mod prompt_service;
 pub mod templates;
 
-// 重导出随 Task 22/23 的实现补全。
+pub use entity_card_service::{EntityCardService, MAX_SITE_TEXT_CHARS};
+pub use project_service::{ProjectDetail, ProjectService};
+pub use project_transfer::{ImportReport, ProjectExport, EXPORT_FORMAT_VERSION};

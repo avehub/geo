@@ -111,9 +111,7 @@ fn redact(message: &str) -> String {
         let matches_prefix = chars[index..]
             .iter()
             .zip(prefix.iter())
-            .take_while(|(actual, expected)| {
-                actual.to_ascii_lowercase() == expected.to_ascii_lowercase()
-            })
+            .take_while(|(actual, expected)| actual.eq_ignore_ascii_case(expected))
             .count()
             == prefix.len();
 

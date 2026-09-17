@@ -99,10 +99,17 @@ export const FIELD_STATUS_LABELS: Record<FieldStatus, string> = {
   disputed: '存疑',
 };
 
+/** 与后端 `SampleSizeGrade::label_zh()` 一致。 */
 export const SAMPLE_SIZE_LABELS: Record<SampleSizeGrade, string> = {
   sufficient: '样本充足',
-  directional: '样本不足，仅供方向性参考',
-  insufficient: '样本过少，不展示精确分数',
+  directional: '样本偏少',
+  insufficient: '样本不足',
+};
+
+/** 与后端 `SampleSizeGrade::warning_zh()` 一致；`sufficient` 无警示文案。 */
+export const SAMPLE_SIZE_WARNINGS: Partial<Record<SampleSizeGrade, string>> = {
+  directional: '样本不足，仅供方向性参考：当前 prompt 数低于 60 条，波动区间较大。',
+  insufficient: '样本不足（<30 条），不提供精确分数，仅供方向性参考。',
 };
 
 // ---------------------------------------------------------------------------

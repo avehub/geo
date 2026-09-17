@@ -85,22 +85,26 @@ impl EntityCardRepo {
 
     /// 写入或整卡覆盖。完整率等派生值由 `geo-domain` 计算，仓储原样落库。
     pub async fn upsert(&self, card: &EntityCard) -> Result<(), StoreError> {
-        sqlx::query(
-            "INSERT INTO entity_cards (project_id, fields, field_status, source, completeness, \
-             created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_id) \
-             DO UPDATE SET fields = excluded.fields, field_status = excluded.field_status, \
-             source = excluded.source, completeness = excluded.completeness, \
-             created_at = excluded.created_at, updated_at = excluded.updated_at",
-        )
-        .bind(card.project_id.to_string())
-        .bind(codec::encode_json(&card.fields)?)
-        .bind(codec::encode_json(&card.field_status)?)
-        .bind(codec::encode_json(&card.source)?)
-        .bind(card.completeness)
-        .bind(codec::encode_time(&card.created_at))
-        .bind(codec::encode_time(&card.updated_at))
-        .execute(&self.pool)
-        .await?;
+        let mut transaction = self.pool.begin().await?;
+        upsert_card(&mut transaction, card).await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    /// 实体卡与它的修订留痕**同生共死**。
+    ///
+    /// `confirmed_fields()` 是从**修订**推导「人工已确认」保护名单的，
+    /// 只写了卡没写修订，字段值虽然更新了，却失去保护：下一次自动建档
+    /// 会让模型把它悄悄覆盖回去。所以两步必须在一个事务里。
+    pub async fn upsert_with_revision(
+        &self,
+        card: &EntityCard,
+        revision: &EntityCardRevision,
+    ) -> Result<(), StoreError> {
+        let mut transaction = self.pool.begin().await?;
+        upsert_card(&mut transaction, card).await?;
+        insert_revision(&mut transaction, revision).await?;
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -118,20 +122,9 @@ impl EntityCardRepo {
 
     /// 追加一条字段级修订留痕。
     pub async fn save_revision(&self, revision: &EntityCardRevision) -> Result<(), StoreError> {
-        sqlx::query(
-            "INSERT INTO entity_card_revisions (id, project_id, field_path, old_value, new_value, \
-             status, note, edited_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(revision.id.to_string())
-        .bind(revision.project_id.to_string())
-        .bind(&revision.field_path)
-        .bind(encode_optional_json(&revision.old_value)?)
-        .bind(encode_optional_json(&revision.new_value)?)
-        .bind(codec::encode_scalar(&revision.status)?)
-        .bind(revision.note.as_deref())
-        .bind(codec::encode_time(&revision.edited_at))
-        .execute(&self.pool)
-        .await?;
+        let mut transaction = self.pool.begin().await?;
+        insert_revision(&mut transaction, revision).await?;
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -176,6 +169,52 @@ fn decode_optional_json(raw: Option<&str>) -> Result<Option<Value>, StoreError> 
     raw.map(codec::decode_json).transpose()
 }
 
+const UPSERT_CARD_SQL: &str = "INSERT INTO entity_cards (project_id, fields, field_status, \
+     source, completeness, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) \
+     ON CONFLICT(project_id) DO UPDATE SET fields = excluded.fields, \
+     field_status = excluded.field_status, source = excluded.source, \
+     completeness = excluded.completeness, created_at = excluded.created_at, \
+     updated_at = excluded.updated_at";
+
+const INSERT_REVISION_SQL: &str = "INSERT INTO entity_card_revisions (id, project_id, \
+     field_path, old_value, new_value, status, note, edited_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+/// 卡与修订共用的写入语句，抽出来是为了让两者能跑在同一个事务里。
+async fn upsert_card(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    card: &EntityCard,
+) -> Result<(), StoreError> {
+    sqlx::query(UPSERT_CARD_SQL)
+        .bind(card.project_id.to_string())
+        .bind(codec::encode_json(&card.fields)?)
+        .bind(codec::encode_json(&card.field_status)?)
+        .bind(codec::encode_json(&card.source)?)
+        .bind(card.completeness)
+        .bind(codec::encode_time(&card.created_at))
+        .bind(codec::encode_time(&card.updated_at))
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
+}
+
+async fn insert_revision(
+    transaction: &mut sqlx::Transaction<'_, Sqlite>,
+    revision: &EntityCardRevision,
+) -> Result<(), StoreError> {
+    sqlx::query(INSERT_REVISION_SQL)
+        .bind(revision.id.to_string())
+        .bind(revision.project_id.to_string())
+        .bind(&revision.field_path)
+        .bind(encode_optional_json(&revision.old_value)?)
+        .bind(encode_optional_json(&revision.new_value)?)
+        .bind(codec::encode_scalar(&revision.status)?)
+        .bind(revision.note.as_deref())
+        .bind(codec::encode_time(&revision.edited_at))
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,6 +239,34 @@ mod tests {
         let (_projects, repo, project_id) = setup().await;
         assert_eq!(repo.get(project_id).await.unwrap(), None);
         assert!(repo.revisions(project_id).await.unwrap().is_empty());
+    }
+
+    /// 修订写失败时，卡必须一起回滚：否则字段值更新了却没有留痕，
+    /// `confirmed_fields()` 认不出「人工已确认」，下次自动建档会把它覆盖掉。
+    #[tokio::test]
+    async fn upsert_with_revision_rolls_the_card_back_when_the_revision_fails() {
+        let (_projects, repo, project_id) = setup().await;
+        let card = sample_entity_card(project_id);
+        repo.upsert(&card).await.unwrap();
+        let revision = sample_revision(project_id, "standard_name", base_time());
+        repo.save_revision(&revision).await.unwrap();
+
+        let mut edited = card.clone();
+        edited.fields.standard_name = "改名后的品牌".to_string();
+        edited.updated_at = later(60);
+        // 同一个修订 ID 再写一次必然主键冲突
+        let error = repo
+            .upsert_with_revision(&edited, &revision)
+            .await
+            .expect_err("修订主键冲突必须失败");
+        assert!(matches!(error, StoreError::Sqlx(_)), "{error:?}");
+
+        let reloaded = repo.get(project_id).await.unwrap().expect("卡还在");
+        assert_eq!(
+            reloaded.fields.standard_name, card.fields.standard_name,
+            "卡必须回滚到修改前"
+        );
+        assert_eq!(repo.revisions(project_id).await.unwrap().len(), 1);
     }
 
     #[tokio::test]

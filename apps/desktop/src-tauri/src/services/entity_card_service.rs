@@ -186,8 +186,9 @@ impl EntityCardService {
             .await?
             .ok_or_else(|| GeoError::not_found("entity_card", project_id))?;
         let revision = card.set_field(path, value, status, now, note)?;
-        self.cards().upsert(&card).await?;
-        self.cards().save_revision(&revision).await?;
+        // 卡与修订必须一起落库：`confirmed_fields()` 靠修订认「人工已确认」，
+        // 只写卡会让这个字段在下次自动建档时被模型悄悄覆盖。
+        self.cards().upsert_with_revision(&card, &revision).await?;
         Ok(revision)
     }
 

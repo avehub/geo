@@ -29,7 +29,9 @@ futures = "0.3"
 html2text = "0.17"
 keyring = { version = "4.2", features = ["apple-native-keyring-store", "windows-native-keyring-store"] }
 regex = "1"
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "webpki-roots", "gzip", "charset", "system-proxy"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "webpki-roots", "gzip", "charset", "system-proxy"] }
+# rustls 走 ring provider：避免 aws-lc-sys 依赖 cmake，宿主机保持零 brew 依赖
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 scraper = "0.27"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

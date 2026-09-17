@@ -12,6 +12,7 @@ async-trait = { workspace = true }
 encoding_rs = { workspace = true }
 html2text = { workspace = true }
 reqwest = { workspace = true }
+rustls = { workspace = true }
 scraper = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

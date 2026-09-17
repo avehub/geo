@@ -57,6 +57,16 @@ export default function ProjectListPage() {
     onError: (error) => message.error(describeError(error)),
   });
 
+  const tagsMutation = useMutation({
+    mutationFn: ({ project, tags }: { project: Project; tags: string[] }) =>
+      client.projectUpdate({ ...project, tags }),
+    onSuccess: () => {
+      message.success('标签已更新');
+      void invalidate();
+    },
+    onError: (error) => message.error(describeError(error)),
+  });
+
   async function handleExport(project: Project, kind: ProjectExportKind) {
     try {
       if (kind === 'json') {
@@ -146,10 +156,11 @@ export default function ProjectListPage() {
         }
         onDelete={confirmDelete}
         onExport={(project, kind) => void handleExport(project, kind)}
+        onTagsChange={(project, tags) => tagsMutation.mutate({ project, tags })}
       />
 
       <Typography.Paragraph type="secondary" style={{ marginTop: 12, fontSize: 12 }}>
-        提示：每行「导出」可下载项目 JSON（含实体卡、竞品、资产与题库），或单独的竞品 / 资产 CSV。
+        提示：标签列可直接输入后回车增删（最多 20 个）；每行「导出」可下载项目 JSON（含实体卡、竞品、资产与题库），或单独的竞品 / 资产 CSV。
       </Typography.Paragraph>
     </div>
   );

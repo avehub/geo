@@ -1,4 +1,4 @@
-import { Button, Dropdown, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Button, Dropdown, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 
@@ -22,6 +22,7 @@ export interface ProjectTableProps {
   onToggleArchive: (project: Project) => void;
   onDelete: (project: Project) => void;
   onExport: (project: Project, kind: ProjectExportKind) => void;
+  onTagsChange: (project: Project, tags: string[]) => void;
 }
 
 function industryLabel(project: Project): string {
@@ -38,6 +39,7 @@ export default function ProjectTable({
   onToggleArchive,
   onDelete,
   onExport,
+  onTagsChange,
 }: ProjectTableProps) {
   const columns: ColumnsType<Project> = [
     {
@@ -66,17 +68,22 @@ export default function ProjectTable({
       title: '标签',
       dataIndex: 'tags',
       key: 'tags',
-      width: 180,
-      render: (_, project) =>
-        project.tags.length === 0 ? (
-          <Typography.Text type="secondary">—</Typography.Text>
-        ) : (
-          <Space size={4} wrap>
-            {project.tags.map((tag) => (
-              <Tag key={tag}>{tag}</Tag>
-            ))}
-          </Space>
-        ),
+      width: 220,
+      render: (_, project) => (
+        <Select
+          mode="tags"
+          size="small"
+          variant="borderless"
+          style={{ width: '100%' }}
+          open={false}
+          suffixIcon={null}
+          tokenSeparators={[',', '，']}
+          placeholder="输入标签后回车"
+          aria-label={`编辑「${project.name}」的标签`}
+          value={project.tags}
+          onChange={(tags) => onTagsChange(project, tags as string[])}
+        />
+      ),
     },
     {
       title: '状态',

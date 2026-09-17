@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
@@ -6,6 +6,7 @@ import ProjectListPage from './ProjectListPage';
 import { mockInvoke } from '../test/invoke-mock';
 import { renderWithProviders } from '../test/render';
 import { makeProject } from '../test/fixtures';
+import type { Project } from '../api/types';
 
 const hongyu = makeProject({ id: 'p-hongyu', name: '宏宇泵业 GEO', brand_name: '宏宇泵业' });
 const valve = makeProject({ id: 'p-valve', name: '南方阀门项目', brand_name: '南方阀门' });
@@ -18,6 +19,15 @@ const archived = makeProject({
 });
 
 const ALL = [hongyu, valve, archived];
+
+/**
+ * user-event 只填 `key`，不填 `keyCode`/`which`，而 antd 标签选择器（rc-select）
+ * 的 tags 模式靠 `which === 13` 判定「回车提交新标签」。真实浏览器两者都有，
+ * 这里补一份等价事件，避免测试因 jsdom 差异失真。
+ */
+function pressEnter(element: HTMLElement) {
+  fireEvent.keyDown(element, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 });
+}
 
 function stubList() {
   mockInvoke.stubAlways('project_list', (args) => {
@@ -182,6 +192,46 @@ describe('ProjectListPage', () => {
 
     await waitFor(() => expect(mockInvoke.callsOf('export_write_file')).toHaveLength(1));
     expect(screen.queryByText('竞品 CSV 已导出')).not.toBeInTheDocument();
+  });
+
+  it('在列表里直接增删标签会调用 project_update（spec FR-M1-6 标签增删）', async () => {
+    stubList();
+    mockInvoke.stubAlways('project_update', (args) => args.project);
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectListPage />);
+    await screen.findByText('宏宇泵业 GEO');
+
+    const row = screen.getByText('宏宇泵业 GEO').closest('tr') as HTMLElement;
+    const tagsInput = within(row).getByRole('combobox');
+    await user.type(tagsInput, '市政');
+    pressEnter(tagsInput);
+
+    await waitFor(() => expect(mockInvoke.callsOf('project_update')).toHaveLength(1));
+    const sent = mockInvoke.lastArgsOf('project_update')!.project as Project;
+    expect(sent.id).toBe('p-hongyu');
+    expect(sent.tags).toContain('市政');
+    expect(sent.tags).toContain('水泵');
+    expect(await screen.findByText('标签已更新')).toBeInTheDocument();
+  });
+
+  it('标签写入失败时给出中文原因且不假装成功', async () => {
+    stubList();
+    mockInvoke.stubAlways(
+      'project_update',
+      { code: 'validation/failed', message: '标签不能超过 20 个' },
+      'reject',
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectListPage />);
+    await screen.findByText('宏宇泵业 GEO');
+
+    const row = screen.getByText('宏宇泵业 GEO').closest('tr') as HTMLElement;
+    const tagsInput = within(row).getByRole('combobox');
+    await user.type(tagsInput, '太多');
+    pressEnter(tagsInput);
+
+    expect(await screen.findByText('标签不能超过 20 个')).toBeInTheDocument();
+    expect(screen.queryByText('标签已更新')).not.toBeInTheDocument();
   });
 
   it('新建项目按钮存在且可用', async () => {

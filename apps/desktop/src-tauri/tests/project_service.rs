@@ -4,13 +4,15 @@
 
 mod support;
 
+use std::collections::HashSet;
+
 use geo_domain::{
     AssetKind, CompetitorDraft, CompetitorId, Industry, Language, ProjectDraft, ProjectId,
 };
 use geo_store::ProjectFilter;
 use support::{now, sample_draft, seeded_project, test_state, OfflineTransport};
 
-use geo_desktop_lib::services::ProjectService;
+use geo_desktop_lib::services::{GenerateOptions, ProjectService, PromptService};
 
 fn service(state: &geo_desktop_lib::state::AppState) -> ProjectService {
     ProjectService::new(state.pool.clone())
@@ -199,6 +201,80 @@ async fn export_then_import_round_trips_with_new_ids() {
         card.fields.products.len(),
         exported.entity_card.unwrap().fields.products.len()
     );
+}
+
+/// 导入会重发竞品 ID，但 `prompt_items.competitor_ids` 是 JSON 文本列、没有外键，
+/// 不重映射就会留下指向**旧项目竞品**的悬挂 ID——P0-C 的 SOV/同框率会静默算错。
+#[tokio::test]
+async fn import_remaps_prompt_competitor_ids_to_the_new_project() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let svc = service(&state);
+    let project = seeded_project(&state).await;
+
+    let set = PromptService::from_state(&state)
+        .generate(project.id, GenerateOptions::default(), now())
+        .await
+        .expect("生成题库成功");
+    assert!(
+        set.items.iter().any(|i| !i.competitor_ids.is_empty()),
+        "样本前提：应有竞品同框条目"
+    );
+
+    let exported = svc.export_json(project.id, now()).await.unwrap();
+    let old_ids: HashSet<CompetitorId> = exported.competitors.iter().map(|c| c.id).collect();
+    let report = svc
+        .import_json(&serde_json::to_string(&exported).unwrap(), now())
+        .await
+        .unwrap();
+
+    let imported = svc.detail(report.project_id).await.unwrap();
+    let new_ids: HashSet<CompetitorId> = imported.competitors.iter().map(|c| c.id).collect();
+    let summaries = PromptService::from_state(&state)
+        .list(report.project_id)
+        .await
+        .unwrap();
+    let full = PromptService::from_state(&state)
+        .get(summaries[0].id)
+        .await
+        .unwrap();
+
+    let mut co_mention = 0usize;
+    for item in &full.items {
+        co_mention += usize::from(!item.competitor_ids.is_empty());
+        for id in &item.competitor_ids {
+            assert!(new_ids.contains(id), "残留旧项目竞品 ID：{id}");
+            assert!(!old_ids.contains(id), "竞品 ID 没有重新生成：{id}");
+        }
+    }
+    assert!(co_mention > 0, "竞品同框标记应在导入后保留");
+}
+
+/// 导入是「多张表顺序写」，中途失败不能留下半截项目：要么完整导入，要么什么都没有。
+#[tokio::test]
+async fn failed_import_leaves_no_partial_project_behind() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let svc = service(&state);
+    let project = seeded_project(&state).await;
+
+    let mut exported = svc.export_json(project.id, now()).await.unwrap();
+    exported.assets[0].url = "不是网址".to_string();
+
+    let error = svc
+        .import_json(&serde_json::to_string(&exported).unwrap(), now())
+        .await
+        .expect_err("非法资产 URL 必须报错");
+    assert_eq!(error.code, "validation/failed");
+
+    let remaining = svc
+        .list(&ProjectFilter {
+            query: None,
+            include_archived: true,
+            tags: Vec::new(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(remaining.len(), 1, "半截导入必须被清掉，只剩原项目");
+    assert_eq!(remaining[0].id, project.id);
 }
 
 #[tokio::test]

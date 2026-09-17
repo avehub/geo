@@ -132,11 +132,7 @@ impl AppState {
         let pool = geo_store::open(&data_dir.join(DB_FILE_NAME)).await?;
 
         let settings = SettingsRepo::new(pool.clone()).get().await?;
-        let proxy = settings
-            .proxy
-            .as_ref()
-            .filter(|proxy| proxy.enabled)
-            .and_then(|proxy| proxy.url.clone());
+        let proxy = crate::services::active_proxy(&settings);
 
         Ok(Self {
             pool: pool.clone(),

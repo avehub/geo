@@ -42,5 +42,12 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         prompt::prompt_set_dedupe,
         prompt::prompt_set_export_csv,
         prompt::prompt_set_import_csv,
+        settings::settings_get,
+        settings::settings_update,
+        secret::secret_set,
+        secret::secret_status,
+        secret::secret_delete,
+        secret::llm_provider_test,
+        secret::llm_providers,
     ]
 }

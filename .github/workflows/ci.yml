@@ -1,0 +1,116 @@
+name: ci
+
+# 门禁与本地完全一致：都跑在 docker/dev.Dockerfile 构建的镜像里（spec FR-B7）。
+# 只跑 fmt / clippy / test / lint / vitest / build + `cargo check -p geo-desktop`：
+# 不打包 bundle、不做桌面 E2E、不接任何真实网络与 API Key（AGENTS.md 规则 2）。
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: gdk-geo-dev:ci
+
+jobs:
+  rust:
+    name: Rust 门禁（fmt / clippy / test）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # 便宜的静态校验先跑：compose 配置能被解析、录制脚本语法正确
+      - name: 校验 compose 与脚本语法
+        run: |
+          docker compose config --quiet
+          bash -n scripts/record-fixtures.sh
+          python3 -c "import ast,sys; ast.parse(open('scripts/make-icon.py').read())"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 构建一致性镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: docker
+          file: docker/dev.Dockerfile
+          load: true
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha,scope=dev-image
+          cache-to: type=gha,scope=dev-image,mode=max
+
+      # 只缓存 cargo registry / git 数据库；`target/` 太大不进 actions/cache，
+      # 改用 runner 上的 docker 卷（同一 runner 复用时能吃到增量编译）。
+      - name: 恢复 cargo 依赖缓存
+        uses: actions/cache@v4
+        with:
+          path: .cache/cargo
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: cargo fmt / clippy / test / check
+        run: |
+          set -euo pipefail
+          mkdir -p "$PWD/.cache/cargo/registry" "$PWD/.cache/cargo/git"
+          docker run --rm \
+            --workdir /work \
+            --volume "$PWD:/work" \
+            --volume "$PWD/.cache/cargo/registry:/root/.cargo/registry" \
+            --volume "$PWD/.cache/cargo/git:/root/.cargo/git" \
+            --volume gdk-geo-ci-cargo-target:/work/target \
+            --env MISE_TRUSTED_CONFIG_PATHS=/work \
+            --env RUST_BACKTRACE=1 \
+            "$IMAGE" \
+            bash -lc 'set -euo pipefail
+              mise exec -- cargo fmt --all --check
+              mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+              mise exec -- cargo test --workspace
+              mise exec -- cargo check -p geo-desktop'
+
+  ui:
+    name: 前端门禁（lint / vitest / build）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 构建一致性镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: docker
+          file: docker/dev.Dockerfile
+          load: true
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha,scope=dev-image
+          cache-to: type=gha,scope=dev-image,mode=max
+
+      - name: 恢复 pnpm store 缓存
+        uses: actions/cache@v4
+        with:
+          path: .cache/pnpm
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('apps/desktop/ui/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      # CI 用 --frozen-lockfile（而不是 mise run install）：锁文件与 package.json 漂移时直接失败。
+      - name: pnpm install / lint / test / build
+        run: |
+          set -euo pipefail
+          mkdir -p "$PWD/.cache/pnpm"
+          docker run --rm \
+            --workdir /work \
+            --volume "$PWD:/work" \
+            --volume "$PWD/.cache/pnpm:/root/.local/share/pnpm/store" \
+            --volume gdk-geo-ci-node-modules:/work/apps/desktop/ui/node_modules \
+            --env MISE_TRUSTED_CONFIG_PATHS=/work \
+            "$IMAGE" \
+            bash -lc 'set -euo pipefail
+              mise exec -- pnpm --dir apps/desktop/ui install --frozen-lockfile
+              mise exec -- pnpm --dir apps/desktop/ui run lint
+              mise exec -- pnpm --dir apps/desktop/ui run test
+              mise exec -- pnpm --dir apps/desktop/ui run build'

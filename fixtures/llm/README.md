@@ -45,11 +45,22 @@ key 的计算方式是 `geo_llm::fixture_key(url, body)`，
 - **不得出现** `crates/geo-domain/data/adlaw_terms.txt` 里的绝对化用语
   （保证排名 / 霸屏 / 第一 / 最佳 / 最优 / 唯一 / 顶级 / 100% / 永久 等）。
 - 实体卡必填字段至少填 8 项，保证下游 `completeness() >= 0.8`。
-- 契约测试在 `crates/geo-llm/tests/fixtures.rs`，改完 fixture 跑
-  `mise exec -- cargo test -p geo-llm` 即可校验。
+- 契约测试在 `apps/desktop/src-tauri/tests/`（`support/mod.rs` 的 `llm_bodies`
+  负责展开本目录文件，`entity_card_service.rs` / `prompt_service.rs` /
+  `service_flow.rs` 消费），改完 fixture 跑 `mise exec -- cargo test --workspace`。
+- 离线自检（结构、GBK 字节、绝对化用语、提示词指纹）用
+  `scripts/record-fixtures.sh check`，不需要 API Key、不联网。
 
 ## 重录
 
-真实录制需要在有 API Key 的环境手动执行（spec FR-L5 规划的
-`scripts/record-fixtures.sh`，脚本不参与测试、不进 CI）。重录后请保持
-`content` 为字符串的包裹形态，并重新跑一遍契约测试与合规扫描。
+真实录制用 `scripts/record-fixtures.sh llm ...`（脚本不参与测试、不进 CI 门禁）：
+
+```bash
+export GEO_LLM_API_KEY=...        # 只从环境读取，脚本不写盘、不打印
+scripts/record-fixtures.sh llm --name entity_card \
+  --system entity_card --prompt-file /tmp/entity-prompt.txt --save-key-copy
+scripts/record-fixtures.sh check  # 结构 + 合规 + 提示词指纹
+```
+
+重录后请保持 `content` 为字符串的包裹形态；若系统提示词也改了，跑
+`scripts/record-fixtures.sh check --update` 刷新 `prompts.sha256` 指纹。

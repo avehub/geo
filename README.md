@@ -35,7 +35,24 @@ mise run install      # 安装前端依赖
 mise run dev          # 启动原生桌面窗口（Tauri dev）
 mise run web          # 仅前端（浏览器 http://localhost:1420）
 mise run check        # 提交前门禁：fmt + clippy + cargo test + lint + vitest + build
+scripts/record-fixtures.sh check   # 离线自检 fixtures（不需要 Key、不联网）
 ```
+
+### 容器内复现门禁（可选）
+
+日常开发不用 Docker（Tauri 需要原生窗口）。只有想和 CI 完全一致地复现门禁时才用：
+
+```bash
+docker compose build                    # 首次约 5-10 分钟
+docker compose run --rm dev             # = mise run install && mise run check
+docker compose run --rm dev bash        # 进交互 shell
+```
+
+源码 bind mount 进 `/work`，`target/`、`node_modules/`、cargo registry、pnpm store 全在命名卷里，
+不会污染宿主机。建议给 Docker 分配 ≥12 GB 内存（链接 Tauri 测试二进制时单个 ld 峰值很高）；
+配额不足会被 OOM kill（`ld terminated with signal 9`），可用
+`docker compose run --rm dev bash -lc 'CARGO_BUILD_JOBS=2 mise run check'` 降并行绕过。
+CI（`.github/workflows/ci.yml`）用的就是同一个镜像；仓库加 remote 后自动生效。
 
 ## 架构
 
@@ -49,7 +66,10 @@ apps/desktop/
   src-tauri/     Tauri 2 壳：invoke 命令层 + service 编排
   ui/            React 19 + Vite + antd v5 + Tailwind + ECharts
 fixtures/        离线测试用录制数据（HTTP 页面、LLM 响应）
-docker/          CI 一致性镜像
+scripts/         图标生成与 fixture 录制/自检脚本
+brand/           图标源图（icon-source.png）
+docker/          CI 一致性镜像（dev.Dockerfile）
+.github/         GitHub Actions：ci.yml（rust + ui 两个 job，跑在上面的镜像里）
 ```
 
 数据不出本地：品牌档案、竞品清单、原始回答快照全部存于本机 SQLite，API Key 存系统钥匙串。

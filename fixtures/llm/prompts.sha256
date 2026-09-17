@@ -1,0 +1,5 @@
+# 录制 fixture 时所用系统提示词的 sha256 指纹（由 scripts/record-fixtures.sh 维护）。
+# 改了提示词请重录 fixture，再跑：scripts/record-fixtures.sh check --update
+entity_card f0f1b3b5cec61e1599f5a8362dcc177bba738af44ef9327306f9ba8d0d77279d
+expand f1a6f45beb5809e2ca76db426c6a303ae9f9ff03db34d66b6d3cab6dec4e7867
+rewrite 9c4648811a1a60aff147ddc29711af632976c655f11d278ba6dfc4f1bd234d78

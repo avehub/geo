@@ -98,7 +98,35 @@ impl DedupeReport {
 }
 
 /// 对 prompt 列表去重。保留输入顺序，重复时保留 weight 较高者。
+///
+/// 单轮贪心**不是不动点**：当新条目 weight 更高时会顶掉原幸存者，而顶上来
+/// 的那条不会再与其他保留条目复检，于是可能留下一对 ≥ 阈值的重复（违反
+/// spec FR-M2-3 的「重复对为 0」）。因此这里反复跑贪心直到某一轮不再合并；
+/// 每轮至少减少一条，最坏 `items.len()` 轮收敛。
 pub fn dedupe(items: Vec<PromptItem>) -> DedupeReport {
+    let mut rounds = items.len().saturating_add(1);
+    let mut kept = items;
+    let mut removed: Vec<RemovedItem> = Vec::new();
+    loop {
+        let before = kept.len();
+        let (next, dropped) = merge_pass(kept);
+        kept = next;
+        removed.extend(dropped);
+        rounds -= 1;
+        if kept.len() == before || rounds == 0 {
+            break;
+        }
+    }
+    let duplicate_pairs = count_duplicate_pairs(&kept);
+    DedupeReport {
+        kept,
+        removed,
+        duplicate_pairs,
+    }
+}
+
+/// 一轮贪心合并：逐条与已保留条目比较，命中阈值就合并（weight 高者胜出）。
+fn merge_pass(items: Vec<PromptItem>) -> (Vec<PromptItem>, Vec<RemovedItem>) {
     let mut kept: Vec<PromptItem> = Vec::with_capacity(items.len());
     let mut kept_grams: Vec<HashSet<String>> = Vec::with_capacity(items.len());
     let mut removed: Vec<RemovedItem> = Vec::new();
@@ -118,17 +146,15 @@ pub fn dedupe(items: Vec<PromptItem>) -> DedupeReport {
             }
             Some(index) => {
                 let replace = item.weight > kept[index].weight;
-                let (survivor, loser) = if replace {
-                    let previous = std::mem::replace(&mut kept[index], item);
-                    (kept[index].clone(), previous)
+                let loser = if replace {
+                    std::mem::replace(&mut kept[index], item)
                 } else {
-                    (kept[index].clone(), item)
+                    item
                 };
                 merge_into(&mut kept[index], &loser);
                 if replace {
                     kept_grams[index] = char_ngrams(&normalize(&kept[index].text), NGRAM_SIZE);
                 }
-                let _ = survivor;
                 removed.push(RemovedItem {
                     item: loser,
                     merged_into: kept[index].text.clone(),
@@ -137,12 +163,7 @@ pub fn dedupe(items: Vec<PromptItem>) -> DedupeReport {
         }
     }
 
-    let duplicate_pairs = count_duplicate_pairs(&kept);
-    DedupeReport {
-        kept,
-        removed,
-        duplicate_pairs,
-    }
+    (kept, removed)
 }
 
 fn merge_into(target: &mut PromptItem, source: &PromptItem) {
@@ -275,6 +296,62 @@ mod tests {
                 .collect::<Vec<_>>(),
             items.iter().map(|i| i.text.clone()).collect::<Vec<_>>()
         );
+    }
+
+    /// 贪心单轮**不是不动点**：替换分支换上的新幸存者不会与其他保留条目复检，
+    /// 于是可能留下一对重复，直接违反 spec FR-M2-3 的「重复对为 0」验收。
+    ///
+    /// 合成样本（42 字，改 1 字 / 改另 1 字）：
+    /// `sim(A,C) = sim(B,C) = 0.8605 ≥ 0.85`，而 `sim(A,B) = 0.7391 < 0.85`。
+    /// 单轮结果是 `[C, B]` 且重复对为 1；必须再扫一轮合并成 `[C]`。
+    #[test]
+    fn replacing_a_survivor_still_converges_to_zero_duplicate_pairs() {
+        let a = item(
+            "国内做工业水各的厂家有哪些比较靠谱性价比高而且售后服务响应速度快还支持按工况定制选型",
+            2,
+        );
+        let b = item(
+            "国内做工业水泵的厂家有哪些比较靠谱性价比高而且售挺服务响应速度快还支持按工况定制选型",
+            3,
+        );
+        let c = item(
+            "国内做工业水泵的厂家有哪些比较靠谱性价比高而且售后服务响应速度快还支持按工况定制选型",
+            5,
+        );
+        assert!(
+            similarity(&a.text, &b.text) < DUPLICATE_THRESHOLD,
+            "前提：A 与 B 本身不算重复"
+        );
+        assert!(similarity(&a.text, &c.text) >= DUPLICATE_THRESHOLD);
+        assert!(similarity(&b.text, &c.text) >= DUPLICATE_THRESHOLD);
+
+        let report = dedupe(vec![a, b, c.clone()]);
+        assert_eq!(report.duplicate_pairs, 0, "重复对必须为 0");
+        assert_eq!(report.kept_count(), 1);
+        assert_eq!(report.removed_count(), 2);
+        assert_eq!(report.kept[0].text, c.text, "weight 最高者最终存活");
+        assert_eq!(report.kept[0].weight, 5);
+    }
+
+    /// 不动点性质：任意输入去重后，`kept` 内部不得再有 ≥ 阈值的条目对。
+    #[test]
+    fn dedupe_is_a_fixpoint_for_a_cluster_of_near_duplicates() {
+        let base =
+            "国内做工业水泵的厂家有哪些比较靠谱性价比高而且售后服务响应速度快还支持按工况定制选型";
+        let chars: Vec<char> = base.chars().collect();
+        let mut items = Vec::new();
+        // 在 6/14/22/30 位各改一个字，构造一簇两两 0.86 相似的近重复
+        for (weight, position) in [(1u8, 6usize), (2, 14), (3, 22), (4, 30)] {
+            let mut variant = chars.clone();
+            variant[position] = '各';
+            items.push(item(&variant.into_iter().collect::<String>(), weight));
+        }
+        items.push(item(base, 5));
+
+        let report = dedupe(items);
+        assert_eq!(report.duplicate_pairs, 0);
+        assert_eq!(report.kept_count(), 1, "整簇应合并成一条");
+        assert_eq!(report.kept[0].weight, 5);
     }
 
     #[test]

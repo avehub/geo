@@ -12,7 +12,13 @@ const SETTINGS: AppSettings = {
   proxy: null,
   concurrency: { max_parallel: 3, queue_size: 200 },
   rate_limit: { requests_per_minute: 20, min_interval_ms: 1500, retry_max: 3 },
-  model: { provider: 'deepseek', model: null, temperature: 0.3, timeout_secs: 60 },
+  model: {
+    provider: 'deepseek',
+    model: null,
+    base_url: null,
+    temperature: 0.3,
+    timeout_secs: 60,
+  },
   language: 'zh_cn',
   notify: { on_finish: true, on_risk: true, sound: false },
 };
@@ -53,6 +59,43 @@ describe('SettingsPage', () => {
 
     expect(await screen.findByText('https://api.moonshot.cn/v1')).toBeInTheDocument();
     expect(screen.getByLabelText('默认模型')).toHaveValue('moonshot-v1-8k');
+  });
+
+  it('选「自定义」后填接口地址与模型名，保存时随设置一起提交', async () => {
+    stub();
+    const user = userEvent.setup();
+    renderWithProviders(<SettingsPage />);
+    await screen.findByText('https://api.deepseek.com/v1');
+
+    await user.click(screen.getByRole('radio', { name: /自定义/ }));
+    await user.type(await screen.findByLabelText('接口地址'), 'https://api.internal/v1');
+    await user.type(screen.getByLabelText('模型名'), 'my-model');
+    await user.click(screen.getByRole('button', { name: /保存设置/ }));
+
+    await waitFor(() => expect(mockInvoke.callsOf('settings_update')).toHaveLength(1));
+    const saved = mockInvoke.lastArgsOf('settings_update')!.settings as AppSettings;
+    expect(saved.model.provider).toBe('custom');
+    expect(saved.model.base_url).toBe('https://api.internal/v1');
+    expect(saved.model.model).toBe('my-model');
+  });
+
+  it('从自定义切回预设会清掉接口地址覆盖，避免悄悄改走别的地址', async () => {
+    stub();
+    const user = userEvent.setup();
+    renderWithProviders(<SettingsPage />);
+    await screen.findByText('https://api.deepseek.com/v1');
+
+    await user.click(screen.getByRole('radio', { name: /自定义/ }));
+    await user.type(await screen.findByLabelText('接口地址'), 'https://api.internal/v1');
+    await user.click(screen.getByRole('radio', { name: 'Moonshot' }));
+
+    expect(await screen.findByText('https://api.moonshot.cn/v1')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /保存设置/ }));
+
+    await waitFor(() => expect(mockInvoke.callsOf('settings_update')).toHaveLength(1));
+    const saved = mockInvoke.lastArgsOf('settings_update')!.settings as AppSettings;
+    expect(saved.model.provider).toBe('moonshot');
+    expect(saved.model.base_url).toBeNull();
   });
 
   it('未配置 Key 时显示「未配置」并提供保存入口', async () => {

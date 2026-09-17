@@ -341,6 +341,28 @@ fn validate_settings(settings: &AppSettings) -> Result<(), IpcError> {
     if language.trim().is_empty() {
         return Err(GeoError::validation("language", "界面语言不能为空").into());
     }
+    // 接口地址：只接受 http(s)。空白视为「未填」，交给 config_from_settings 判断。
+    if let Some(base_url) = model
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+    {
+        if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
+            return Err(GeoError::validation(
+                "model.base_url",
+                format!("接口地址需以 http:// 或 https:// 开头，当前 {base_url}"),
+            )
+            .into());
+        }
+        if url::Url::parse(base_url).is_err() {
+            return Err(GeoError::validation(
+                "model.base_url",
+                format!("接口地址不是合法 URL：{base_url}"),
+            )
+            .into());
+        }
+    }
     if let Some(proxy) = proxy {
         if proxy.enabled {
             let url = proxy.url.as_deref().unwrap_or("").trim();
@@ -397,6 +419,21 @@ pub fn active_proxy(settings: &AppSettings) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 自定义接口地址只接受 http(s)，且不能是明显写错的串。
+    #[test]
+    fn validate_settings_rejects_a_non_http_base_url() {
+        let mut settings = AppSettings::default();
+        settings.model.base_url = Some("ftp://api.example.com".to_string());
+        let error = validate_settings(&settings).expect_err("非 http(s) 必须拒绝");
+        assert_eq!(error.code, "validation/failed");
+
+        settings.model.base_url = Some("  ".to_string());
+        assert!(validate_settings(&settings).is_ok(), "空白视为未填");
+
+        settings.model.base_url = Some("https://api.example.com/v1".to_string());
+        assert!(validate_settings(&settings).is_ok());
+    }
 
     #[test]
     fn provider_names_are_normalized_to_the_wire_form() {

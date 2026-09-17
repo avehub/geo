@@ -64,6 +64,11 @@ impl Default for RateLimitConfig {
 pub struct ModelConfig {
     pub provider: String,
     pub model: Option<String>,
+    /// 接口地址覆盖：`custom` 必填（spec FR-L1），预设 provider 填了则覆盖
+    /// （企业内网网关 / 自建代理）。`None` 或空白表示用 provider 预设地址。
+    /// 后加字段，`serde(default)` 保证老库里的 settings JSON 仍能读出。
+    #[serde(default)]
+    pub base_url: Option<String>,
     pub temperature: f32,
     pub timeout_secs: u64,
 }
@@ -73,6 +78,7 @@ impl Default for ModelConfig {
         Self {
             provider: "deepseek".to_string(),
             model: None,
+            base_url: None,
             temperature: 0.3,
             timeout_secs: 60,
         }
@@ -204,6 +210,26 @@ mod tests {
     async fn empty_store_returns_defaults() {
         let repo = SettingsRepo::new(open_in_memory().await.unwrap());
         assert_eq!(repo.get().await.unwrap(), AppSettings::default());
+    }
+
+    /// `base_url` 是后加的字段：老库里存的 settings JSON 没有它，必须照样能读出来。
+    #[test]
+    fn model_base_url_defaults_to_none_and_survives_a_roundtrip() {
+        assert_eq!(ModelConfig::default().base_url, None);
+
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+        value["model"].as_object_mut().unwrap().remove("base_url");
+        let legacy: AppSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(legacy.model.base_url, None);
+
+        let mut settings = AppSettings::default();
+        settings.model.provider = "custom".to_string();
+        settings.model.base_url = Some("https://api.example.com/v1".to_string());
+        let json = serde_json::to_string(&settings).unwrap();
+        assert_eq!(
+            serde_json::from_str::<AppSettings>(&json).unwrap(),
+            settings
+        );
     }
 
     #[tokio::test]

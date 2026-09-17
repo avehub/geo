@@ -88,11 +88,30 @@ impl LlmFactory {
         }
         config.temperature = settings.model.temperature;
         config.timeout_secs = settings.model.timeout_secs;
-        if provider == LlmProvider::Custom && config.base_url.trim().is_empty() {
-            return Err(IpcError::new(
-                "llm/config",
-                "自定义服务商必须填写接口地址（base_url）",
-            ));
+        // 接口地址覆盖：custom 必填，预设 provider 填了就用用户给的（内网网关场景）。
+        if let Some(base_url) = settings
+            .model
+            .base_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+        {
+            config.base_url = base_url.to_string();
+        }
+        if provider == LlmProvider::Custom {
+            if config.base_url.trim().is_empty() {
+                return Err(IpcError::new(
+                    "llm/config",
+                    "自定义服务商必须填写接口地址：设置 → 模型 → 接口地址（形如 https://api.example.com/v1）",
+                ));
+            }
+            // `Custom` 没有默认模型名，不填就会在发请求时才报「模型名为空」
+            if config.model.trim().is_empty() {
+                return Err(IpcError::new(
+                    "llm/config",
+                    "自定义服务商必须填写模型名：设置 → 模型 → 模型名",
+                ));
+            }
         }
         Ok(config)
     }
@@ -179,6 +198,49 @@ fn fetch_limits_from(settings: &AppSettings) -> FetchLimits {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+
+    /// 自定义 Provider 必须真的可用：接口地址与模型名都来自设置（spec FR-L1）。
+    #[test]
+    fn custom_provider_uses_the_configured_base_url_and_model() {
+        let mut settings = AppSettings::default();
+        settings.model.provider = "custom".to_string();
+        settings.model.base_url = Some("https://api.example.com/v1".to_string());
+        settings.model.model = Some("my-model".to_string());
+
+        let config = LlmFactory::config_from_settings(&settings).expect("自定义配置应可用");
+        assert_eq!(config.provider, LlmProvider::Custom);
+        assert_eq!(config.base_url, "https://api.example.com/v1");
+        assert_eq!(config.model, "my-model");
+        assert_eq!(config.secret_ref, geo_store::secret_ref("llm", "custom"));
+    }
+
+    /// 配置不全时要在**发请求之前**给出能照着做的中文提示，
+    /// 而不是让用户在连通性测试里看到一句空地址报错。
+    #[test]
+    fn custom_provider_without_base_url_or_model_explains_what_to_fill_in() {
+        let mut settings = AppSettings::default();
+        settings.model.provider = "custom".to_string();
+
+        let error = LlmFactory::config_from_settings(&settings).expect_err("缺接口地址必须拦下");
+        assert_eq!(error.code, "llm/config");
+        assert!(error.message.contains("接口地址"), "{}", error.message);
+
+        settings.model.base_url = Some("https://api.example.com/v1".to_string());
+        let error = LlmFactory::config_from_settings(&settings).expect_err("缺模型名必须拦下");
+        assert_eq!(error.code, "llm/config");
+        assert!(error.message.contains("模型名"), "{}", error.message);
+    }
+
+    /// 预设 Provider 也允许覆盖接口地址（企业内网网关 / 自建代理的常见诉求）。
+    #[test]
+    fn base_url_override_also_applies_to_preset_providers() {
+        let mut settings = AppSettings::default();
+        settings.model.base_url = Some("https://gateway.internal/v1".to_string());
+
+        let config = LlmFactory::config_from_settings(&settings).unwrap();
+        assert_eq!(config.provider, LlmProvider::DeepSeek);
+        assert_eq!(config.base_url, "https://gateway.internal/v1");
+    }
 
     #[tokio::test]
     async fn for_test_wires_memory_store_and_fixture_transport() {

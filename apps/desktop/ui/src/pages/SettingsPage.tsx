@@ -102,8 +102,28 @@ export default function SettingsPage() {
             <ProviderSelect
               providers={providers}
               value={settings.model.provider}
+              baseUrl={settings.model.base_url ?? ''}
+              onBaseUrlChange={(baseUrl) =>
+                patch({
+                  ...settings,
+                  model: {
+                    ...settings.model,
+                    base_url: baseUrl.trim() === '' ? null : baseUrl.trim(),
+                  },
+                })
+              }
               onChange={(provider) =>
-                patch({ ...settings, model: { ...settings.model, provider, model: null } })
+                patch({
+                  ...settings,
+                  model: {
+                    ...settings.model,
+                    provider,
+                    model: null,
+                    // 切走「自定义」就清掉地址覆盖：后端对预设服务商同样认这个字段，
+                    // 留着会让请求悄悄走到用户早就切掉的地址上。
+                    base_url: provider === 'custom' ? (settings.model.base_url ?? null) : null,
+                  },
+                })
               }
             />
 

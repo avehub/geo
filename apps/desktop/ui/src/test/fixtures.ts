@@ -122,4 +122,12 @@ export const PROVIDERS: ProviderInfo[] = [
     input_per_mtok: 12,
     output_per_mtok: 12,
   },
+  {
+    provider: 'custom',
+    label_zh: '自定义（OpenAI 兼容）',
+    base_url: '',
+    default_model: '',
+    input_per_mtok: 0,
+    output_per_mtok: 0,
+  },
 ];

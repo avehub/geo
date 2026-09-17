@@ -578,10 +578,7 @@ impl PromptService {
                 "prompt_set/empty_import",
                 "导入内容里没有任何有效条目，原题库保持不变（要清空请直接删除题库）",
             )
-            .with_detail(
-                serde_json::to_value(&result.errors)
-                    .unwrap_or_else(|_| serde_json::Value::Null),
-            ));
+            .with_detail(serde_json::to_value(&result.errors).unwrap_or(serde_json::Value::Null)));
         }
         let mut items = result.items.clone();
         reindex(&mut items, id);

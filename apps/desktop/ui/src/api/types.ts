@@ -348,6 +348,11 @@ export interface RateLimitConfig {
 export interface ModelConfig {
   provider: string;
   model: string | null;
+  /**
+   * 接口地址覆盖。`custom` 必填；预设服务商留空即用后端预设地址
+   * （填了也会生效，用于企业内网网关，UI 只在「自定义」下开放）。
+   */
+  base_url: string | null;
   temperature: number;
   timeout_secs: number;
 }

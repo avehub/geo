@@ -23,7 +23,7 @@ use wiremock::MockServer;
 
 use support::{
     default_secret_ref, llm_bodies, now, seeded_project, state_with_transport, test_state,
-    OfflineTransport, ScriptedTransport, TEST_API_KEY,
+    KeyEchoingTransport, OfflineTransport, ScriptedTransport, TEST_API_KEY,
 };
 
 use geo_desktop_lib::services::{
@@ -299,6 +299,23 @@ async fn provider_test_reports_a_failed_call_without_leaking_the_key() {
     assert!(!message.is_empty());
     assert!(!message.contains(TEST_API_KEY), "{message}");
     assert_eq!(result.prompt_tokens, 0);
+}
+
+/// 上游把 `Authorization` 回显进错误体时，Key 也不许出现在**成功返回**的
+/// `LlmTestResult.message` 里——这条路径不经过 `IpcError`，是脱敏的盲区。
+#[tokio::test]
+async fn provider_test_redacts_a_key_echoed_by_the_gateway() {
+    let (state, _server, _secrets) = state_with_transport(KeyEchoingTransport::new()).await;
+
+    let result = SettingsService::from_state(&state)
+        .provider_test("deepseek")
+        .await
+        .expect("连通性失败是可展示的结果");
+
+    assert!(!result.ok);
+    let message = result.message.clone().expect("失败要说明原因");
+    assert!(!message.contains(TEST_API_KEY), "泄漏了 Key：{message}");
+    assert!(message.contains("***"), "应留下脱敏痕迹：{message}");
 }
 
 #[tokio::test]

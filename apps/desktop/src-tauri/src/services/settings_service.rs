@@ -16,7 +16,7 @@ use geo_store::{secret_ref, AppSettings, ProxyConfig, SecretStore, SettingsRepo}
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::error::IpcError;
+use crate::error::{redact, IpcError};
 use crate::state::LlmFactory;
 
 /// 密钥在钥匙串里的类别前缀：`keyring://llm/<provider>`。
@@ -236,7 +236,7 @@ impl SettingsService {
                     prompt_tokens: 0,
                     completion_tokens: 0,
                     cost_cny: 0.0,
-                    message: Some(error.user_message()),
+                    message: Some(redact(&error.user_message())),
                 }
             }
         })

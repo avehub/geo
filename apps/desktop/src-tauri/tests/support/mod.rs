@@ -142,6 +142,32 @@ impl Transport for OfflineTransport {
     }
 }
 
+/// 模拟「把 Authorization 头回显进错误体」的网关/代理。
+///
+/// 现实里这类上游会把 `Bearer sk-...` 原样贴回 4xx 响应，因此它是验证
+/// 「密钥不外泄到 UI / notes / 日志」（AGENTS 规则 3）的最坏输入。
+#[derive(Debug, Default)]
+pub struct KeyEchoingTransport;
+
+impl KeyEchoingTransport {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self)
+    }
+}
+
+#[async_trait]
+impl Transport for KeyEchoingTransport {
+    async fn send(&self, req: HttpRequest) -> Result<HttpResponse, TransportError> {
+        let auth = req
+            .headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case("authorization"))
+            .map(|(_, value)| value.clone())
+            .unwrap_or_default();
+        Err(TransportError::Other(format!("上游 401：{auth} 无效")))
+    }
+}
+
 /// 挂载 `fixtures/http/` 的虚构企业站（宏宇泵业），`server.uri()` 即站点根。
 pub async fn mount_fixture_site(server: &MockServer) {
     for (path, fixture) in [

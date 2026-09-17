@@ -19,7 +19,7 @@ use serde_json::Value;
 use sqlx::SqlitePool;
 use url::Url;
 
-use crate::error::IpcError;
+use crate::error::{redact, IpcError};
 use crate::state::LlmFactory;
 
 /// 喂给模型的官网正文上限：够覆盖首页+关于+产品+FAQ+联系，又不会顶爆上下文。
@@ -263,7 +263,7 @@ impl EntityCardService {
             fields.validate().map_err(|error| error.user_message())
         })
         .await
-        .map_err(|error| error.user_message())?;
+        .map_err(|error| redact(&error.user_message()))?;
 
         Ok((merge_with_baseline(baseline, extracted, project), config))
     }

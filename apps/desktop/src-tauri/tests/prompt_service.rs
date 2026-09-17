@@ -12,7 +12,7 @@ use geo_domain::{
 use geo_llm::LlmProvider;
 use support::{
     now, offline_state, prompt_state, seeded_project, state_with_transport, test_state,
-    OfflineTransport, ScriptedTransport,
+    KeyEchoingTransport, OfflineTransport, ScriptedTransport, TEST_API_KEY,
 };
 
 use geo_desktop_lib::services::templates::{industry_templates, PromptTemplate, GENERIC_TEMPLATES};
@@ -135,6 +135,24 @@ async fn offline_generation_still_reaches_sixty_and_records_the_degradation() {
             .any(|item| item.source == PromptSource::Rewritten),
         "本地口语化改写仍应生效"
     );
+}
+
+/// 降级原因会落进 `prompt_sets.notes` 并在 UI 展示，因此上游回显的 Key
+/// 必须在这里就被抹掉（AGENTS 规则 3：日志与错误信息不得出现 Key）。
+#[tokio::test]
+async fn degradation_notes_redact_a_key_echoed_by_the_gateway() {
+    let (state, _server, _secrets) = state_with_transport(KeyEchoingTransport::new()).await;
+    let project = seeded_project(&state).await;
+
+    let set = PromptService::from_state(&state)
+        .generate(project.id, GenerateOptions::default(), now())
+        .await
+        .expect("上游失败时降级为纯模板");
+
+    let notes = set.notes.clone().expect("降级要写原因");
+    assert!(notes.contains("降级"), "{notes}");
+    assert!(!notes.contains(TEST_API_KEY), "notes 泄漏了 Key：{notes}");
+    assert!(notes.contains("***"), "应留下脱敏痕迹：{notes}");
 }
 
 #[tokio::test]

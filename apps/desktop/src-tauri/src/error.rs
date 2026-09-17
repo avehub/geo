@@ -30,7 +30,10 @@ impl IpcError {
         }
     }
 
+    /// 附带结构化上下文。detail 里可能原样夹带上游响应片段，因此同样要脱敏。
     pub fn with_detail(mut self, detail: serde_json::Value) -> Self {
+        let mut detail = detail;
+        redact_value(&mut detail);
         self.detail = Some(detail);
         self
     }
@@ -97,10 +100,24 @@ impl From<std::io::Error> for IpcError {
     }
 }
 
+/// 递归抹掉 JSON 里所有字符串中的密钥样式片段。
+fn redact_value(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::String(text) => *text = redact(text),
+        serde_json::Value::Array(items) => items.iter_mut().for_each(redact_value),
+        serde_json::Value::Object(map) => map.values_mut().for_each(redact_value),
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
+    }
+}
+
 /// 抹掉形如 `sk-...` 的密钥样式片段。
 ///
 /// 不用正则：这段代码在错误路径上，越简单越不容易自己出问题。
-fn redact(message: &str) -> String {
+///
+/// **凡是把上游错误文案送去展示、落库或打日志的地方都要过这一道**：
+/// `IpcError` 只是最后一关，`LlmTestResult.message`、`prompt_sets.notes`
+/// 这些不经过 `IpcError` 的出口同样是泄漏面（AGENTS 规则 3）。
+pub(crate) fn redact(message: &str) -> String {
     const PREFIX: &str = "sk-";
     let chars: Vec<char> = message.chars().collect();
     let prefix: Vec<char> = PREFIX.chars().collect();
@@ -197,6 +214,18 @@ mod tests {
         assert_eq!(json["code"], "state/conflict");
         assert_eq!(json["message"], "操作冲突：重复导入");
         assert!(json["detail"].is_null());
+    }
+
+    #[test]
+    fn detail_json_is_redacted_too() {
+        let error = IpcError::new("llm/bad_response", "调用失败").with_detail(serde_json::json!({
+            "echo": "上游返回 Bearer sk-leaked-key",
+            "nested": { "list": ["sk-another-token", 3] }
+        }));
+        let dumped = serde_json::to_string(&error.detail.expect("有 detail")).expect("可序列化");
+        assert!(!dumped.contains("sk-leaked-key"), "{dumped}");
+        assert!(!dumped.contains("sk-another-token"), "{dumped}");
+        assert!(dumped.contains("***"), "{dumped}");
     }
 
     #[test]

@@ -28,7 +28,7 @@ use geo_store::{
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::error::IpcError;
+use crate::error::{redact, IpcError};
 use crate::services::templates::{
     co_mention_count, colloquial_variants, comparison_prompts, expand_with_context,
     item_from_model, prune_unnamed_competitors, select_items, templates_for, PromptContext,
@@ -366,7 +366,7 @@ impl PromptService {
                 Ok(())
             })
             .await
-            .map_err(|error| error.user_message())?;
+            .map_err(|error| redact(&error.user_message()))?;
 
         let allowed: HashSet<IntentCategory> = intents.iter().copied().collect();
         let items = parsed
@@ -413,7 +413,7 @@ impl PromptService {
             Ok(())
         })
         .await
-        .map_err(|error| error.user_message())?;
+        .map_err(|error| redact(&error.user_message()))?;
 
         // 只对得上号的改写才收：模型抄错原文时，宁可丢掉也不要来路不明的条目。
         let mut items = Vec::new();

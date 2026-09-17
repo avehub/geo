@@ -41,7 +41,8 @@ tempfile = "3"
 thiserror = "2.0"
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "time", "sync", "fs"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
 url = { version = "2.5", features = ["serde"] }
 uuid = { version = "1.26", features = ["v4", "serde"] }
 wiremock = "0.6"
@@ -49,7 +50,6 @@ wiremock = "0.6"
 tauri = { version = "2.11", features = [] }
 tauri-build = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
-tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
 
 [profile.release]

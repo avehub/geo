@@ -153,7 +153,8 @@ pub enum SampleSizeGrade { Sufficient /*>=60*/, Directional /*30..59*/, Insuffic
 
 **FR-B2 桌面壳**
 - Tauri 2 应用，窗口标题「稿得快 GEO」，默认尺寸 1280×800，最小 1024×700；`devUrl = http://localhost:1420`，`frontendDist = ../ui/dist`。
-- 插件：`tauri-plugin-log`（滚动文件 + stdout）、`tauri-plugin-dialog`（导入导出选路径）、`tauri-plugin-opener`（打开外部链接）。
+- 插件：`tauri-plugin-dialog`（导入导出选路径，**导出必须走它**：WKWebView 不支持 `<a download href="blob:">`，前端点下载会静默失败）、`tauri-plugin-opener`（打开外部链接）。
+- 日志：`tracing` + `tracing-appender`，输出 stdout + `app_log_dir` 下的每日滚动文件（`gdk-geo.log.YYYY-MM-DD`）；级别开关 `GEO_LOG` > `RUST_LOG` > `info`。**不使用 `tauri-plugin-log`**，理由见 §7 决策记录。
 - capability 文件最小权限：仅允许本项目使用的命令与上述插件动作。
 
 **FR-B3 存储**
@@ -174,7 +175,7 @@ pub enum SampleSizeGrade { Sufficient /*>=60*/, Directional /*30..59*/, Insuffic
 `SettingsRepo` 读写强类型 `AppSettings { proxy: Option<ProxyConfig>, concurrency: ConcurrencyConfig, rate_limit: RateLimitConfig, model: ModelConfig, language: String, notify: NotifyConfig }`，缺失键回落默认值；`ModelConfig { provider: LlmProvider, model: String, secret_ref: String, temperature: f32, timeout_secs: u64 }`。P0-B 的调度器直接复用 `ConcurrencyConfig`/`RateLimitConfig`，本期只存取不生效。
 
 **FR-B6 统一错误与日志**
-`geo_domain::GeoError`（`thiserror`）为跨层错误；`geo-desktop` 在命令边界转 `IpcError`。`tracing` 全链路，日志中禁止出现 API Key 与完整回答正文（截断至 200 字符）。
+`geo_domain::GeoError`（`thiserror`）为跨层错误；`geo-desktop` 在命令边界转 `IpcError`。`tracing` 全链路，日志中禁止出现 API Key 与完整回答正文（截断至 200 字符）。脱敏函数 `error::redact` 是**唯一出口**：凡是把上游错误文案送去展示（`LlmTestResult.message`）、落库（`prompt_sets.notes`）或打日志的地方都要过它，`IpcError` 只是最后一道。
 
 **FR-B7 Docker 与 CI**
 - `docker/dev.Dockerfile`：`debian:trixie` + rust stable（rustup）+ node 24.21.0 + pnpm 12.4.2 + `libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev pkg-config build-essential`。
@@ -324,6 +325,8 @@ pub struct HttpResponse { pub status: u16, pub body: String }
 | 去重算法 | 字符 3-gram Jaccard ≥0.85 | 纯本地、确定性强、可单测；embedding 留 P1 |
 | 引擎采集 | 本期不实现，只留接缝 | 用户选择离线优先；避免风控与合规风险提前引入 |
 | 包管理 | pnpm 12.4.2（`packageManager` 字段锁定） | 单仓多包、硬链接省空间、版本随项目走 |
+| 日志 | `tracing` + `tracing-appender`，**不用** `tauri-plugin-log` | 两者都要独占全局 `log` logger：`tracing-subscriber::init()` 会装 `LogTracer`，随后插件 `attach_logger` 必然失败 → `Builder::run` 返回 `Err` → 启动即 panic（P0-A 收尾实测复现：`PluginInitialization("log", ...)`）。单一管线还能把依赖的 `log` 记录一并写进同一个滚动文件，P0-D 诊断打包只用收一个目录 |
+| 文件导出 | Rust 命令 `export_write_file`（dialog 选路径 + `tokio::fs::write`） | WKWebView 不实现 blob 的 `download` 属性，前端自建 Blob 点击后静默无反应；收口到 Rust 侧还能统一补 BOM |
 
 ---
 

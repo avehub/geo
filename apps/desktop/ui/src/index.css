@@ -1,0 +1,34 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* macOS 原生窗口：顶部拖拽区 */
+.geo-titlebar {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.geo-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.geo-page {
+  padding: 16px 20px 32px;
+}

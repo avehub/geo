@@ -551,7 +551,7 @@ impl PromptService {
         Ok(report)
     }
 
-    /// 导出 CSV。**不带 BOM**：BOM 由前端下载时补（见 `ui/src/components/CsvToolbar.tsx`），
+    /// 导出 CSV。**不带 BOM**：BOM 由落盘命令统一补（见 `ipc/export.rs::export_body`），
     /// 两边都加会变成两个不可见字符，Excel 反而识别不了。
     pub async fn export_csv(&self, id: PromptSetId) -> Result<String, IpcError> {
         let set = self.get(id).await?;

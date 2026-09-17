@@ -145,6 +145,25 @@ describe('PromptSetPage', () => {
     expect(screen.getByText(/共 2 行/)).toBeInTheDocument();
   });
 
+  it('导出预览点「下载文件」走系统对话框命令', async () => {
+    stub('sufficient');
+    mockInvoke.stubAlways('export_write_file', () => '/tmp/prompt-set-1-prompts.csv');
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('第 1 版题库');
+
+    await user.click(screen.getByRole('button', { name: /导出 CSV/ }));
+    await screen.findByDisplayValue(/text,intent,weight/);
+    await user.click(screen.getByRole('button', { name: /下载文件/ }));
+
+    await waitFor(() => expect(mockInvoke.callsOf('export_write_file')).toHaveLength(1));
+    const args = mockInvoke.lastArgsOf('export_write_file')!;
+    expect(args.with_bom).toBe(true);
+    expect(String(args.default_name)).toMatch(/-prompts\.csv$/);
+    expect(String(args.content)).toContain('text,intent,weight');
+    expect(await screen.findByText(/CSV 已导出/)).toBeInTheDocument();
+  });
+
   it('点击生成题库展示进度并在完成后刷新条数', async () => {
     stub('sufficient');
     const user = userEvent.setup();

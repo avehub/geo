@@ -6,6 +6,7 @@
 //! `ipc/internal` 拒绝，加命令时两边一起改。
 
 pub mod entity_card;
+pub mod export;
 pub mod project;
 pub mod prompt;
 pub mod secret;
@@ -22,6 +23,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         project::project_delete,
         project::project_export,
         project::project_import,
+        project::project_export_competitors_csv,
+        project::project_export_assets_csv,
         project::competitor_upsert,
         project::competitor_list,
         project::competitor_delete,
@@ -42,6 +45,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         prompt::prompt_set_dedupe,
         prompt::prompt_set_export_csv,
         prompt::prompt_set_import_csv,
+        export::export_write_file,
         settings::settings_get,
         settings::settings_update,
         secret::secret_set,

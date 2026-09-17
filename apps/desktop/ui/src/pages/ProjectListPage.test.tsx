@@ -108,6 +108,82 @@ describe('ProjectListPage', () => {
     expect(mockInvoke.lastArgsOf('project_archive')).toEqual({ id: 'p-hongyu', archived: true });
   });
 
+  it('行内「导出」菜单可分别导出竞品 CSV 与资产 CSV', async () => {
+    stubList();
+    mockInvoke.stubAlways(
+      'project_export_competitors_csv',
+      () => 'name,aliases,website,note,position\n南方泵业,,,,0',
+    );
+    mockInvoke.stubAlways(
+      'project_export_assets_csv',
+      () => 'kind,url,title,note\nowned_page,https://www.hongyu-pump.example,,',
+    );
+    mockInvoke.stubAlways('export_write_file', () => '/tmp/宏宇泵业-竞品.csv');
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectListPage />);
+    await screen.findByText('宏宇泵业 GEO');
+
+    const row = screen.getByText('宏宇泵业 GEO').closest('tr') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: /导\s*出/ }));
+    await user.click(await screen.findByText('竞品 CSV'));
+
+    await waitFor(() =>
+      expect(mockInvoke.callsOf('project_export_competitors_csv')).toHaveLength(1),
+    );
+    expect(mockInvoke.lastArgsOf('project_export_competitors_csv')).toEqual({ id: 'p-hongyu' });
+    // WKWebView 不支持 blob 下载：必须走系统对话框命令，且 CSV 带 BOM
+    expect(mockInvoke.callsOf('export_write_file').length).toBeGreaterThan(0);
+    expect(mockInvoke.lastArgsOf('export_write_file')).toEqual({
+      default_name: '宏宇泵业-竞品.csv',
+      content: 'name,aliases,website,note,position\n南方泵业,,,,0',
+      with_bom: true,
+    });
+    expect(await screen.findByText('竞品 CSV 已导出')).toBeInTheDocument();
+
+    await user.click(within(row).getByRole('button', { name: /导\s*出/ }));
+    await user.click(await screen.findByText('资产 CSV'));
+
+    await waitFor(() => expect(mockInvoke.callsOf('project_export_assets_csv')).toHaveLength(1));
+    expect(await screen.findByText('资产 CSV 已导出')).toBeInTheDocument();
+  });
+
+  it('行内「导出」菜单的项目 JSON 只导出该行项目', async () => {
+    stubList();
+    mockInvoke.stubAlways('project_export', () => ({ project: valve }));
+    mockInvoke.stubAlways('export_write_file', () => '/tmp/南方阀门-geo-项目档案.json');
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectListPage />);
+    await screen.findByText('南方阀门项目');
+
+    const row = screen.getByText('南方阀门项目').closest('tr') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: /导\s*出/ }));
+    await user.click(await screen.findByText('项目 JSON（全量）'));
+
+    await waitFor(() => expect(mockInvoke.callsOf('project_export')).toHaveLength(1));
+    expect(mockInvoke.lastArgsOf('project_export')).toEqual({ id: 'p-valve' });
+    expect(mockInvoke.lastArgsOf('export_write_file')).toMatchObject({
+      default_name: '南方阀门-geo-项目档案.json',
+      with_bom: false,
+    });
+    expect(await screen.findByText('项目 JSON 已导出')).toBeInTheDocument();
+  });
+
+  it('用户在另存为对话框里取消时不报成功', async () => {
+    stubList();
+    mockInvoke.stubAlways('project_export_competitors_csv', () => 'name,aliases,website,note,position');
+    mockInvoke.stubAlways('export_write_file', () => null);
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectListPage />);
+    await screen.findByText('宏宇泵业 GEO');
+
+    const row = screen.getByText('宏宇泵业 GEO').closest('tr') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: /导\s*出/ }));
+    await user.click(await screen.findByText('竞品 CSV'));
+
+    await waitFor(() => expect(mockInvoke.callsOf('export_write_file')).toHaveLength(1));
+    expect(screen.queryByText('竞品 CSV 已导出')).not.toBeInTheDocument();
+  });
+
   it('新建项目按钮存在且可用', async () => {
     stubList();
     renderWithProviders(<ProjectListPage />);

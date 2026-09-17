@@ -4,7 +4,9 @@
 
 mod support;
 
-use geo_domain::{AssetKind, CompetitorDraft, CompetitorId, Industry, Language, ProjectDraft};
+use geo_domain::{
+    AssetKind, CompetitorDraft, CompetitorId, Industry, Language, ProjectDraft, ProjectId,
+};
 use geo_store::ProjectFilter;
 use support::{now, sample_draft, seeded_project, test_state, OfflineTransport};
 
@@ -329,6 +331,51 @@ async fn asset_add_validates_the_url_and_lists_by_project() {
 
     svc.delete_asset(zhihu.id).await.unwrap();
     assert_eq!(svc.list_assets(project.id).await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn competitor_and_asset_csv_exports_carry_headers_and_rows() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let svc = service(&state);
+    let project = seeded_project(&state).await;
+
+    // 竞品 CSV：表头固定，行按 position 排序（spec FR-M1-6）
+    let competitors = svc
+        .export_competitors_csv(project.id)
+        .await
+        .expect("竞品 CSV 可导出");
+    let rows: Vec<&str> = competitors.lines().collect();
+    assert_eq!(rows[0], "name,aliases,website,note,position");
+    assert_eq!(rows.len(), 4, "表头 + 3 家竞品：{competitors}");
+    assert!(
+        rows[1].starts_with("南方泵业,"),
+        "第一行应是 position=0 的竞品：{}",
+        rows[1]
+    );
+    assert!(
+        !competitors.starts_with('\u{FEFF}'),
+        "BOM 由前端下载时补，服务层不带"
+    );
+
+    // 资产 CSV：kind 用 snake_case，便于回读与人工编辑
+    let assets = svc
+        .export_assets_csv(project.id)
+        .await
+        .expect("资产 CSV 可导出");
+    let asset_rows: Vec<&str> = assets.lines().collect();
+    assert_eq!(asset_rows[0], "kind,url,title,note");
+    assert_eq!(asset_rows.len(), 3, "表头 + 2 条自有页面资产：{assets}");
+    assert!(
+        asset_rows[1].starts_with("owned_page,"),
+        "kind 应为 snake_case：{}",
+        asset_rows[1]
+    );
+
+    let missing = svc
+        .export_competitors_csv(ProjectId::new())
+        .await
+        .expect_err("不存在的项目要给可读错误");
+    assert_eq!(missing.code, "project/not_found");
 }
 
 #[tokio::test]

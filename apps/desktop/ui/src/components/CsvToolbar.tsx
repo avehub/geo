@@ -12,16 +12,6 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : '未知错误';
 }
 
-function download(filename: string, content: string, mime = 'text/csv;charset=utf-8') {
-  const blob = new Blob([`\ufeff${content}`], { type: mime }); // BOM：Excel 打开中文不乱码
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
 export interface CsvToolbarProps {
   setId: string;
   filenamePrefix: string;
@@ -72,6 +62,18 @@ export default function CsvToolbar({ setId, filenamePrefix, onChanged }: CsvTool
     onError: (error) => message.error(describeError(error)),
   });
 
+  /** 走系统「另存为」对话框写文件；用户取消则不提示成功。 */
+  async function downloadCsv() {
+    try {
+      const path = await client.exportWriteFile(`${filenamePrefix}-prompts.csv`, csv, true);
+      if (path === null) return;
+      message.success(`CSV 已导出：${path}`);
+      setMode(null);
+    } catch (error) {
+      message.error(describeError(error));
+    }
+  }
+
   const lineCount = csv.trim() === '' ? 0 : csv.trim().split('\n').length;
 
   return (
@@ -102,11 +104,7 @@ export default function CsvToolbar({ setId, filenamePrefix, onChanged }: CsvTool
         onCancel={() => setMode(null)}
         okText="下载文件"
         cancelText="关闭"
-        onOk={() => {
-          download(`${filenamePrefix}-prompts.csv`, csv);
-          message.success('CSV 已下载');
-          setMode(null);
-        }}
+        onOk={() => void downloadCsv()}
       >
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           共 {lineCount} 行（含表头 {PROMPT_CSV_HEADER.length} 列），UTF-8 带 BOM，可直接用 Excel 打开。

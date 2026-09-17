@@ -1,9 +1,18 @@
-import { Button, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Button, Dropdown, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 
 import type { Project } from '../api/types';
 import { INDUSTRY_LABELS } from '../api/types';
+
+/** 行内导出目标：项目全量 JSON、竞品 CSV、资产 CSV（spec FR-M1-6）。 */
+export type ProjectExportKind = 'json' | 'competitors_csv' | 'assets_csv';
+
+const EXPORT_MENU_ITEMS = [
+  { key: 'json', label: '项目 JSON（全量）' },
+  { key: 'competitors_csv', label: '竞品 CSV' },
+  { key: 'assets_csv', label: '资产 CSV' },
+];
 
 export interface ProjectTableProps {
   projects: Project[];
@@ -12,6 +21,7 @@ export interface ProjectTableProps {
   onOpenPrompts: (project: Project) => void;
   onToggleArchive: (project: Project) => void;
   onDelete: (project: Project) => void;
+  onExport: (project: Project, kind: ProjectExportKind) => void;
 }
 
 function industryLabel(project: Project): string {
@@ -27,6 +37,7 @@ export default function ProjectTable({
   onOpenPrompts,
   onToggleArchive,
   onDelete,
+  onExport,
 }: ProjectTableProps) {
   const columns: ColumnsType<Project> = [
     {
@@ -85,7 +96,7 @@ export default function ProjectTable({
     {
       title: '操作',
       key: 'actions',
-      width: 260,
+      width: 330,
       render: (_, project) => (
         <Space size={4}>
           <Button size="small" type="link" onClick={() => onOpenEntityCard(project)}>
@@ -97,6 +108,14 @@ export default function ProjectTable({
           <Button size="small" onClick={() => onToggleArchive(project)}>
             {project.status === 'archived' ? '取消归档' : '归档'}
           </Button>
+          <Dropdown
+            menu={{
+              items: EXPORT_MENU_ITEMS,
+              onClick: ({ key }) => onExport(project, key as ProjectExportKind),
+            }}
+          >
+            <Button size="small">导出</Button>
+          </Dropdown>
           <Tooltip title="删除后不可恢复">
             <Button size="small" danger onClick={() => onDelete(project)}>
               删除

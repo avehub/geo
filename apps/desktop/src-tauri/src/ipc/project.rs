@@ -97,6 +97,24 @@ pub async fn project_export(
     service(&state).export_json(id, Utc::now()).await
 }
 
+/// 竞品 CSV 导出（spec FR-M1-6）。返回不带 BOM 的文本，BOM 由前端下载时补。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn project_export_competitors_csv(
+    state: State<'_, AppState>,
+    id: ProjectId,
+) -> Result<String, IpcError> {
+    service(&state).export_competitors_csv(id).await
+}
+
+/// 资产 CSV 导出（spec FR-M1-6）。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn project_export_assets_csv(
+    state: State<'_, AppState>,
+    id: ProjectId,
+) -> Result<String, IpcError> {
+    service(&state).export_assets_csv(id).await
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub async fn project_import(
     state: State<'_, AppState>,

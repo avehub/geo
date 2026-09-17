@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import * as client from '../api/client';
 import { IpcRequestError } from '../api/client';
 import type { Project, ProjectFilter } from '../api/types';
-import ProjectTable from '../components/ProjectTable';
+import ProjectTable, { type ProjectExportKind } from '../components/ProjectTable';
 
 function describeError(error: unknown): string {
   if (error instanceof IpcRequestError) return error.userMessage;
@@ -57,20 +57,29 @@ export default function ProjectListPage() {
     onError: (error) => message.error(describeError(error)),
   });
 
-  const exportMutation = useMutation({
-    mutationFn: (id: string) => client.projectExport(id),
-    onSuccess: (payload) => {
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `${payload.project.brand_name}-geo-项目档案.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      message.success('项目 JSON 已导出');
-    },
-    onError: (error) => message.error(describeError(error)),
-  });
+  async function handleExport(project: Project, kind: ProjectExportKind) {
+    try {
+      if (kind === 'json') {
+        const payload = await client.projectExport(project.id);
+        const saved = await client.exportWriteFile(
+          `${project.brand_name}-geo-项目档案.json`,
+          JSON.stringify(payload, null, 2),
+          false,
+        );
+        if (saved !== null) message.success('项目 JSON 已导出');
+        return;
+      }
+      const csv =
+        kind === 'competitors_csv'
+          ? await client.projectExportCompetitorsCsv(project.id)
+          : await client.projectExportAssetsCsv(project.id);
+      const label = kind === 'competitors_csv' ? '竞品' : '资产';
+      const saved = await client.exportWriteFile(`${project.brand_name}-${label}.csv`, csv, true);
+      if (saved !== null) message.success(`${label} CSV 已导出`);
+    } catch (error) {
+      message.error(describeError(error));
+    }
+  }
 
   function confirmDelete(project: Project) {
     modal.confirm({
@@ -136,18 +145,11 @@ export default function ProjectListPage() {
           archiveMutation.mutate({ id: project.id, archived: project.status !== 'archived' })
         }
         onDelete={confirmDelete}
+        onExport={(project, kind) => void handleExport(project, kind)}
       />
 
       <Typography.Paragraph type="secondary" style={{ marginTop: 12, fontSize: 12 }}>
-        提示：右键行可导出项目 JSON（含实体卡、竞品、资产与题库）。
-        <Button
-          type="link"
-          size="small"
-          disabled={(listQuery.data ?? []).length === 0}
-          onClick={() => exportMutation.mutate((listQuery.data ?? [])[0].id)}
-        >
-          导出第一个项目
-        </Button>
+        提示：每行「导出」可下载项目 JSON（含实体卡、竞品、资产与题库），或单独的竞品 / 资产 CSV。
       </Typography.Paragraph>
     </div>
   );

@@ -7,8 +7,8 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use geo_domain::{
-    Competitor, CompetitorId, EntityCard, EntityCardRevision, GeoError, Project, ProjectAsset,
-    ProjectId, PromptId, PromptSet, PromptSetId, RevisionId,
+    assets_to_csv, competitors_to_csv, Competitor, CompetitorId, EntityCard, EntityCardRevision,
+    GeoError, Project, ProjectAsset, ProjectId, PromptId, PromptSet, PromptSetId, RevisionId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -168,4 +168,22 @@ impl ProjectService {
         tracing::info!(project_id = %project_id, ?counts, "项目导入完成");
         Ok(ImportReport { project_id, counts })
     }
+
+    /// 竞品 CSV 导出（spec FR-M1-6）。行序即 `position` 序，与列表页一致。
+    pub async fn export_competitors_csv(&self, id: ProjectId) -> Result<String, IpcError> {
+        let detail = self.detail(id).await?;
+        Ok(without_bom(competitors_to_csv(&detail.competitors)?))
+    }
+
+    /// 资产 CSV 导出（spec FR-M1-6）。`kind` 用 snake_case，便于人工编辑后回读。
+    pub async fn export_assets_csv(&self, id: ProjectId) -> Result<String, IpcError> {
+        let detail = self.detail(id).await?;
+        Ok(without_bom(assets_to_csv(&detail.assets)?))
+    }
+}
+
+/// 导出内容**不带 BOM**：BOM 由前端下载时补（见 `ui/src/components/CsvToolbar.tsx`），
+/// 与 `PromptService::export_csv` 保持同一口径，避免两处导出行为分叉。
+fn without_bom(csv: String) -> String {
+    csv.strip_prefix('\u{FEFF}').unwrap_or(&csv).to_string()
 }

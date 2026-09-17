@@ -44,6 +44,8 @@ export const IPC_COMMANDS = [
   'project_delete',
   'project_export',
   'project_import',
+  'project_export_competitors_csv',
+  'project_export_assets_csv',
   'entity_card_autobuild',
   'entity_card_get',
   'entity_card_update_field',
@@ -71,6 +73,7 @@ export const IPC_COMMANDS = [
   'secret_delete',
   'llm_provider_test',
   'llm_providers',
+  'export_write_file',
 ] as const;
 
 export type IpcCommand = (typeof IPC_COMMANDS)[number];
@@ -146,6 +149,14 @@ export const projectExport = (id: string) =>
 
 export const projectImport = (payload: string) =>
   call<ImportReport>('project_import', { payload });
+
+/** 竞品 CSV（不带 BOM，下载时由前端补）。spec FR-M1-6。 */
+export const projectExportCompetitorsCsv = (id: string) =>
+  call<string>('project_export_competitors_csv', { id });
+
+/** 资产 CSV（不带 BOM，下载时由前端补）。spec FR-M1-6。 */
+export const projectExportAssetsCsv = (id: string) =>
+  call<string>('project_export_assets_csv', { id });
 
 // ---------------------------------------------------------------------------
 // M1 实体卡
@@ -255,3 +266,21 @@ export const llmProviderTest = (provider: string) =>
   call<LlmTestResult>('llm_provider_test', { provider });
 
 export const llmProviders = () => call<ProviderInfo[]>('llm_providers');
+
+// ---------------------------------------------------------------------------
+// 桌面壳：文件导出
+// ---------------------------------------------------------------------------
+
+/**
+ * 弹「另存为」对话框并写入文件，返回最终路径；用户取消返回 `null`。
+ *
+ * 导出**不能**用 `<a download href="blob:">`：macOS 的 WKWebView 不实现
+ * blob 下载，点击后静默失败（spec FR-B2 因此要求走 dialog 插件）。
+ * CSV 传 `withBom = true`，Excel 打开中文才不乱码。
+ */
+export const exportWriteFile = (defaultName: string, content: string, withBom: boolean) =>
+  call<string | null>('export_write_file', {
+    default_name: defaultName,
+    content,
+    with_bom: withBom,
+  });

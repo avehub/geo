@@ -515,6 +515,47 @@ async fn dedupe_command_merges_near_duplicates_and_reports_them() {
 }
 
 #[tokio::test]
+async fn dedupe_set_report_matches_what_is_actually_stored() {
+    let (state, _server, _secrets) = prompt_state().await;
+    let project = seeded_project(&state).await;
+    let svc = service(&state);
+    let set = svc
+        .generate(project.id, GenerateOptions::default(), now())
+        .await
+        .unwrap();
+    let competitors = geo_desktop_lib::services::ProjectService::new(state.pool.clone())
+        .list_competitors(project.id)
+        .await
+        .unwrap();
+
+    // 人工编辑/导入的常见遗留：文本只点名首个竞品，competitor_ids 里却多挂了一个
+    let victim = set
+        .items
+        .iter()
+        .find(|item| item.text.contains(&competitors[0].name))
+        .expect("生成结果里应有点名首个竞品的条目")
+        .clone();
+    let mut stale = victim.clone();
+    stale.competitor_ids.push(competitors[1].id);
+    svc.update_items_bulk(vec![stale]).await.unwrap();
+
+    let report = svc.dedupe_set(set.id, now()).await.unwrap();
+    let stored = svc.get(set.id).await.unwrap();
+
+    assert_eq!(
+        report.kept, stored.items,
+        "去重报告必须与实际落库结果一致，否则前端按报告展示会带出没点名的竞品 ID"
+    );
+    assert!(
+        !report
+            .kept
+            .iter()
+            .any(|item| item.id == victim.id && item.competitor_ids.contains(&competitors[1].id)),
+        "报告里不得残留未点名的竞品 ID"
+    );
+}
+
+#[tokio::test]
 async fn rename_keeps_the_hash_and_delete_removes_the_snapshot() {
     let (state, _server, _secrets) = offline_state().await;
     let project = seeded_project(&state).await;

@@ -536,12 +536,15 @@ impl PromptService {
         now: DateTime<Utc>,
     ) -> Result<DedupeReport, IpcError> {
         let set = self.get(id).await?;
-        let report = dedupe(set.items.clone());
+        let mut report = dedupe(set.items.clone());
         let context = self.context_of(set.project_id).await?;
-        let mut kept = report.kept.clone();
+        let mut kept = std::mem::take(&mut report.kept);
         prune_unnamed_competitors(&mut kept, &context);
         reindex(&mut kept, id);
-        self.sets().replace_items(id, kept, now).await?;
+        let stored = self.sets().replace_items(id, kept, now).await?;
+        // 报告描述「落库后的样子」：竞品 ID 清理与 position 重排都发生在 dedupe 之后，
+        // 回填库里的条目，前端才不会按报告展示出已被清掉的竞品 ID。
+        report.kept = stored.items;
         tracing::info!(
             set_id = %id,
             removed = report.removed_count(),

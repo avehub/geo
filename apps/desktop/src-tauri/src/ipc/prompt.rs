@@ -1,12 +1,14 @@
 //! M2 题库命令：生成、版本快照管理、单条编辑、去重与 CSV 往返。
 
 use chrono::Utc;
-use geo_domain::{CsvImportResult, DedupeReport, ProjectId, PromptItem, PromptSet, PromptSetId};
+use geo_domain::{
+    CsvImportResult, DedupeReport, ProjectId, PromptId, PromptItem, PromptSet, PromptSetId,
+};
 use geo_store::PromptSetSummary;
 use tauri::State;
 
 use crate::error::IpcError;
-use crate::services::{GenerateOptions, PromptService};
+use crate::services::{GenerateOptions, PromptDraft, PromptService};
 use crate::state::AppState;
 
 #[tauri::command(rename_all = "snake_case")]
@@ -59,6 +61,30 @@ pub async fn prompt_item_update(
     item: PromptItem,
 ) -> Result<PromptItem, IpcError> {
     PromptService::from_state(&state).update_item(item).await
+}
+
+/// 人工新增条目。返回整份快照：前端直接覆盖缓存，避免自己拼 position。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn prompt_item_add(
+    state: State<'_, AppState>,
+    set_id: PromptSetId,
+    items: Vec<PromptDraft>,
+) -> Result<PromptSet, IpcError> {
+    PromptService::from_state(&state)
+        .add_items(set_id, items, Utc::now())
+        .await
+}
+
+/// 批量删除条目。同样返回整份快照（position 与内容哈希都变了）。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn prompt_item_delete(
+    state: State<'_, AppState>,
+    set_id: PromptSetId,
+    ids: Vec<PromptId>,
+) -> Result<PromptSet, IpcError> {
+    PromptService::from_state(&state)
+        .delete_items(set_id, &ids, Utc::now())
+        .await
 }
 
 #[tauri::command(rename_all = "snake_case")]

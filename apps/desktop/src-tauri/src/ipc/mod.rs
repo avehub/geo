@@ -42,6 +42,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         prompt::prompt_set_rename,
         prompt::prompt_set_delete,
         prompt::prompt_item_update,
+        prompt::prompt_item_add,
+        prompt::prompt_item_delete,
         prompt::prompt_set_dedupe,
         prompt::prompt_set_export_csv,
         prompt::prompt_set_import_csv,

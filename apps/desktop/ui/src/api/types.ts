@@ -280,6 +280,15 @@ export interface PromptItem {
   position: number;
 }
 
+/** 人工新增条目的入参；`source` 由后端固定为 `manual`，前端不能自称模板/AI 生成。 */
+export interface PromptDraft {
+  text: string;
+  intent: IntentCategory;
+  weight?: number;
+  group_name?: string | null;
+  repeat_count?: number;
+}
+
 export interface PromptSet {
   id: string;
   project_id: string;
@@ -316,7 +325,7 @@ export interface GenerateOptions {
 
 export interface DedupeReport {
   kept: PromptItem[];
-  removed: { item: PromptItem; reason: string; merged_into: string }[];
+  removed: { item: PromptItem; merged_into: string }[];
   duplicate_pairs: number;
 }
 

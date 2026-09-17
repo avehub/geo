@@ -17,8 +17,8 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use geo_domain::{
     compliance, dedupe, prompts_from_csv, prompts_to_csv, CompetitorId, CsvImportResult,
-    DedupeReport, GeoError, Industry, IntentCategory, Project, ProjectId, PromptItem, PromptSet,
-    PromptSetId, PromptSource, MAX_PROMPT_CHARS, MAX_REPEAT_COUNT,
+    DedupeReport, GeoError, Industry, IntentCategory, Project, ProjectId, PromptId, PromptItem,
+    PromptSet, PromptSetId, PromptSource, MAX_PROMPT_CHARS, MAX_REPEAT_COUNT,
 };
 use geo_llm::{chat_json, ChatMessage, ChatRequest, LlmClient};
 use geo_store::{
@@ -62,6 +62,53 @@ const MAX_POOL_FACTOR: usize = 6;
 struct ExpansionItem {
     text: String,
     intent: IntentCategory,
+}
+
+/// 人工新增条目的入参（spec FR-M2-6「增」）。
+///
+/// 只收前端能填的字段：`id`/`position`/`set_id` 由服务端分配，`source` 固定为
+/// `Manual`——来源是指标口径的一部分，不能让调用方自称「模板」或「AI 生成」。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PromptDraft {
+    pub text: String,
+    pub intent: IntentCategory,
+    #[serde(default = "default_weight")]
+    pub weight: u8,
+    /// 留空则按意图归组，与生成管线保持一致。
+    #[serde(default)]
+    pub group_name: Option<String>,
+    #[serde(default = "default_repeat_count")]
+    pub repeat_count: u8,
+}
+
+fn default_weight() -> u8 {
+    3
+}
+
+fn default_repeat_count() -> u8 {
+    1
+}
+
+impl PromptDraft {
+    fn into_item(self, set_id: PromptSetId) -> PromptItem {
+        let Self {
+            text,
+            intent,
+            weight,
+            group_name,
+            repeat_count,
+        } = self;
+        let mut item = PromptItem::new(set_id, text, intent).with_weight(weight);
+        item.source = PromptSource::Manual;
+        item.repeat_count = repeat_count;
+        item.group_name = Some(
+            group_name
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| intent.label_zh().to_string()),
+        );
+        item
+    }
 }
 
 /// 模型口语化改写的输出形态：`original` 必须原样回抄，才能对上号。
@@ -527,6 +574,71 @@ impl PromptService {
             .replace_items(set_id, items, set.created_at)
             .await?;
         last.ok_or_else(|| GeoError::validation("items", "没有要更新的条目").into())
+    }
+
+    /// 人工新增条目（spec FR-M2-6「增」）。
+    ///
+    /// 红线校验与 `validate` 都在写库之前跑完：一批里有一条不合格就整批不落库，
+    /// 免得用户看到「新增成功」却少了几条。
+    pub async fn add_items(
+        &self,
+        set_id: PromptSetId,
+        drafts: Vec<PromptDraft>,
+        now: DateTime<Utc>,
+    ) -> Result<PromptSet, IpcError> {
+        if drafts.is_empty() {
+            return Err(GeoError::validation("items", "没有要新增的条目").into());
+        }
+        let set = self.get(set_id).await?;
+        let mut items = set.items.clone();
+        for draft in drafts {
+            let item = draft.into_item(set_id);
+            item.validate()?;
+            if !compliance::is_clean(&item.text) {
+                return Err(IpcError::new(
+                    "compliance/violation",
+                    format!("内容命中广告法红线词：{}", violation_terms(&item.text)),
+                ));
+            }
+            items.push(item);
+        }
+        reindex(&mut items, set_id);
+        Ok(self.sets().replace_items(set_id, items, now).await?)
+    }
+
+    /// 批量删除条目（spec FR-M2-6「删」+ 批量选择）。
+    ///
+    /// 不允许把快照删空：空题库还会留在版本列表里，看起来像数据丢了；
+    /// 要清空请显式删除整个快照（与 CSV 空导入同一条纪律）。
+    pub async fn delete_items(
+        &self,
+        set_id: PromptSetId,
+        ids: &[PromptId],
+        now: DateTime<Utc>,
+    ) -> Result<PromptSet, IpcError> {
+        if ids.is_empty() {
+            return Err(GeoError::validation("ids", "没有要删除的条目").into());
+        }
+        let set = self.get(set_id).await?;
+        for id in ids {
+            if !set.items.iter().any(|item| item.id == *id) {
+                return Err(GeoError::not_found("prompt_item", id).into());
+            }
+        }
+        if ids.len() >= set.items.len() {
+            return Err(GeoError::validation(
+                "ids",
+                "不能把题库删空：要清空请删除整个题库快照",
+            )
+            .into());
+        }
+        let mut items: Vec<PromptItem> = set
+            .items
+            .into_iter()
+            .filter(|item| !ids.contains(&item.id))
+            .collect();
+        reindex(&mut items, set_id);
+        Ok(self.sets().replace_items(set_id, items, now).await?)
     }
 
     /// 对已落库的快照再跑一次去重（人工导入后常用）。

@@ -26,6 +26,7 @@ import type {
   ProjectDraft,
   ProjectExport,
   ProjectFilter,
+  PromptDraft,
   PromptItem,
   PromptSet,
   PromptSetSummary,
@@ -63,6 +64,8 @@ export const IPC_COMMANDS = [
   'prompt_set_rename',
   'prompt_set_delete',
   'prompt_item_update',
+  'prompt_item_add',
+  'prompt_item_delete',
   'prompt_set_dedupe',
   'prompt_set_export_csv',
   'prompt_set_import_csv',
@@ -236,6 +239,14 @@ export const promptSetDelete = (id: string) => call<void>('prompt_set_delete', {
 
 export const promptItemUpdate = (item: PromptItem) =>
   call<PromptItem>('prompt_item_update', { item });
+
+/** 人工新增条目，返回整份快照（position 与内容哈希都会重算）。 */
+export const promptItemAdd = (setId: string, items: PromptDraft[]) =>
+  call<PromptSet>('prompt_item_add', { set_id: setId, items });
+
+/** 批量删除条目，返回整份快照。 */
+export const promptItemDelete = (setId: string, ids: string[]) =>
+  call<PromptSet>('prompt_item_delete', { set_id: setId, ids });
 
 export const promptSetDedupe = (id: string) => call<DedupeReport>('prompt_set_dedupe', { id });
 

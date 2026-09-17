@@ -16,7 +16,7 @@ use support::{
 };
 
 use geo_desktop_lib::services::templates::{industry_templates, PromptTemplate, GENERIC_TEMPLATES};
-use geo_desktop_lib::services::{GenerateOptions, PromptService};
+use geo_desktop_lib::services::{GenerateOptions, PromptDraft, PromptService};
 
 fn service(state: &geo_desktop_lib::state::AppState) -> PromptService {
     PromptService::from_state(state)
@@ -553,6 +553,130 @@ async fn dedupe_set_report_matches_what_is_actually_stored() {
             .any(|item| item.id == victim.id && item.competitor_ids.contains(&competitors[1].id)),
         "报告里不得残留未点名的竞品 ID"
     );
+}
+
+fn draft(text: &str) -> PromptDraft {
+    PromptDraft {
+        text: text.to_string(),
+        intent: IntentCategory::ProfessionalLongTail,
+        weight: 4,
+        group_name: None,
+        repeat_count: 2,
+    }
+}
+
+#[tokio::test]
+async fn add_items_appends_manual_prompts_and_refreshes_the_snapshot() {
+    let (state, _server, _secrets) = prompt_state().await;
+    let project = seeded_project(&state).await;
+    let svc = service(&state);
+    let set = svc
+        .generate(project.id, GenerateOptions::default(), now())
+        .await
+        .unwrap();
+
+    let updated = svc
+        .add_items(set.id, vec![draft("宏宇泵业的潜水排污泵适合化粪池改造吗")], now())
+        .await
+        .unwrap();
+
+    assert_eq!(updated.items.len(), set.items.len() + 1);
+    let added = updated.items.last().expect("新条目应追加在末尾");
+    assert_eq!(added.source, PromptSource::Manual, "人工新增必须标成 manual");
+    assert_eq!(added.weight, 4);
+    assert_eq!(added.repeat_count, 2);
+    assert_eq!(
+        added.group_name.as_deref(),
+        Some(added.intent.label_zh()),
+        "没填分组时按意图归组，与生成管线一致"
+    );
+    assert_eq!(added.set_id, set.id);
+    let positions: Vec<i32> = updated.items.iter().map(|item| item.position).collect();
+    assert_eq!(positions, (0..positions.len() as i32).collect::<Vec<_>>());
+    assert_ne!(updated.content_hash, set.content_hash, "条目变了哈希必须变");
+
+    let stored = svc.get(set.id).await.unwrap();
+    assert_eq!(stored.items, updated.items, "新增必须落库");
+    assert_eq!(stored.content_hash, updated.content_hash);
+}
+
+#[tokio::test]
+async fn add_items_rejects_adlaw_violations_without_touching_the_set() {
+    let (state, _server, _secrets) = prompt_state().await;
+    let project = seeded_project(&state).await;
+    let svc = service(&state);
+    let set = svc
+        .generate(project.id, GenerateOptions::default(), now())
+        .await
+        .unwrap();
+
+    let error = svc
+        .add_items(set.id, vec![draft("全网销量第一的水泵，保证排名")], now())
+        .await
+        .expect_err("命中红线词的新增必须被拒");
+
+    assert_eq!(error.code, "compliance/violation");
+    let stored = svc.get(set.id).await.unwrap();
+    assert_eq!(stored.items.len(), set.items.len(), "被拒后不得留下半截数据");
+    assert_eq!(stored.content_hash, set.content_hash);
+}
+
+#[tokio::test]
+async fn delete_items_removes_the_selection_and_reindexes() {
+    let (state, _server, _secrets) = prompt_state().await;
+    let project = seeded_project(&state).await;
+    let svc = service(&state);
+    let set = svc
+        .generate(project.id, GenerateOptions::default(), now())
+        .await
+        .unwrap();
+    let victims = vec![set.items[0].id, set.items[3].id];
+
+    let updated = svc.delete_items(set.id, &victims, now()).await.unwrap();
+
+    assert_eq!(updated.items.len(), set.items.len() - 2);
+    assert!(
+        !updated.items.iter().any(|item| victims.contains(&item.id)),
+        "选中的条目必须消失"
+    );
+    let positions: Vec<i32> = updated.items.iter().map(|item| item.position).collect();
+    assert_eq!(positions, (0..positions.len() as i32).collect::<Vec<_>>());
+    assert_ne!(updated.content_hash, set.content_hash);
+
+    let stored = svc.get(set.id).await.unwrap();
+    assert_eq!(stored.items, updated.items, "删除必须落库");
+}
+
+#[tokio::test]
+async fn delete_items_rejects_unknown_ids_and_refuses_to_empty_the_set() {
+    let (state, _server, _secrets) = prompt_state().await;
+    let project = seeded_project(&state).await;
+    let svc = service(&state);
+    let set = svc
+        .generate(project.id, GenerateOptions::default(), now())
+        .await
+        .unwrap();
+
+    let unknown = svc
+        .delete_items(set.id, &[geo_domain::PromptId::new()], now())
+        .await
+        .expect_err("不存在的条目要报 not_found");
+    assert_eq!(unknown.code, "prompt_item/not_found");
+
+    let everything: Vec<geo_domain::PromptId> = set.items.iter().map(|item| item.id).collect();
+    let emptied = svc
+        .delete_items(set.id, &everything, now())
+        .await
+        .expect_err("删光条目应当被拒");
+    assert_eq!(emptied.code, "validation/failed");
+    assert!(
+        emptied.message.contains("删除整个题库快照"),
+        "要告诉用户改用删除整个快照：{}",
+        emptied.message
+    );
+
+    let stored = svc.get(set.id).await.unwrap();
+    assert_eq!(stored.items.len(), set.items.len(), "两次拒绝都不得改动数据");
 }
 
 #[tokio::test]

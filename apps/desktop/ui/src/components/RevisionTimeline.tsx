@@ -2,7 +2,7 @@ import { Empty, Timeline, Typography } from 'antd';
 import dayjs from 'dayjs';
 
 import type { EntityCardRevision } from '../api/types';
-import { ENTITY_FIELDS, formatFieldValue } from './EntityFieldCard';
+import { ENTITY_FIELDS, formatFieldValue } from './entity-fields';
 import FieldStatusTag from './FieldStatusTag';
 
 function fieldLabel(path: string): string {

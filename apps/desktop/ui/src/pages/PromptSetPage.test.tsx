@@ -96,7 +96,6 @@ describe('PromptSetPage', () => {
 
   it('按意图筛选后只剩品牌对比条目', async () => {
     stub('sufficient');
-    const user = userEvent.setup();
     renderPage();
     await screen.findByText('第 1 版题库');
 

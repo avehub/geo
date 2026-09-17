@@ -5,6 +5,7 @@ Cargo.lock.bak
 
 # Node / frontend
 node_modules/
+*.tsbuildinfo
 dist/
 dist-ssr/
 .vite/

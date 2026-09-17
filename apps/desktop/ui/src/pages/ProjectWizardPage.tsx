@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, App, Button, Form, Space, Typography } from 'antd';
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -11,12 +11,8 @@ import {
   type WizardDraftData,
 } from '../store/wizard-draft';
 import { MIN_COMPETITORS } from '../components/CompetitorEditor';
-import {
-  WIZARD_STEP_FIELDS,
-  WIZARD_STEPS,
-  WizardStepContent,
-  WizardStepIndicator,
-} from '../components/WizardSteps';
+import { WizardStepContent, WizardStepIndicator } from '../components/WizardSteps';
+import { WIZARD_STEP_FIELDS, WIZARD_STEPS } from '../components/wizard-steps';
 
 function hasContent(draft: WizardDraftData | null): draft is WizardDraftData {
   return Boolean(draft && (draft.brand_name.trim() !== '' || draft.competitors.length > 0));
@@ -34,15 +30,13 @@ export default function ProjectWizardPage() {
   const [form] = Form.useForm<WizardDraftData>();
 
   const { step, setStep, patch, saveDraft, loadDraft, clearDraft } = useWizardDraft();
-  const [restorable, setRestorable] = useState<WizardDraftData | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-
-  useEffect(() => {
+  // 挂载时探测一次本地草稿。`loadDraft` 只读 localStorage（不改 store），
+  // 因此可以放在惰性初始值里，不必用 effect 再多渲染一次。
+  const [restorable, setRestorable] = useState<WizardDraftData | null>(() => {
     const stored = loadDraft();
-    if (hasContent(stored)) setRestorable(stored);
-    // 只在挂载时探测一次草稿
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return hasContent(stored) ? stored : null;
+  });
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const syncDraft = useCallback(() => {
     patch(form.getFieldsValue(true) as Partial<WizardDraftData>);

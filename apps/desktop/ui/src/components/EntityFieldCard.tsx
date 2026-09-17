@@ -1,52 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Alert, Button, Card, Input, InputNumber, Radio, Select, Space, Typography } from 'antd';
 import { EditOutlined } from '@ant-design/icons';
 
 import type { FieldStatus } from '../api/types';
 import { FIELD_STATUS_LABELS } from '../api/types';
+import { formatFieldValue, type FieldDescriptor } from './entity-fields';
 import FieldStatusTag from './FieldStatusTag';
-
-export type FieldKind = 'text' | 'textarea' | 'tags' | 'number' | 'json';
-
-export interface FieldDescriptor {
-  path: string;
-  label: string;
-  kind: FieldKind;
-  required: boolean;
-}
-
-/** 11 个实体卡字段，顺序即 UI 展示顺序（前 10 个计入完整率）。 */
-export const ENTITY_FIELDS: FieldDescriptor[] = [
-  { path: 'standard_name', label: '标准名', kind: 'text', required: true },
-  { path: 'aliases', label: '品牌别名', kind: 'tags', required: true },
-  { path: 'founded_year', label: '成立年份', kind: 'number', required: true },
-  { path: 'qualifications', label: '资质认证', kind: 'tags', required: true },
-  { path: 'products', label: '产品与参数', kind: 'json', required: true },
-  { path: 'price_range', label: '价格区间', kind: 'text', required: true },
-  { path: 'service_regions', label: '服务地域', kind: 'tags', required: true },
-  { path: 'cases', label: '客户案例', kind: 'tags', required: true },
-  { path: 'differentiators', label: '差异化卖点', kind: 'tags', required: true },
-  { path: 'official_tone', label: '官方口径', kind: 'textarea', required: false },
-  { path: 'contact', label: '联系方式', kind: 'json', required: true },
-];
 
 const STATUS_OPTIONS = (Object.keys(FIELD_STATUS_LABELS) as FieldStatus[]).map((value) => ({
   value,
   label: FIELD_STATUS_LABELS[value],
 }));
-
-/** 把任意字段值渲染成人能读的文本。 */
-export function formatFieldValue(value: unknown): string {
-  if (value === null || value === undefined) return '—';
-  if (typeof value === 'string') return value.trim() === '' ? '—' : value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) {
-    if (value.length === 0) return '—';
-    if (value.every((item) => typeof item === 'string')) return (value as string[]).join('、');
-    return JSON.stringify(value, null, 2);
-  }
-  return JSON.stringify(value, null, 2);
-}
 
 function toEditable(descriptor: FieldDescriptor, value: unknown): string {
   if (descriptor.kind === 'json') return value == null ? '' : JSON.stringify(value, null, 2);
@@ -78,14 +42,18 @@ export default function EntityFieldCard({
 }: EntityFieldCardProps) {
   const [editing, setEditing] = useState(false);
   const [draftStatus, setDraftStatus] = useState<FieldStatus>(status);
+  const [lastStatus, setLastStatus] = useState<FieldStatus>(status);
   const [text, setText] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [year, setYear] = useState<number | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // 外部状态变化时对齐本地草稿：用「渲染期比较」而不是 effect，
+  // 否则会多一次级联渲染（react-hooks/set-state-in-effect）。
+  if (lastStatus !== status) {
+    setLastStatus(status);
     setDraftStatus(status);
-  }, [status]);
+  }
 
   function beginEdit() {
     setText(toEditable(descriptor, value));

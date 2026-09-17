@@ -7,7 +7,8 @@ import * as client from '../api/client';
 import { IpcRequestError } from '../api/client';
 import type { EntityCard, FieldStatus } from '../api/types';
 import AutoBuildPanel from '../components/AutoBuildPanel';
-import EntityFieldCard, { ENTITY_FIELDS } from '../components/EntityFieldCard';
+import EntityFieldCard from '../components/EntityFieldCard';
+import { ENTITY_FIELDS } from '../components/entity-fields';
 import RevisionTimeline from '../components/RevisionTimeline';
 
 function describeError(error: unknown): string {

@@ -14,6 +14,23 @@
 
 export type InvokeHandler = (args: Record<string, unknown>) => unknown;
 
+/**
+ * 桩值：函数按「每次调用现算」处理，其它值按深拷贝返回。
+ *
+ * 写成联合类型（而不是 `unknown`）是为了让 `stubAlways('x', (args) => ...)`
+ * 里的 `args` 拿到上下文类型——`unknown` 会让它退化成隐式 any，
+ * 在 `tsc -b` 的严格模式下直接报错。
+ */
+export type StubValue =
+  | InvokeHandler
+  | Error
+  | string
+  | number
+  | boolean
+  | null
+  | unknown[]
+  | Record<string, unknown>;
+
 type StubEntry = {
   mode: 'resolve' | 'reject';
   handler: InvokeHandler | { error: unknown };
@@ -26,7 +43,7 @@ const calls: { cmd: string; args: Record<string, unknown> }[] = [];
 let fallback: InvokeHandler | null = null;
 
 export const mockInvoke = {
-  stub(cmd: string, value: unknown, mode: 'resolve' | 'reject' = 'resolve') {
+  stub(cmd: string, value: StubValue, mode: 'resolve' | 'reject' = 'resolve') {
     const entry: StubEntry =
       mode === 'reject'
         ? { mode, handler: { error: value } }
@@ -43,7 +60,7 @@ export const mockInvoke = {
     return mockInvoke;
   },
 
-  stubAlways(cmd: string, value: unknown, mode: 'resolve' | 'reject' = 'resolve') {
+  stubAlways(cmd: string, value: StubValue, mode: 'resolve' | 'reject' = 'resolve') {
     mockInvoke.stub(cmd, value, mode);
     const list = stubs.get(cmd)!;
     const last = list[list.length - 1];

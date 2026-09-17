@@ -328,3 +328,29 @@
 - **Spec 覆盖**：FR-B1..B7 → T1/T16/T20/T21/T30；FR-M1-1..6 → T3/T4/T17/T18/T22/T26/T27；FR-M2-1..6 → T5/T6/T7/T19/T23/T28；FR-L1..L5 → T9/T10/T11/T12/T8/T30。无遗漏。
 - **类型一致性**：`PromptSet.content_hash()`(T5) 与 `PromptSetRepo.replace_items`(T19)、`PromptService`(T23) 使用同名；`SampleSizeGrade`(T5) 贯穿 T19/T23/T28；`SecretStore`(T20) 被 T21/T24 消费；`DedupeReport`(T6) 被 T23/T28 消费。
 - **占位符扫描**：无 TBD/TODO；每个 task 均给出 Files、Interfaces 与可执行验证步骤。
+
+### 收尾复盘（代码评审后补记，2026-09-17）
+
+上面那句「无遗漏」**当时是不成立的**，评审（I10）抓到两处窄化，均已在评审后补齐：
+
+- **T28 窄化了 FR-M2-6**：本文件 T28 的验收清单只写了「意图筛选 + 改 weight + CSV + 生成」，
+  漏掉「增、删、批量选择、按分组/来源筛选、`repeat_count` 调整、标签」。
+  补齐：后端 `PromptService::{add_items,delete_items}` + IPC `prompt_item_add` /
+  `prompt_item_delete`（`541f383`）；前端表格增删改、批量选择、三档筛选、采样次数
+  （`4057669`）；标签可见可改（`8ade218`）。
+- **FR-B2 的每日滚动日志文件**在首轮实现时被 `tauri-plugin-log` 顶掉，导致启动即 panic；
+  改为 `tracing` + `tracing-appender` 单管线（`4ef83da`），决策理由见 spec §7。
+
+教训：Self-Review 的「无遗漏」必须拿 spec 的 FR 编号逐条回查代码，而不是拿自己写的
+task 清单自查——task 清单本身就可能已经漏项，自查只会把漏项再确认一遍。
+
+### 已知偏差（本期不修，留给后续分期）
+
+- `csp` 仍为 `null`、导出 CSV 未做公式注入防护、广告法词库对「最低/绝对」会误伤：
+  三条都记进 spec §8 风险表，各自写明了为什么现在不动、什么时候动。
+- `services/templates/mod.rs` 生产代码 871 行（另含约 310 行测试），超出「单文件尽量 <500 行」的软约束：
+  内容是 5 套行业模板的中文文案（数据多、逻辑少），此刻拆分只会把一次评审过的
+  大改动摊成多处，风险高于收益；P0-C 复用模板时再按行业拆文件。
+- `echarts`、`@tauri-apps/plugin-dialog`、`@tauri-apps/plugin-opener` 三个前端依赖
+  当前没有 import：dialog 走 Rust 侧命令（见 spec §7），echarts/opener 是 P0-C 图表与
+  外链的既定技术栈。未被 import 就不进 bundle，保留以避免下期反复增删。

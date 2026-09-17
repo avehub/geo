@@ -245,7 +245,7 @@ LLM 不可用（无 Key 或调用失败）时**降级为纯模板展开**，并�
 `content_hash = sha256(排序后的 "intent|weight|text" 拼接)`；`metric_spec_version = "geo-metrics-v1"`；`engine_scope` 记录生成时选定的引擎列表（P0-A 为空数组，P0-B 写入实际引擎）。同一项目二次采集默认沿用最新 prompt 集版本。
 
 **FR-M2-6 管理**
-表格支持增删改、批量选择、按意图/分组/来源筛选、`weight` 1–5 调整、`repeat_count` 1–3 调整；任何修改后重算 `content_hash` 与 `item_count` 并落库。CSV 导入导出列固定为 `text,intent,weight,group_name,tags,source,repeat_count`，导入做表头校验、逐行校验并返回错误行报告（行号 + 原因），部分成功允许。
+表格支持增删改、批量选择、按意图/分组/来源筛选、`weight` 1–5 调整、`repeat_count` 1–3 调整、`tags` 增删；任何修改后重算 `content_hash` 与 `item_count` 并落库。人工新增的条目 `source` 固定为 `manual`（来源是指标口径，不能由调用方自称模板/AI 生成）；删除不允许把快照删空，要清空请删除整个题库（与 CSV 空导入同一条纪律）。CSV 导入导出列固定为 `text,intent,weight,group_name,tags,source,repeat_count`，导入做表头校验、逐行校验并返回错误行报告（行号 + 原因），部分成功允许。
 
 **验收**：一键生成 ≥60 条、覆盖 7 类意图、重复对为 0；同项目二次生成默认沿用同一版本口径；CSV 导出再导入后条目数与文本一致。
 
@@ -339,3 +339,6 @@ pub struct HttpResponse { pub status: u16, pub body: String }
 | 抓取被反爬/编码异常 | 自动建档失败 | robots 优先、超时与页数上限、GBK 探测、失败不阻断 |
 | keyring 在 CI/容器无 Secret Service | 测试失败 | `SecretStore` trait + `MemorySecretStore`，CI 不碰钥匙串 |
 | antd v5 与 React 19 静态 API 兼容 | 弹窗/message 失效 | 引入官方 `@ant-design/v5-patch-for-react-19` |
+| `tauri.conf.json` 的 `csp` 仍为 `null` | WebView 可加载任意远程资源，打包后存在注入面 | 本期全程离线、不加载远程内容，风险受限；**P0-D 打包前必须收紧 CSP 并实测 antd 样式与 IPC**（无 GUI 环境盲改会直接白屏，故不在本期动） |
+| 导出 CSV 未做公式注入防护（`=cmd\|...` 之类） | 用 Excel 打开导出文件时可能被当作公式执行 | 与「导出再导入文本必须一致」的验收口径冲突（加前缀 `'` 会破坏往返保真）；本期靠提示用户，P0-D 出 Excel（`rust_xlsxwriter`）时改为写文本单元格类型，从根上消除 |
+| 广告法词库对「最低/绝对」等词会误伤正常表述 | 合规拦截偶有过杀 | 词库是可编辑数据文件（`crates/geo-domain/data/adlaw_terms.txt`），运营可改；拦截一律给出命中词，不做静默改写 |

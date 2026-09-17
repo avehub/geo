@@ -9,7 +9,6 @@
 //! - HTTP 一律 rustls，代理取自 `settings`，用户没开就直连。
 
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -47,11 +46,6 @@ impl LlmFactory {
     pub fn production(timeout: Duration, proxy: Option<String>) -> Result<Self, IpcError> {
         let transport = ReqwestTransport::new(timeout, proxy)?;
         Ok(Self::new(Arc::new(transport)))
-    }
-
-    /// 从目录加载录制响应（`fixtures/llm/`），文件名即 fixture key。
-    pub fn fixture_dir(path: &Path) -> Result<Self, IpcError> {
-        Ok(Self::new(Arc::new(FixtureTransport::from_dir(path)?)))
     }
 
     /// 直接用内存里的响应表，测试里最方便。

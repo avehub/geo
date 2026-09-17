@@ -1,0 +1,65 @@
+[tools]
+node = "24.21.0"
+pnpm = "12.4.2"
+rust = "1.98.1"
+
+[env]
+CARGO_NET_GIT_FETCH_WITH_CLI = "true"
+RUST_BACKTRACE = "1"
+# 需要与其他 rustup 项目彻底隔离时打开：
+# MISE_RUSTUP_HOME = "{{env.HOME}}/.local/share/mise-rustup"
+# MISE_CARGO_HOME = "{{env.HOME}}/.local/share/mise-cargo"
+
+[tasks.doctor]
+description = "打印本机工具链版本"
+run = """
+node -v
+pnpm -v
+rustc --version
+cargo --version
+"""
+
+[tasks.install]
+description = "安装前端依赖"
+run = "pnpm --dir apps/desktop/ui install --frozen-lockfile=false"
+
+[tasks.dev]
+description = "启动 Tauri 开发窗口（原生 macOS 窗口）"
+run = "pnpm --dir apps/desktop/ui run tauri dev"
+
+[tasks.web]
+description = "只启动前端 Vite（浏览器调试用）"
+run = "pnpm --dir apps/desktop/ui run dev"
+
+[tasks.test]
+description = "Rust + 前端全量测试"
+run = [
+  "cargo test --workspace",
+  "pnpm --dir apps/desktop/ui run test",
+]
+
+[tasks.lint]
+description = "格式与静态检查"
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets -- -D warnings",
+  "pnpm --dir apps/desktop/ui run lint",
+]
+
+[tasks.build]
+description = "构建前端产物与 Rust release 检查"
+run = [
+  "pnpm --dir apps/desktop/ui run build",
+  "cargo check --workspace --all-targets",
+]
+
+[tasks.check]
+description = "提交前门禁：fmt + clippy + cargo test + vitest + build"
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets -- -D warnings",
+  "cargo test --workspace",
+  "pnpm --dir apps/desktop/ui run lint",
+  "pnpm --dir apps/desktop/ui run test",
+  "pnpm --dir apps/desktop/ui run build",
+]

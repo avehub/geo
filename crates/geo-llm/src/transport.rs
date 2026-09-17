@@ -5,6 +5,7 @@
 //! 回放 `fixtures/llm/` 里的录制响应（见 `fixtures/llm/README.md`）。
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -17,12 +18,54 @@ const FIXTURE_KEY_HEX_LEN: usize = 16;
 
 /// 一次 HTTP 请求的最小描述。
 ///
-/// API Key 只出现在 `headers` 里，任何日志都不得整体打印本结构体。
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// API Key 只出现在 `headers` 里，因此 [`Debug`] 是手写实现：敏感头一律打码，
+/// 即使上层把整个结构体丢进 `tracing::debug!` 或 panic 消息也不会漏密钥。
+#[derive(Clone, PartialEq, Eq)]
 pub struct HttpRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: String,
+}
+
+/// 需要打码的请求头（小写比对）。
+const SECRET_HEADERS: [&str; 4] = [
+    "authorization",
+    "proxy-authorization",
+    "api-key",
+    "x-api-key",
+];
+
+fn is_secret_header(name: &str) -> bool {
+    SECRET_HEADERS
+        .iter()
+        .any(|secret| name.eq_ignore_ascii_case(secret))
+}
+
+/// 只服务于 `Debug` 的请求头视图：敏感值换成 `***`，头名保留以便排查。
+struct MaskedHeaders<'a>(&'a [(String, String)]);
+
+impl fmt::Debug for MaskedHeaders<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut list = f.debug_list();
+        for (name, value) in self.0 {
+            if is_secret_header(name) {
+                list.entry(&format_args!("{name}: ***"));
+            } else {
+                list.entry(&format_args!("{name}: {value}"));
+            }
+        }
+        list.finish()
+    }
+}
+
+impl fmt::Debug for HttpRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HttpRequest")
+            .field("url", &self.url)
+            .field("headers", &MaskedHeaders(&self.headers))
+            .field("body", &self.body)
+            .finish()
+    }
 }
 
 impl HttpRequest {
@@ -274,6 +317,45 @@ mod tests {
 
     fn request(body: &str) -> HttpRequest {
         HttpRequest::bearer_json(URL, "sk-test", body)
+    }
+
+    #[test]
+    fn debug_output_masks_secret_headers() {
+        let rendered = format!("{:?}", request(BODY));
+        assert!(
+            !rendered.contains("sk-test"),
+            "Debug 输出不得回显密钥：{rendered}"
+        );
+        assert!(
+            !format!("{:#?}", request(BODY)).contains("sk-test"),
+            " pretty Debug 同样不得回显密钥"
+        );
+        // 排查仍需要看得见「有哪些头」与非敏感内容
+        assert!(rendered.contains("Authorization"), "{rendered}");
+        assert!(rendered.contains("Content-Type"), "{rendered}");
+        assert!(rendered.contains(URL), "{rendered}");
+        // body 里的引号会被 Debug 转义，这里只断言内容片段可见
+        assert!(rendered.contains("deepseek-chat"), "{rendered}");
+    }
+
+    #[test]
+    fn debug_output_masks_other_secret_header_names() {
+        let req = HttpRequest {
+            url: URL.to_string(),
+            headers: vec![
+                ("api-key".to_string(), "sk-qn-secret".to_string()),
+                ("X-Api-Key".to_string(), "sk-hy-secret".to_string()),
+                ("X-Trace-Id".to_string(), "trace-1".to_string()),
+            ],
+            body: BODY.to_string(),
+        };
+        let rendered = format!("{req:?}");
+        assert!(!rendered.contains("sk-qn-secret"), "{rendered}");
+        assert!(!rendered.contains("sk-hy-secret"), "{rendered}");
+        assert!(
+            rendered.contains("trace-1"),
+            "非敏感头应原样可见：{rendered}"
+        );
     }
 
     #[test]

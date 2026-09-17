@@ -15,7 +15,7 @@
 | `contact.html` | `/contact.html` | UTF-8 | 联系我们：电话、邮箱、地址、邮编、4 个服务网点、服务地域与出口市场。 |
 | `gbk-page.html` | `/gbk-page.html` | **GBK** | GBK 编码探测夹具：技术公告与服务承诺，含全角标点与 `℃ ± ① 《》` 等符号，`<meta charset="gbk">` 与 `<meta http-equiv="Content-Type" ... charset=gbk>` 双声明。**磁盘上的字节不是合法 UTF-8**（测试会断言这一点）。 |
 | `robots.txt` | `/robots.txt` | ASCII | `User-agent: *` + `Disallow: /admin`；同时含 `Crawl-delay` 与 `Sitemap` 指令，用于验证解析时被忽略。 |
-| `admin.html` | `/admin/secret` | UTF-8 | 必须永不被抓取的页面，含 canary `ADMIN_CANARY_7b2e`；由 `index.html` 链接。测试断言：抓取结果中不出现该 canary，且该 mock 收到的请求数为 0。 |
+| `admin.html` | `/admin/secret` | UTF-8 | 必须永不被抓取的页面，含 canary `ADMIN_CANARY_7b2e`；由 `index.html` 链接。`site.rs::robots_blocked_page_lands_in_skipped_with_robots_reason` 断言：该 URL 落进 `skipped` 且 `reason` 含 `robots`、不出现在 `pages` 里、任何页面正文都不含该 canary，且 wiremock 收到 **0 条** `/admin/secret` 请求（robots 拦截必须发生在发请求之前，而不是抓回来再丢）。 |
 | `README.md` | — | UTF-8 | 本文件。 |
 
 ## 实体卡字段覆盖

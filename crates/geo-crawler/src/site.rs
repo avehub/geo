@@ -297,6 +297,26 @@ mod tests {
             !result.pages.iter().any(|page| page.url.contains("/admin")),
             "被禁页面不得进入结果"
         );
+        // robots 的约束是「别去抓」，不是「抓回来再扔」：一条请求都不该发出去
+        let fetched: Vec<String> = server
+            .received_requests()
+            .await
+            .expect("wiremock 默认记录请求")
+            .iter()
+            .map(|request| request.url.path().to_string())
+            .collect();
+        assert!(
+            !fetched.iter().any(|path| path == "/admin/secret"),
+            "被 robots 禁止的页面不得真的发出请求，实发：{fetched:?}"
+        );
+        // 双保险：即使将来抓取顺序变了，被禁页面的正文也不得混进结果
+        assert!(
+            !result
+                .pages
+                .iter()
+                .any(|page| page.main_text.contains("ADMIN_CANARY_7b2e")),
+            "被禁页面的 canary 不得出现在正文提取结果里"
+        );
     }
 
     #[tokio::test]

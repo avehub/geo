@@ -9,3 +9,4 @@ pub mod templates;
 pub use entity_card_service::{EntityCardService, MAX_SITE_TEXT_CHARS};
 pub use project_service::{ProjectDetail, ProjectService};
 pub use project_transfer::{ImportReport, ProjectExport, EXPORT_FORMAT_VERSION};
+pub use prompt_service::{GenerateOptions, PromptService, DEFAULT_TARGET_COUNT};

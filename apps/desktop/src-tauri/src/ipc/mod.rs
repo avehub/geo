@@ -33,5 +33,14 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         entity_card::entity_card_get,
         entity_card::entity_card_update_field,
         entity_card::entity_card_revisions,
+        prompt::prompt_set_generate,
+        prompt::prompt_set_list,
+        prompt::prompt_set_get,
+        prompt::prompt_set_rename,
+        prompt::prompt_set_delete,
+        prompt::prompt_item_update,
+        prompt::prompt_set_dedupe,
+        prompt::prompt_set_export_csv,
+        prompt::prompt_set_import_csv,
     ]
 }

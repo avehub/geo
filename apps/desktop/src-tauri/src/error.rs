@@ -112,7 +112,14 @@ impl IpcError {
 
 impl std::fmt::Display for IpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] {}", self.code, self.message)
+        // `with_params` 造的兜底 message 已以 code 开头，再套前缀会重复成
+        // `[validation/failed] validation/failed field=…`；那种情况只写 message。
+        // 散文 message（`new` / `From` 四实现）仍以 `[code] ` 打头，日志靠它认码。
+        if self.message.starts_with(&self.code) {
+            f.write_str(&self.message)
+        } else {
+            write!(f, "[{}] {}", self.code, self.message)
+        }
     }
 }
 
@@ -195,8 +202,14 @@ impl From<CrawlerError> for IpcError {
     fn from(error: CrawlerError) -> Self {
         let ipc = Self::new(error.code(), error.user_message());
         // Task 4 删除点：改成 `Self::with_params(error.code(), error.params())`
-        // network 在清单里登记 url / status / reason 三个键，但变体只带一段合并
-        // 文本，因此只填 reason（清单里唯一恒在的键）；too_large 的 limit 同理。
+        // 本 match 有 3 个 code 今天只能填清单键的**子集**，Task 4 拆变体后补齐
+        // 并把断言从子集收紧成相等：
+        // - `crawler/network`：变体 `Network(String)` 只有一段合并文本，实发 `reason`，
+        //   缺清单登记的 `url`、`status`。
+        // - `crawler/too_large`：变体 `TooLarge { url }` 没有 limit 字段，实发 `url`，缺 `limit`。
+        // - `crawler/invalid_url`：变体 `InvalidUrl(String)` 装的同样是合并文本
+        //   （`fetch.rs` 的代理地址那句、`extract.rs` 的 `url（error）`），因此落 `reason`
+        //   而不是 `url`——与 `Network` / `Decode` 一致；实发 `reason`，缺 `url`。
         match error {
             CrawlerError::Blocked { url, reason } => {
                 ipc.with_param("url", url).with_param("reason", reason)
@@ -204,7 +217,7 @@ impl From<CrawlerError> for IpcError {
             CrawlerError::Timeout { url } => ipc.with_param("url", url),
             CrawlerError::Network(reason) => ipc.with_param("reason", reason),
             CrawlerError::TooLarge { url } => ipc.with_param("url", url),
-            CrawlerError::InvalidUrl(url) => ipc.with_param("url", url),
+            CrawlerError::InvalidUrl(reason) => ipc.with_param("reason", reason),
             CrawlerError::Decode(reason) => ipc.with_param("reason", reason),
         }
     }
@@ -768,6 +781,7 @@ mod tests {
         assert_eq!(stored.code, "prompt_set/not_found");
         assert_eq!(stored.params["kind"], "prompt_set");
         assert_eq!(stored.params["id"], "set-1");
+        assert_eq!(stored.params.len(), 2);
     }
 
     #[test]
@@ -781,6 +795,7 @@ mod tests {
         let stored = IpcError::from(StoreError::validation("domain", "invalid_url"));
         assert_eq!(stored.params["field"], "domain");
         assert_eq!(stored.params["reason"], "invalid_url");
+        assert_eq!(stored.params.len(), 2);
     }
 
     #[test]
@@ -810,6 +825,20 @@ mod tests {
         assert_eq!(blocked.params["url"], "https://a.example/x");
         assert_eq!(blocked.params["reason"], "robots");
         assert_eq!(blocked.params.len(), 2);
+
+        // `InvalidUrl(String)` 装的是合并文本（`fetch.rs` 的代理地址那句、
+        // `extract.rs` 的 `url（error）`），不是裸 URL，因此落 `reason`——
+        // 与同样装合并文本的 `Network` / `Decode` 对齐。清单给该 code 登记了
+        // `["url","reason"]`，只发 `reason` 是合法子集，缺的 `url` 由 Task 4 拆变体补。
+        let invalid_url = IpcError::from(CrawlerError::InvalidUrl("not a url".into()));
+        assert_eq!(invalid_url.code, "crawler/invalid_url");
+        assert_eq!(invalid_url.params["reason"], "not a url");
+        assert!(
+            !invalid_url.params.contains_key("url"),
+            "合并文本不能冒充裸 URL：{:?}",
+            invalid_url.params
+        );
+        assert_eq!(invalid_url.params.len(), 1);
     }
 
     /// 跨 crate 转成 `GeoError::Upstream` 后，params 换成包装族的那两个键
@@ -856,6 +885,24 @@ mod tests {
         assert!(error.message.starts_with("validation/failed"), "{error}");
         assert!(error.message.contains("field=brand_name"), "{error}");
         assert!(error.detail.is_none());
+    }
+
+    /// `with_params` 造的兜底 message 已以 code 开头，`Display` 不能再套一遍
+    /// `[code] ` 前缀，否则日志里是 `[validation/failed] validation/failed field=…`。
+    /// 普通 message 仍要保留前缀——日志靠它认码。两个分支都钉住。
+    #[test]
+    fn display_repeats_the_code_only_when_the_message_lacks_it() {
+        let compact = IpcError::with_params(
+            "validation/failed",
+            [("field", "brand_name"), ("reason", "required")],
+        );
+        assert_eq!(
+            compact.to_string(),
+            "validation/failed field=brand_name reason=required"
+        );
+
+        let prose = IpcError::new(err_codes::CRAWLER_EMPTY, "no pages crawled");
+        assert_eq!(prose.to_string(), "[crawler/empty] no pages crawled");
     }
 
     #[test]

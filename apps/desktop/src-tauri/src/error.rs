@@ -13,6 +13,25 @@ use geo_llm::LlmError;
 use geo_store::StoreError;
 use serde::Serialize;
 
+/// 壳内直接用字面量发出的错误码。
+///
+/// 这些 code 不来自任何下游 crate 的 `code()`，只有壳自己知道，因此在这里定义一次、
+/// 生产发射点与本文件测试模块的清单断言共用同一份常量：改了发射点的字面量，
+/// `contracts/error-codes.json` 的断言会跟着炸，不会悄悄漏掉已冻结的契约。
+/// 字符串值必须与 `contracts/error-codes.json` 里的 `code` 逐字一致。
+pub(crate) mod err_codes {
+    /// 内容命中广告法红线词（`services/prompt_service.rs`）。
+    pub(crate) const COMPLIANCE_VIOLATION: &str = "compliance/violation";
+    /// 整站抓取一页都没抓到（`services/entity_card_service.rs`）。
+    pub(crate) const CRAWLER_EMPTY: &str = "crawler/empty";
+    /// 模型配置缺失或非法（`state.rs`、`services/settings_service.rs`）。
+    pub(crate) const LLM_CONFIG: &str = "llm/config";
+    /// CSV 导入没有任何有效条目（`services/prompt_service.rs`）。
+    pub(crate) const PROMPT_SET_EMPTY_IMPORT: &str = "prompt_set/empty_import";
+    /// 壳内错误，见 [`super::IpcError::internal`]。
+    pub(crate) const IPC_INTERNAL: &str = "ipc/internal";
+}
+
 /// 送回前端的统一错误结构。字段形状即 `apps/desktop/ui/src/api/types.ts` 的契约。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IpcError {
@@ -40,7 +59,7 @@ impl IpcError {
 
     /// 不属于任何下游 crate 的壳内错误（配置、路径、序列化等）。
     pub fn internal(message: impl Into<String>) -> Self {
-        Self::new("ipc/internal", message)
+        Self::new(err_codes::IPC_INTERNAL, message)
     }
 }
 
@@ -159,6 +178,7 @@ mod tests {
     use geo_llm::{LlmError, TransportError};
     use geo_store::StoreError;
     use std::collections::HashSet;
+    use std::io;
 
     /// 前后端共享的错误码真值源：`contracts/error-codes.json`。
     ///
@@ -316,6 +336,79 @@ mod tests {
         ]
     }
 
+    /// `StoreError` 的全部 7 个变体。`Sqlx` 用 `RowNotFound` 造（不碰数据库、不联网），
+    /// 它不满足 `is_unique_violation`，因此映射到 `io/failed`；唯一约束那条分支产出的是
+    /// `state/conflict`，与 `StoreError::conflict` 同码，由 `store_code` 的 match 臂覆盖类型。
+    fn store_variants() -> Vec<StoreError> {
+        vec![
+            StoreError::not_found("project", "x"),
+            StoreError::validation("brand_name", "required"),
+            StoreError::conflict("duplicate"),
+            StoreError::Sqlx(sqlx::Error::RowNotFound),
+            StoreError::Serde(serde_json::from_str::<u8>("nope").unwrap_err()),
+            StoreError::secret("keyring unavailable"),
+            StoreError::Io(io::Error::other("磁盘满")),
+        ]
+    }
+
+    // -----------------------------------------------------------------
+    // 编译器强制的穷举守卫。
+    //
+    // 下面四个 `match` **没有 `_` 兜底**：给任何一个错误类型加变体，这里立刻
+    // `E0004 non-exhaustive patterns` 编译失败，逼实现者把新 code 补进已冻结的
+    // `contracts/error-codes.json`（以及 Task 7 的双语词典）。它们不是装饰性断言：
+    // 每个函数都真的产出 code 交给清单断言，所以「漏变体」和「漏登记」都会红。
+    // 编译器管不到的只有 `{kind}/not_found` 的 kind（运行期字符串），
+    // 由 `NOT_FOUND_KINDS` 显式列举。
+    // -----------------------------------------------------------------
+
+    fn llm_code(error: &LlmError) -> &'static str {
+        match error {
+            LlmError::Config(_)
+            | LlmError::Transport(_)
+            | LlmError::RateLimited
+            | LlmError::Server { .. }
+            | LlmError::BadResponse(_)
+            | LlmError::Deserialize(_)
+            | LlmError::MissingSecret => error.code(),
+        }
+    }
+
+    fn crawler_code(error: &CrawlerError) -> &'static str {
+        match error {
+            CrawlerError::Blocked { .. }
+            | CrawlerError::Timeout { .. }
+            | CrawlerError::Network(_)
+            | CrawlerError::TooLarge { .. }
+            | CrawlerError::InvalidUrl(_)
+            | CrawlerError::Decode(_) => error.code(),
+        }
+    }
+
+    fn geo_code(error: &GeoError) -> String {
+        match error {
+            GeoError::Validation { .. }
+            | GeoError::NotFound { .. }
+            | GeoError::Conflict { .. }
+            | GeoError::Config { .. }
+            | GeoError::Upstream { .. }
+            | GeoError::Io(_)
+            | GeoError::Serde(_) => error.code(),
+        }
+    }
+
+    fn store_code(error: &StoreError) -> String {
+        match error {
+            StoreError::NotFound { .. }
+            | StoreError::Validation { .. }
+            | StoreError::Conflict(_)
+            | StoreError::Sqlx(_)
+            | StoreError::Serde(_)
+            | StoreError::Secret(_)
+            | StoreError::Io(_) => error.code(),
+        }
+    }
+
     /// 解析共享清单，返回其中登记的 code 集合。
     fn catalog() -> HashSet<String> {
         let parsed: serde_json::Value = serde_json::from_str(ERROR_CATALOG).expect("清单可解析");
@@ -353,45 +446,55 @@ mod tests {
 
     /// 穷举：每个错误变体的 code（含跨 crate 转成 `GeoError` 后带上的
     /// `upstream/` 前缀）都必须在清单里，否则前端词典不可能覆盖到它。
+    /// 变体清单由上面四个无兜底 `match` 强制，加变体即编译失败。
     #[test]
     fn catalog_covers_every_variant_of_every_error_type() {
-        use std::io;
-
         let known = catalog();
         let mut emitted: Vec<String> = Vec::new();
 
-        // LLM / 抓取：直接转 IpcError 用 `code()`，先转 GeoError 则套 `upstream/`
-        emitted.extend(llm_variants().iter().map(|e| e.code().to_string()));
-        emitted.extend(crawler_variants().iter().map(|e| e.code().to_string()));
-        emitted.extend(llm_variants().into_iter().map(|e| GeoError::from(e).code()));
-        emitted.extend(
-            crawler_variants()
-                .into_iter()
-                .map(|e| GeoError::from(e).code()),
-        );
+        // LLM / 抓取：直接转 IpcError 用 `code()`，先转 GeoError 则套 `upstream/`。
+        // code 一律经无兜底 match 取出，不用 `e.code()` 直调。
+        let llm = llm_variants();
+        let crawler = crawler_variants();
+        emitted.extend(llm.iter().map(|error| llm_code(error).to_string()));
+        emitted.extend(crawler.iter().map(|error| crawler_code(error).to_string()));
+        emitted.extend(llm.into_iter().map(|e| geo_code(&GeoError::from(e))));
+        emitted.extend(crawler.into_iter().map(|e| geo_code(&GeoError::from(e))));
 
-        // 领域层固定码
-        let geo_cases = vec![
+        // 领域层：除 NotFound（kind 是运行期字符串，走下面的循环）外逐个变体过一遍
+        let geo_cases = [
             GeoError::validation("brand_name", "required"),
             GeoError::conflict("duplicate"),
             GeoError::config("missing_base_url"),
+            GeoError::upstream("llm/server", "HTTP 503"),
             GeoError::Io(io::Error::other("磁盘满")),
             GeoError::Serde(serde_json::from_str::<u8>("nope").unwrap_err()),
         ];
-        emitted.extend(geo_cases.into_iter().map(|e| e.code()));
+        emitted.extend(geo_cases.iter().map(geo_code));
+
+        // 存储层：7 个变体逐个过一遍（含 Sqlx / Serde / Secret / Io）
+        emitted.extend(store_variants().iter().map(store_code));
 
         // 动态的 `{kind}/not_found`：GeoError 与 StoreError 两条路都要在清单里
         for kind in NOT_FOUND_KINDS {
-            emitted.push(IpcError::from(GeoError::not_found(kind, "x")).code);
-            emitted.push(IpcError::from(StoreError::not_found(kind, "x")).code);
+            emitted.push(geo_code(&GeoError::not_found(kind, "x")));
+            emitted.push(store_code(&StoreError::not_found(kind, "x")));
         }
 
-        // 壳内直接用字面量构造的 code
-        emitted.push(IpcError::new("compliance/violation", "x").code);
-        emitted.push(IpcError::new("prompt_set/empty_import", "x").code);
-        emitted.push(IpcError::new("crawler/empty", "x").code);
-        emitted.push(IpcError::new("llm/config", "x").code);
-        emitted.push(IpcError::internal("x").code);
+        // 壳内直接用字面量构造的 code：断言的是发射点共用的那份 `err_codes` 常量，
+        // 不是在这里重打一遍字符串——改了发射点，这条断言跟着变。
+        let shell_codes = [
+            err_codes::COMPLIANCE_VIOLATION,
+            err_codes::PROMPT_SET_EMPTY_IMPORT,
+            err_codes::CRAWLER_EMPTY,
+            err_codes::LLM_CONFIG,
+            err_codes::IPC_INTERNAL,
+        ];
+        emitted.extend(
+            shell_codes
+                .into_iter()
+                .map(|code| IpcError::new(code, "x").code),
+        );
 
         for code in &emitted {
             assert!(
@@ -401,7 +504,8 @@ mod tests {
         }
     }
 
-    /// 前端专属的三个码：`ipc/invoke_failed` 由 `invoke` 自身 reject 时发出、
+    /// 前端专属的码（`ipc/internal` 除外，它由 `IpcError::internal` 发出）：
+    /// `ipc/invoke_failed` 由 `invoke` 自身 reject 时发出、
     /// `ipc/unknown_command` 由 demo 后端的运行时守卫发出（均为 Plan A 后续 task），
     /// `ipc/unknown` 是 `IpcRequestError` 在 payload.code 为空串时的兜底
     /// （`src/api/client.ts`，今天已存在）。Rust 侧都没有发射点，属预期，
@@ -410,7 +514,7 @@ mod tests {
     fn catalog_reserves_the_frontend_only_ipc_codes() {
         let known = catalog();
         for code in [
-            "ipc/internal",
+            err_codes::IPC_INTERNAL,
             "ipc/invoke_failed",
             "ipc/unknown",
             "ipc/unknown_command",
@@ -422,8 +526,32 @@ mod tests {
         }
     }
 
-    /// 清单自身形状：按 code 升序（顺带保证不重复）、param 名是 snake_case、
-    /// 每条都有非空 note 说明它从哪儿发出。TS 侧断言同一套形状。
+    /// 与 TS 侧 `CODE_SHAPE = /^[a-z_]+(?:\/[a-z_]+)+$/` 等价：至少两段、
+    /// 每段非空且只含小写字母与下划线。壳里没有 `regex` 依赖，因此手写判定；
+    /// 三个辅助函数是 TS 那两条正则的逐字移植，改动必须两侧同步。
+    fn matches_code_shape(code: &str) -> bool {
+        let mut segments = code.split('/');
+        let head_ok = segments.next().is_some_and(is_name_segment);
+        let tail: Vec<&str> = segments.collect();
+        head_ok && !tail.is_empty() && tail.iter().all(|segment| is_name_segment(segment))
+    }
+
+    /// 与 TS 侧 `PARAM_SHAPE = /^[a-z][a-z_]*$/` 等价：首字符是小写字母，其余小写字母或下划线。
+    fn matches_param_shape(param: &str) -> bool {
+        let mut chars = param.chars();
+        chars.next().is_some_and(|ch| ch.is_ascii_lowercase())
+            && chars.all(|ch| ch.is_ascii_lowercase() || ch == '_')
+    }
+
+    fn is_name_segment(segment: &str) -> bool {
+        !segment.is_empty()
+            && segment
+                .chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch == '_')
+    }
+
+    /// 清单自身形状：按 code 升序（顺带排除重复）、code 与 param 名都匹配 TS 侧同一套正则、
+    /// 每条都有非空 note 说明它从哪儿发出。TS 侧 `error-codes.test.ts` 断言同一套形状。
     #[test]
     fn catalog_is_sorted_unique_and_well_formed() {
         let parsed: serde_json::Value = serde_json::from_str(ERROR_CATALOG).expect("清单可解析");
@@ -435,7 +563,10 @@ mod tests {
             let code = entry["code"]
                 .as_str()
                 .unwrap_or_else(|| panic!("{entry} 缺 code"));
-            assert!(!code.is_empty(), "code 不能为空");
+            assert!(
+                matches_code_shape(code),
+                "code 要匹配 TS 侧的 CODE_SHAPE /^[a-z_]+(?:\\/[a-z_]+)+$/：{code:?}"
+            );
 
             let params = entry["params"]
                 .as_array()
@@ -445,8 +576,8 @@ mod tests {
                     .as_str()
                     .unwrap_or_else(|| panic!("{code} 的 params 必须都是字符串"));
                 assert!(
-                    !name.is_empty() && name.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_'),
-                    "{code} 的 param 名要是非空 snake_case：{name:?}"
+                    matches_param_shape(name),
+                    "{code} 的 param 名要匹配 TS 侧的 PARAM_SHAPE /^[a-z][a-z_]*$/：{name:?}"
                 );
             }
 

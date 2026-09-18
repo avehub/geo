@@ -17,7 +17,7 @@ use geo_llm::{FixtureTransport, LlmClient, LlmConfig, LlmProvider, ReqwestTransp
 use geo_store::{AppSettings, KeyringSecretStore, SecretStore, SettingsRepo};
 use sqlx::SqlitePool;
 
-use crate::error::IpcError;
+use crate::error::{err_codes, IpcError};
 
 /// 抓取时对外声明的 UA。带联系方式是 robots 礼仪，也便于站点方联系而不是直接封 IP。
 pub const USER_AGENT: &str = "geo-desktop/0.1 (+https://gaodekuai.local/bot)";
@@ -66,7 +66,7 @@ impl LlmFactory {
     pub fn config_from_settings(settings: &AppSettings) -> Result<LlmConfig, IpcError> {
         let provider = LlmProvider::parse(&settings.model.provider).ok_or_else(|| {
             IpcError::new(
-                "llm/config",
+                err_codes::LLM_CONFIG,
                 format!("未知的模型服务商：{}", settings.model.provider),
             )
         })?;
@@ -95,14 +95,14 @@ impl LlmFactory {
         if provider == LlmProvider::Custom {
             if config.base_url.trim().is_empty() {
                 return Err(IpcError::new(
-                    "llm/config",
+                    err_codes::LLM_CONFIG,
                     "自定义服务商必须填写接口地址：设置 → 模型 → 接口地址（形如 https://api.example.com/v1）",
                 ));
             }
             // `Custom` 没有默认模型名，不填就会在发请求时才报「模型名为空」
             if config.model.trim().is_empty() {
                 return Err(IpcError::new(
-                    "llm/config",
+                    err_codes::LLM_CONFIG,
                     "自定义服务商必须填写模型名：设置 → 模型 → 模型名",
                 ));
             }

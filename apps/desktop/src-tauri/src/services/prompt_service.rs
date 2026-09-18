@@ -28,7 +28,7 @@ use geo_store::{
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::error::{redact, IpcError};
+use crate::error::{err_codes, redact, IpcError};
 use crate::services::templates::{
     co_mention_count, colloquial_variants, comparison_prompts, expand_with_context,
     item_from_model, prune_unnamed_competitors, select_items, templates_for, PromptContext,
@@ -556,7 +556,7 @@ impl PromptService {
             edit.validate()?;
             if !compliance::is_clean(&edit.text) {
                 return Err(IpcError::new(
-                    "compliance/violation",
+                    err_codes::COMPLIANCE_VIOLATION,
                     format!("内容命中广告法红线词：{}", violation_terms(&edit.text)),
                 ));
             }
@@ -602,7 +602,7 @@ impl PromptService {
             item.validate()?;
             if !compliance::is_clean(&item.text) {
                 return Err(IpcError::new(
-                    "compliance/violation",
+                    err_codes::COMPLIANCE_VIOLATION,
                     format!("内容命中广告法红线词：{}", violation_terms(&item.text)),
                 ));
             }
@@ -694,7 +694,7 @@ impl PromptService {
         if result.items.is_empty() && !set.items.is_empty() {
             tracing::warn!(set_id = %id, errors = result.error_count(), "CSV 导入没有有效条目，已保留原题库");
             return Err(IpcError::new(
-                "prompt_set/empty_import",
+                err_codes::PROMPT_SET_EMPTY_IMPORT,
                 "导入内容里没有任何有效条目，原题库保持不变（要清空请直接删除题库）",
             )
             .with_detail(serde_json::to_value(&result.errors).unwrap_or(serde_json::Value::Null)));

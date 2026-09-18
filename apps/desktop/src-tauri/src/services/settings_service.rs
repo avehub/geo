@@ -16,7 +16,7 @@ use geo_store::{secret_ref, AppSettings, ProxyConfig, SecretStore, SettingsRepo}
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::error::{redact, IpcError};
+use crate::error::{err_codes, redact, IpcError};
 use crate::state::LlmFactory;
 
 /// 密钥在钥匙串里的类别前缀：`keyring://llm/<provider>`。
@@ -265,7 +265,7 @@ impl SettingsService {
 fn parse_provider(raw: &str) -> Result<LlmProvider, IpcError> {
     LlmProvider::parse(raw).ok_or_else(|| {
         IpcError::new(
-            "llm/config",
+            err_codes::LLM_CONFIG,
             format!(
                 "未知的模型服务商：{raw}。可选值：{}",
                 LlmProvider::all()

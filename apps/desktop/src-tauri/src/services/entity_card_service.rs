@@ -19,7 +19,7 @@ use serde_json::Value;
 use sqlx::SqlitePool;
 use url::Url;
 
-use crate::error::{redact, IpcError};
+use crate::error::{err_codes, redact, IpcError};
 use crate::state::LlmFactory;
 
 /// 喂给模型的官网正文上限：够覆盖首页+关于+产品+FAQ+联系，又不会顶爆上下文。
@@ -102,7 +102,7 @@ impl EntityCardService {
                 .map(|page| format!("{}（{}）", page.url, page.reason))
                 .collect();
             return Err(IpcError::new(
-                "crawler/empty",
+                err_codes::CRAWLER_EMPTY,
                 format!(
                     "未能抓到任何页面：{origin}。请确认域名可访问、robots.txt 未禁止抓取。{}",
                     if reasons.is_empty() {

@@ -41,8 +41,8 @@ describe('contracts/error-codes.json', () => {
       for (const param of entry.params) {
         expect(param, `${entry.code} 的 param 名要是 snake_case`).toMatch(PARAM_SHAPE);
       }
-      expect(entry.note, `${entry.code} 缺 note`).not.toBe('');
       expect(typeof entry.note, `${entry.code} 的 note 要是字符串`).toBe('string');
+      expect(entry.note, `${entry.code} 缺 note`).not.toBe('');
     }
   });
 

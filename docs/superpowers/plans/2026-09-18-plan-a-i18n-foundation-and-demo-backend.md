@@ -104,12 +104,20 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - Produces: `GeoError::params(&self) -> BTreeMap<String,String>`（映射见 spec §4.2）；`Display` 输出紧凑日志格式 `"{code} {k}={v} …"`
 - Produces（**控制器裁定，补 Task 2 留下的接缝**）：`apps/desktop/src-tauri/src/error.rs` 的 `From<GeoError> for IpcError` 改为委托 `GeoError::params()`，并删掉 Task 2 就地拼 params 的那份临时映射 —— 否则同一个映射存在两份，必然漂移。改完 Task 1 的穷举守卫与清单用例必须继续绿，Task 2 的 params 断言必须继续绿（键名不变，只是来源换成 `params()`）。
 - Produces: **reason key 目录**（写进 `error.rs` 文档注释，Task 4/5/6 复用）：`required` `empty` `too_long` `too_short` `invalid_url` `invalid_id` `invalid_format` `duplicate` `out_of_range` `not_allowed` `missing_header` `row_invalid` `unknown_provider` `missing_base_url` `missing_model` `parse_failed`
+- Produces（**控制器裁定**）：上表补两个 key，共 **18** 个——`unknown_field`（`未知字段：{key}` 归 `invalid_format` 会说谎：路径格式本身是对的）与 `write_failed`（CSV 导出写失败归 `parse_failed` 同样说谎）。目录以 `crates/geo-domain/src/error.rs` 的模块文档注释为唯一真值源，契约文件的 `note` 不再复制 key 清单（避免漂移）。
+- Produces（**控制器裁定**）：`Validation` / `Conflict` / `Config` 三个变体各加 `extra: BTreeMap<String,String>`，`params()` = 基础键 ∪ extra；两参构造器签名不变（存量调用点照常编译），另加链式 `GeoError::with_param(key, value: impl Display)`，对不带 extra 的变体 `debug_assert!` 后原样返回。理由：今天的中文字面量携带真实信息（`长度不能超过 60 字`、`成立年份需在 1900~2100 之间`、`未知字段：products.foo`），i18n 之后只能靠「词典模板 + 语言中立参数」重现，塞不回 reason key。
+- Produces（**控制器裁定**）：`contracts/error-codes.json` 允许 **params-only** 编辑（codes 仍冻结）——`validation/failed` → `["expected","field","limit","reason","value"]`、`state/conflict` → `["reason","value"]`、`config/invalid` 不动。原则：**清单声明的 params 必须恰好等于后端能发出的键集**（Task 4 把它变成断言）。
+- Produces（**控制器裁定**）：`too_long`/`too_short` 只表**字符数**并配 `limit`；数量与数值区间一律 `out_of_range` + `expected`（语言中立表达式，如 `"1~5"`、`"<=5"`、`"0~9"`）。单位（字/个/家）属于文案，只能由词典模板给出——参数里出现「60 字」等于把中文塞回 params。
+- Produces（**控制器裁定**）：`io/failed` 与 `data/invalid` 的 `reason` 保留**原始错误文本**（raw passthrough），不强造 key（OS/serde 错误没有有限词表）。由此定下前端词典规则（Task 7 依赖）：先查 `errors.reasons.<reason>`，**查不到就原样显示该值**；同一规则覆盖 `upstream/*` 的上游原文。
 - Produces: `GeoError::user_message()` 语义变更为"日志/兜底文案"，不再承诺中文散文
 
 - [ ] 写失败测试：`GeoError::validation("brand_name","required").params()` == `{field:"brand_name", reason:"required"}`；`to_string()` == `"validation/failed field=brand_name reason=required"`；`not_found` 的 params == `{kind, id}`；`upstream` 的 params == `{upstream_code, upstream}`
 - [ ] 跑红：`mise exec -- cargo test -p geo-domain error::`
 - [ ] 实现 `params()` 与新 `Display`；把 `geo-domain` 内所有中文 reason 换成目录里的 key（如 `"不能为空"` → `required`，`"不是合法网址：{domain}"` → `invalid_url` 且把值放进 `params`）
 - [ ] 修受影响的既有测试（断言中文文案的改为断言 `code` + `params`）
+- [ ] **控制器裁定：谁弄红谁修**——门禁是 `cargo test --workspace` 全绿，本轮必须一并修好 geo-domain 之外被 `Display`/`user_message` 变更弄红的断言（已知：desktop `project_service.rs` 7 处、`error.rs` 5 处、`settings_service.rs` 2、`prompt_service.rs` 2、`geo-store/src/error.rs` 6、`tests/entity_card_service.rs` 1），修法统一为断言 `code` + `params`，不得把中文塞回去。壳里只许改被弄红的断言 + 删 `From<GeoError>` 的临时 match，**不要动 `IpcError::Display`**（Task 2 fix round 1 已修好重复码，有整串断言钉住）。
+- [ ] 同步 `crates/geo-store/src/error.rs:100-126` 的 `GeoError ↔ StoreError` 双向转换以适配 `extra`（本轮允许 `GeoError → StoreError` 方向丢掉 extra，Task 4 补齐）
+- [ ] 契约 params-only 编辑与 `params()` 实现放在**同一个 commit**（理由写进 commit body）
 - [ ] 跑绿：`mise exec -- cargo test -p geo-domain`
 - [ ] Commit `refactor(domain): 错误 reason 改为稳定 key，Display 转为日志格式`
 
@@ -125,10 +133,15 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - Produces: `StoreError::params()`、`LlmError::params()`、`CrawlerError::params()`（均为 `BTreeMap<String,String>`），以及与 `GeoError` 的 `From` 保持 code 语义不变
 - Produces（**控制器裁定，补 Task 2 留下的接缝**）：`apps/desktop/src-tauri/src/error.rs` 的 `From<StoreError|LlmError|CrawlerError> for IpcError` 三个 impl 改为委托各自的 `params()`，删掉 Task 2 的临时映射；Task 1 的守卫与 Task 2 的 params 断言继续绿。
 - Produces: `LlmError::Config(reason_key)`；`missing_base_url` / `missing_model` / `unknown_provider` 三个 key 由 `client.rs` 与 `state.rs` 共用
+- Produces（**控制器裁定**）：`StoreError` 的 `Validation` / `Conflict` / `Config` 加上与 `GeoError` 同形的 `extra: BTreeMap<String,String>`，把 Task 3 留下的 `GeoError → StoreError` 有损往返补成无损。
+- Produces（**控制器裁定**）：契约 params 对齐——复审已核实当前只发子集的 **5** 个码：`crawler/network`（缺 `url`、`status`）、`crawler/too_large`（缺 `limit`）、`crawler/invalid_url`（缺 `url`）、`llm/bad_response`（缺 `upstream`）、`llm/deserialize`（缺 `upstream`）。默认方向是**把清单 params 收缩到变体实际能带的键**（params-only 编辑、codes 不动、与 `params()` 实现同一 commit）；例外：给 `TooLarge` 补 `limit` 字段如果便宜就做。
+- Produces（**控制器裁定**）：新增漂移守卫——每个 code 的「清单声明 params」必须等于「守卫清单里所有构造实例发出的键的**并集**」（按 code 聚合取并集，不是逐实例相等）。
+- Consumes: `a8eb95d` 给 `crates/geo-crawler/src/fetch.rs` 与 `crates/geo-llm/src/transport.rs` 加的 `no_proxy()` 分支不得回退（未配代理时绝不走系统/环境代理，否则本机 wiremock 用例会被劫持成 502）。
 
 - [ ] 写失败测试：`LlmError::MissingSecret.params()` 为空 map 且 `code()=="llm/missing_secret"`；`LlmError::Server{status:500}.params()=={status:"500"}`；`CrawlerError::Timeout{url}.params()=={url}`；`StoreError::not_found("prompt_set","x").params()=={kind,id}`
 - [ ] 跑红：`mise exec -- cargo test -p geo-llm -p geo-store -p geo-crawler`
 - [ ] 实现 `params()`；把三个 crate 里 `#[error("中文…")]` 的 Display 改为紧凑格式（保留 code 不变）
+- [ ] 写失败测试（漂移守卫）：逐个 code 断言「清单声明的 params 集合 == 守卫清单里该 code 所有实例发出键的并集」，两端都用集合比较，避免顺序造成假红
 - [ ] 修既有测试断言；跑绿（含 `crates/geo-llm/tests/`）
 - [ ] Commit `refactor(crates): 三个基础 crate 的错误统一输出 code+params`
 
@@ -191,6 +204,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
   - 「剥 `upstream/` 前缀」只用于**词典完整性断言**（断言里层 code 在双语词典里存在，防止这族的语义源漂移），不用于渲染。
   - 代价：2 条词典（wrapper 的 zh/en），而不是 26 条近似重复文案。
 - Produces: `fields.ts` 覆盖后端会返回的全部 `field` 值（`brand_name` `aliases` `domain` `intents` `items` `ids` `label` `set_id` `standard_name` `products.name` `text` `payload` `model.provider` `model.model` `model.base_url` …）
+- Produces（**控制器裁定**）：reason key 与 field 的 **raw passthrough 回退**——`errors.reasons.<reason>` 查不到时原样显示该参数值（覆盖 `io/failed`、`data/invalid` 的 OS/serde 原文）；`fields.<field>` 查不到时同样原样显示，因为后端会发出**动态** field（`competitors[0].name`、`core_pages[1]`），无法穷举进 `fields.ts`。词典模板可用 `{{limit}}` / `{{expected}}` / `{{value}}`（Task 3 已把它们登记进 `validation/failed` 的 params）。
 
 - [ ] 写失败测试（`dictionary.test.ts`）：遍历 `catalog.codes`，断言 `zh-CN` 与 `en-US` 的 `errors.<code>` 都存在且非空——**`upstream/*` 例外**：改为断言「剥掉 `upstream/` 前缀后的里层 code 在两种语言里都存在」+「`errors.upstream.wrapper` 在两种语言里都存在」；断言 zh/en 的 key 集合完全相等（双向差集为空）；断言没有值等于 key 本身（漏翻标志）；断言 `errors.*` 模板里出现的 `{{xxx}}` 占位符都在该 code 的 `params` 清单内（`params` 为空数组的 code——`llm/missing_secret`、`llm/rate_limited`、`prompt_set/empty_import` 等——模板里不得出现任何 `{{…}}`）
 - [ ] 清单导入路径用 **5 层**（`../../../../../contracts/error-codes.json`，同 Task 1，别再按 3 层写红一次）
@@ -199,6 +213,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - [ ] 写失败测试（`errors.test.ts`）：`{code:'validation/failed', params:{field:'brand_name',reason:'required'}}` 在 zh 下渲染为「品牌名不能为空」、en 下渲染为 `Brand name is required`；未命中 code 回退 `message`
 - [ ] 跑红：`mise exec -- pnpm --dir apps/desktop/ui run test src/i18n src/api/errors`
 - [ ] 实现 `errors.ts`（zh/en 覆盖清单里全部 code）+ `fields.ts` + reason key 词典（`errors.reasons.*`）+ `describeIpcError`
+- [ ] 词典完整性断言同时覆盖 `errors.reasons.*`：Task 3 目录里的 **18** 个 key 在 zh/en 两侧都存在且非空，且 zh/en 的 key 集合相等
 - [ ] 把 5 个页面的本地 `describeError` 换成 `describeIpcError(error, t)`；跑绿：`mise exec -- pnpm --dir apps/desktop/ui run test`
 - [ ] Commit `feat(ui): 错误文案按语言渲染，词典完整性由错误码清单守住`
 

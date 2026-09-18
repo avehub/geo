@@ -158,6 +158,15 @@ mod tests {
     use geo_crawler::CrawlerError;
     use geo_llm::{LlmError, TransportError};
     use geo_store::StoreError;
+    use std::collections::HashSet;
+
+    /// 前后端共享的错误码真值源：`contracts/error-codes.json`。
+    ///
+    /// 用 `include_str!` 而不是运行时读盘——清单缺了就在编译期炸掉，
+    /// 比 CI 里报「文件找不到」更早、更明确。目前只有测试消费它，
+    /// 所以放在 `#[cfg(test)]` 里免得非测试构建报 dead_code；
+    /// 等出现生产侧消费者（例如把清单塞进诊断信息）再上提到模块级。
+    const ERROR_CATALOG: &str = include_str!("../../../../contracts/error-codes.json");
 
     #[test]
     fn geo_error_keeps_its_stable_code() {
@@ -252,5 +261,207 @@ mod tests {
         let error = IpcError::internal("解析导入文件失败");
         assert_eq!(error.code, "ipc/internal");
         assert!(error.message.contains("解析导入文件失败"));
+    }
+
+    // -----------------------------------------------------------------
+    // `contracts/error-codes.json`：前后端共享的错误码真值源。
+    //
+    // Plan A 把后端错误改成 `code + params`、文案交给前端词典（spec §4.2），
+    // 因此「后端会发出哪些 code」必须是**一份**清单，两侧都拿它做完整性断言：
+    // Rust 侧是下面这四个用例（发射点穷举 + 清单自身形状），TS 侧是
+    // `apps/desktop/ui/src/i18n/error-codes.test.ts`。新增 code 只改 JSON，
+    // 两侧测试会同时提醒补词典与补发射点。
+    // -----------------------------------------------------------------
+
+    /// 仓库里实际用到的 `{kind}/not_found` 具体化。
+    ///
+    /// `GeoError::code()` 与 `StoreError::code()` 都是 `format!("{kind}/not_found")`
+    /// 动态拼出来的，所以清单里必须逐个落地。取值来自
+    /// `rg 'not_found\("' apps crates` 的实际调用点。
+    const NOT_FOUND_KINDS: [&str; 5] = [
+        "project",
+        "entity_card",
+        "prompt_set",
+        "prompt_item",
+        "competitor",
+    ];
+
+    fn llm_variants() -> Vec<LlmError> {
+        vec![
+            LlmError::Config("missing_base_url".into()),
+            LlmError::Transport(TransportError::Timeout),
+            LlmError::RateLimited,
+            LlmError::Server { status: 500 },
+            LlmError::BadResponse("empty_choices".into()),
+            LlmError::Deserialize("missing_field".into()),
+            LlmError::MissingSecret,
+        ]
+    }
+
+    fn crawler_variants() -> Vec<CrawlerError> {
+        vec![
+            CrawlerError::Blocked {
+                url: "https://a.example/x".into(),
+                reason: "robots".into(),
+            },
+            CrawlerError::Timeout {
+                url: "https://a.example/x".into(),
+            },
+            CrawlerError::Network("HTTP 500".into()),
+            CrawlerError::TooLarge {
+                url: "https://a.example/x".into(),
+            },
+            CrawlerError::InvalidUrl("abc".into()),
+            CrawlerError::Decode("非法字节".into()),
+        ]
+    }
+
+    /// 解析共享清单，返回其中登记的 code 集合。
+    fn catalog() -> HashSet<String> {
+        let parsed: serde_json::Value = serde_json::from_str(ERROR_CATALOG).expect("清单可解析");
+        parsed["codes"]
+            .as_array()
+            .expect("codes 是数组")
+            .iter()
+            .map(|entry| {
+                entry["code"]
+                    .as_str()
+                    .expect("每条都要有字符串 code")
+                    .to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_code_the_backend_emits_is_in_the_shared_catalog() {
+        let known = catalog();
+        let emitted = vec![
+            IpcError::from(GeoError::not_found("project", "x")).code,
+            IpcError::from(GeoError::validation("brand_name", "required")).code,
+            IpcError::from(LlmError::MissingSecret).code,
+            IpcError::from(StoreError::Conflict("dup".into())).code,
+            IpcError::from(CrawlerError::Timeout { url: "u".into() }).code,
+            IpcError::internal("boom").code,
+        ];
+        for code in emitted {
+            assert!(
+                known.contains(code.as_str()),
+                "{code} 不在 contracts/error-codes.json 里"
+            );
+        }
+    }
+
+    /// 穷举：每个错误变体的 code（含跨 crate 转成 `GeoError` 后带上的
+    /// `upstream/` 前缀）都必须在清单里，否则前端词典不可能覆盖到它。
+    #[test]
+    fn catalog_covers_every_variant_of_every_error_type() {
+        use std::io;
+
+        let known = catalog();
+        let mut emitted: Vec<String> = Vec::new();
+
+        // LLM / 抓取：直接转 IpcError 用 `code()`，先转 GeoError 则套 `upstream/`
+        emitted.extend(llm_variants().iter().map(|e| e.code().to_string()));
+        emitted.extend(crawler_variants().iter().map(|e| e.code().to_string()));
+        emitted.extend(llm_variants().into_iter().map(|e| GeoError::from(e).code()));
+        emitted.extend(
+            crawler_variants()
+                .into_iter()
+                .map(|e| GeoError::from(e).code()),
+        );
+
+        // 领域层固定码
+        let geo_cases = vec![
+            GeoError::validation("brand_name", "required"),
+            GeoError::conflict("duplicate"),
+            GeoError::config("missing_base_url"),
+            GeoError::Io(io::Error::other("磁盘满")),
+            GeoError::Serde(serde_json::from_str::<u8>("nope").unwrap_err()),
+        ];
+        emitted.extend(geo_cases.into_iter().map(|e| e.code()));
+
+        // 动态的 `{kind}/not_found`：GeoError 与 StoreError 两条路都要在清单里
+        for kind in NOT_FOUND_KINDS {
+            emitted.push(IpcError::from(GeoError::not_found(kind, "x")).code);
+            emitted.push(IpcError::from(StoreError::not_found(kind, "x")).code);
+        }
+
+        // 壳内直接用字面量构造的 code
+        emitted.push(IpcError::new("compliance/violation", "x").code);
+        emitted.push(IpcError::new("prompt_set/empty_import", "x").code);
+        emitted.push(IpcError::new("crawler/empty", "x").code);
+        emitted.push(IpcError::new("llm/config", "x").code);
+        emitted.push(IpcError::internal("x").code);
+
+        for code in &emitted {
+            assert!(
+                known.contains(code.as_str()),
+                "{code} 不在 contracts/error-codes.json 里"
+            );
+        }
+    }
+
+    /// 前端专属的三个码：`ipc/invoke_failed` 由 `invoke` 自身 reject 时发出、
+    /// `ipc/unknown_command` 由 demo 后端的运行时守卫发出（均为 Plan A 后续 task），
+    /// `ipc/unknown` 是 `IpcRequestError` 在 payload.code 为空串时的兜底
+    /// （`src/api/client.ts`，今天已存在）。Rust 侧都没有发射点，属预期，
+    /// 但清单必须先收着，免得后面再改一次契约。
+    #[test]
+    fn catalog_reserves_the_frontend_only_ipc_codes() {
+        let known = catalog();
+        for code in [
+            "ipc/internal",
+            "ipc/invoke_failed",
+            "ipc/unknown",
+            "ipc/unknown_command",
+        ] {
+            assert!(
+                known.contains(code),
+                "{code} 不在 contracts/error-codes.json 里"
+            );
+        }
+    }
+
+    /// 清单自身形状：按 code 升序（顺带保证不重复）、param 名是 snake_case、
+    /// 每条都有非空 note 说明它从哪儿发出。TS 侧断言同一套形状。
+    #[test]
+    fn catalog_is_sorted_unique_and_well_formed() {
+        let parsed: serde_json::Value = serde_json::from_str(ERROR_CATALOG).expect("清单可解析");
+        let entries = parsed["codes"].as_array().expect("codes 是数组");
+        assert!(!entries.is_empty(), "清单不能为空");
+
+        let mut previous: Option<&str> = None;
+        for entry in entries {
+            let code = entry["code"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{entry} 缺 code"));
+            assert!(!code.is_empty(), "code 不能为空");
+
+            let params = entry["params"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{code} 的 params 必须是数组"));
+            for param in params {
+                let name = param
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{code} 的 params 必须都是字符串"));
+                assert!(
+                    !name.is_empty() && name.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_'),
+                    "{code} 的 param 名要是非空 snake_case：{name:?}"
+                );
+            }
+
+            assert!(
+                entry["note"].as_str().is_some_and(|note| !note.is_empty()),
+                "{code} 缺 note：要说清它从哪儿发出、params 从哪来"
+            );
+
+            if let Some(previous) = previous {
+                assert!(
+                    previous < code,
+                    "清单要按 code 升序排列且不得重复：{previous} 之后是 {code}"
+                );
+            }
+            previous = Some(code);
+        }
     }
 }

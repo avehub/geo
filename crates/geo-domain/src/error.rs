@@ -124,9 +124,14 @@ impl GeoError {
     ///
     /// `key` 必须是 `contracts/error-codes.json` 里该 code 登记的参数名
     /// （`limit` / `expected` / `value` …），`value` 是原始值而不是句子。
-    /// `NotFound` / `Upstream` / `Io` / `Serde` 的键集是固定的、没有 `extra`，
-    /// 对它们调用本方法会在 debug 构建里 `debug_assert!` 失败（release 下原样返回）——
-    /// 误用要在测试期就炸出来，不能静默吞掉。
+    ///
+    /// 两类误用都在 debug 构建里 `debug_assert!` 炸出来（release 下原样返回，不 panic），
+    /// 因为它们都是**静默**的：`code()` 照常、`Display` 照印、没有任何报警。
+    ///
+    /// 1. `key` 撞基础键：`params()` 里 `extra` 是最后 `extend` 的，同名键会把变体字段
+    ///    提供的 `field` / `reason` 顶掉（`reason` key 被参数值替换 = 前端词典查不到）。
+    /// 2. 变体没有 `extra`：`NotFound` / `Upstream` / `Io` / `Serde` 的键集是固定的，
+    ///    参数会被丢弃。
     ///
     /// 注意与壳里的 `IpcError::with_param` 同名但不同层：脱敏（`redact`）只发生在
     /// IPC 边界，领域层原样保留值。
@@ -138,6 +143,10 @@ impl GeoError {
                 reason,
                 mut extra,
             } => {
+                debug_assert!(
+                    !matches!(key, "field" | "reason"),
+                    "validation/failed 的基础键 field / reason 由变体字段提供，不能被 extra 覆盖（收到 {key}）"
+                );
                 extra.insert(key.to_string(), value);
                 Self::Validation {
                     field,
@@ -146,10 +155,18 @@ impl GeoError {
                 }
             }
             Self::Conflict { reason, mut extra } => {
+                debug_assert!(
+                    key != "reason",
+                    "state/conflict 的基础键 reason 由变体字段提供，不能被 extra 覆盖（收到 {key}）"
+                );
                 extra.insert(key.to_string(), value);
                 Self::Conflict { reason, extra }
             }
             Self::Config { reason, mut extra } => {
+                debug_assert!(
+                    key != "reason",
+                    "config/invalid 的基础键 reason 由变体字段提供，不能被 extra 覆盖（收到 {key}）"
+                );
                 extra.insert(key.to_string(), value);
                 Self::Config { reason, extra }
             }
@@ -157,9 +174,14 @@ impl GeoError {
             | Self::Upstream { .. }
             | Self::Io(_)
             | Self::Serde(_)) => {
+                // panic 信息里只打 `code()`，不打 `{other:?}` 也不打参数值：`Debug` 输出
+                // **不经 `redact`**，`Upstream { message: "…sk-abc123…" }` 会把疑似 Key 的
+                // 原文送进 panic 信息（AGENTS 规则 3「日志与错误信息中不得出现 Key」）。
+                // `code()` 不含任何用户数据，定位足够了。
                 debug_assert!(
                     false,
-                    "{other:?} 的键集是固定的，参数 {key}={value} 会被丢弃"
+                    "{} 的键集是固定的，参数 {key} 会被丢弃",
+                    other.code()
                 );
                 other
             }
@@ -436,6 +458,63 @@ mod tests {
     #[should_panic(expected = "键集是固定的")]
     fn with_param_on_a_fixed_keyset_variant_trips_the_debug_assert() {
         let _err = GeoError::not_found("project", "abc").with_param("value", "x");
+    }
+
+    /// M-1：`params()` 里 `extra` 最后 `extend`，同名键会把变体字段提供的基础键顶掉，
+    /// 而 `code()` / `Display` 照常输出——静默到没有任何报警，因此必须 `debug_assert!`。
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "不能被 extra 覆盖")]
+    fn with_param_refuses_to_shadow_the_field_base_key() {
+        let _err = GeoError::validation("brand_name", "too_long").with_param("field", "aliases");
+        panic!("上面那行本该先炸");
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "不能被 extra 覆盖")]
+    fn with_param_refuses_to_shadow_the_validation_reason_key() {
+        let _err = GeoError::validation("brand_name", "too_long").with_param("reason", 60);
+        panic!("上面那行本该先炸");
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "不能被 extra 覆盖")]
+    fn with_param_refuses_to_shadow_the_conflict_reason_key() {
+        let _err = GeoError::conflict("write_failed").with_param("reason", "disk full");
+        panic!("上面那行本该先炸");
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "不能被 extra 覆盖")]
+    fn with_param_refuses_to_shadow_the_config_reason_key() {
+        let _err = GeoError::config("missing_base_url").with_param("reason", "x");
+        panic!("上面那行本该先炸");
+    }
+
+    /// M-3：panic 信息不得夹带用户数据（`Debug` 不经 `redact`）。
+    /// `Upstream` 的 `message` 装的是上游原文，可能带疑似 Key 的片段。
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "键集是固定的")]
+    fn fixed_keyset_panic_message_never_echoes_the_upstream_payload() {
+        let result = std::panic::catch_unwind(|| {
+            let _err = GeoError::upstream("auth", "Bearer sk-abc123XYZ_-9 无效")
+                .with_param("value", "sk-second0000");
+        });
+        let payload = result.unwrap_err();
+        let text = payload
+            .downcast_ref::<String>()
+            .cloned()
+            .unwrap_or_else(|| panic!("debug_assert 应当带 String 消息"));
+        assert!(
+            !text.contains("sk-"),
+            "panic 信息里出现了疑似 Key 的原文：{text}"
+        );
+        assert!(text.contains("upstream/auth"), "{text}");
+        panic!("{text}");
     }
 
     /// 领域错误仍是标准错误：`?` 与 `Box<dyn Error>` 都要能用（原 `#[from]` 语义）。

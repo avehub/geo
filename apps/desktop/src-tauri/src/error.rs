@@ -803,9 +803,29 @@ mod tests {
             error.params, expected,
             "壳内 params 必须逐键等于 GeoError::params()"
         );
-        // 兜底文案与 `GeoError::Display` 逐字同构（都是紧凑日志格式）
-        assert!(error.message.starts_with("validation/failed "), "{error}");
-        assert!(error.message.contains("limit=60"), "{error}");
+        // M-4：把「两层同构」焊成**跨层**断言。原先两层各写一份恰好相同的字面量
+        // （`starts_with` + `contains`），反转 `GeoError::Display` 的键序时
+        // `cargo test -p geo-desktop error::` 是 24 passed / 0 failed——只红一侧、不红「关系」。
+        // 现在直接拿 `GeoError::Display` 的输出来比：改任何一侧的格式或键序都会红。
+        //
+        // 注：`redact` 在 IPC 边界生效，因此参数值里带疑似 Key 时两边会（有意地）不相等；
+        // 同构断言针对不含密钥的普通值，密钥那条路由 `secret_shaped_strings_never_reach_the_frontend` 钉。
+        assert_eq!(
+            error.message,
+            GeoError::validation("brand_name", "too_long")
+                .with_param("limit", 60)
+                .to_string(),
+            "IpcError 的兜底文案必须与 GeoError::Display 逐字同构"
+        );
+
+        // 动态 code 前缀（`{kind}/not_found`）也要同构：`code()` 是方法调用，
+        // 不是常量，最容易在两层之间走偏。
+        let not_found_display = GeoError::not_found("project", "abc").to_string();
+        assert_eq!(
+            IpcError::from(GeoError::not_found("project", "abc")).message,
+            not_found_display,
+            "动态 code 前缀同样要与 GeoError::Display 逐字同构"
+        );
     }
 
     #[test]

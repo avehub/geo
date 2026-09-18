@@ -97,7 +97,7 @@ pub fn clean_optional(value: Option<String>) -> Option<String> {
 pub fn normalize_url(field: &str, raw: &str) -> Result<String, GeoError> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return Err(GeoError::validation(field, "不能为空"));
+        return Err(GeoError::validation(field, "required"));
     }
     let candidate = if trimmed.contains("://") {
         trimmed.to_string()
@@ -105,21 +105,16 @@ pub fn normalize_url(field: &str, raw: &str) -> Result<String, GeoError> {
         format!("https://{trimmed}")
     };
     let parsed = Url::parse(&candidate)
-        .map_err(|_| GeoError::validation(field, format!("不是合法网址：{trimmed}")))?;
+        .map_err(|_| GeoError::validation(field, "invalid_url").with_param("value", trimmed))?;
     if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(GeoError::validation(field, "只支持 http/https 网址"));
+        return Err(GeoError::validation(field, "not_allowed").with_param("value", parsed.scheme()));
     }
     // `Url::parse` 会把「不是网址」「内网」这类串当 IDN 主机名收下，
     // 因此这里只放行 IP 与含点号的域名，避免用户的错字变成一次真实外网请求。
     match parsed.host() {
         Some(Host::Ipv4(_)) | Some(Host::Ipv6(_)) => {}
         Some(Host::Domain(host)) if host.contains('.') => {}
-        _ => {
-            return Err(GeoError::validation(
-                field,
-                "缺少合法域名，请形如 www.example.com",
-            ))
-        }
+        _ => return Err(GeoError::validation(field, "invalid_url").with_param("value", trimmed)),
     }
     Ok(candidate)
 }

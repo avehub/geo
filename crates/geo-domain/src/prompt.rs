@@ -224,25 +224,20 @@ impl PromptItem {
     pub fn validate(&self) -> Result<(), GeoError> {
         let text = self.text.trim();
         if text.is_empty() {
-            return Err(GeoError::validation("text", "prompt 不能为空"));
+            return Err(GeoError::validation("text", "required"));
         }
         if text.chars().count() > MAX_PROMPT_CHARS {
-            return Err(GeoError::validation(
-                "text",
-                format!("prompt 不能超过 {MAX_PROMPT_CHARS} 字"),
-            ));
+            return Err(
+                GeoError::validation("text", "too_long").with_param("limit", MAX_PROMPT_CHARS)
+            );
         }
         if !(1..=MAX_WEIGHT).contains(&self.weight) {
-            return Err(GeoError::validation(
-                "weight",
-                format!("权重需在 1~{MAX_WEIGHT} 之间"),
-            ));
+            return Err(GeoError::validation("weight", "out_of_range")
+                .with_param("expected", format!("1~{MAX_WEIGHT}")));
         }
         if !(1..=MAX_REPEAT_COUNT).contains(&self.repeat_count) {
-            return Err(GeoError::validation(
-                "repeat_count",
-                format!("重复采样次数需在 1~{MAX_REPEAT_COUNT} 之间"),
-            ));
+            return Err(GeoError::validation("repeat_count", "out_of_range")
+                .with_param("expected", format!("1~{MAX_REPEAT_COUNT}")));
         }
         Ok(())
     }

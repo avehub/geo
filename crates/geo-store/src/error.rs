@@ -5,6 +5,7 @@
 //! `Secret` ↔ `Config` → `config/invalid`。数据库层错误归入 `io/failed`，
 //! 唯一约束冲突归入 `state/conflict`。
 
+use std::collections::BTreeMap;
 use std::io;
 
 use geo_domain::GeoError;
@@ -98,8 +99,16 @@ impl From<StoreError> for GeoError {
     fn from(error: StoreError) -> Self {
         match error {
             StoreError::NotFound { kind, id } => GeoError::NotFound { kind, id },
-            StoreError::Validation { field, reason } => GeoError::Validation { field, reason },
-            StoreError::Conflict(reason) => GeoError::Conflict { reason },
+            // `StoreError` 还没有 extra（Task 4 补齐），因此这里 extra 置空。
+            StoreError::Validation { field, reason } => GeoError::Validation {
+                field,
+                reason,
+                extra: BTreeMap::new(),
+            },
+            StoreError::Conflict(reason) => GeoError::Conflict {
+                reason,
+                extra: BTreeMap::new(),
+            },
             StoreError::Sqlx(sqlx_error) => {
                 if is_unique_violation(&sqlx_error) {
                     GeoError::conflict(sqlx_error.to_string())
@@ -118,10 +127,11 @@ impl From<GeoError> for StoreError {
     fn from(error: GeoError) -> Self {
         match error {
             GeoError::NotFound { kind, id } => StoreError::NotFound { kind, id },
-            GeoError::Validation { field, reason } => StoreError::Validation { field, reason },
-            GeoError::Conflict { reason } => StoreError::Conflict(reason),
+            // 反向丢掉 `extra`：`StoreError` 的 extra 由 Task 4 补齐后这里才无损。
+            GeoError::Validation { field, reason, .. } => StoreError::Validation { field, reason },
+            GeoError::Conflict { reason, .. } => StoreError::Conflict(reason),
             // `config/invalid` 在存储层主要来自密钥不可用，映射回 `Secret` 以保持 code 语义。
-            GeoError::Config { reason } => StoreError::Secret(reason),
+            GeoError::Config { reason, .. } => StoreError::Secret(reason),
             // 存储层不会产生上游错误；仅为反向转换完整性保留，降级为冲突。
             GeoError::Upstream { code, message } => {
                 StoreError::Conflict(format!("upstream/{code}：{message}"))

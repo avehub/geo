@@ -38,9 +38,9 @@ macro_rules! id_type {
             type Err = GeoError;
 
             fn from_str(raw: &str) -> Result<Self, Self::Err> {
-                Uuid::parse_str(raw.trim())
-                    .map(Self)
-                    .map_err(|_| GeoError::validation(stringify!($name), format!("非法 ID：{raw}")))
+                Uuid::parse_str(raw.trim()).map(Self).map_err(|_| {
+                    GeoError::validation(stringify!($name), "invalid_id").with_param("value", raw)
+                })
             }
         }
 

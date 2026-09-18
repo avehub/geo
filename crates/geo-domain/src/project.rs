@@ -186,38 +186,30 @@ impl ProjectDraft {
     pub fn validate(&self) -> Result<(), GeoError> {
         let brand = self.brand_name.trim();
         if brand.is_empty() {
-            return Err(GeoError::validation("brand_name", "不能为空"));
+            return Err(GeoError::validation("brand_name", "required"));
         }
         if brand.chars().count() > MAX_BRAND_NAME_CHARS {
-            return Err(GeoError::validation(
-                "brand_name",
-                format!("长度不能超过 {MAX_BRAND_NAME_CHARS} 字"),
-            ));
+            return Err(GeoError::validation("brand_name", "too_long")
+                .with_param("limit", MAX_BRAND_NAME_CHARS));
         }
         if self.aliases.len() > MAX_ALIASES {
-            return Err(GeoError::validation(
-                "aliases",
-                format!("别名不能超过 {MAX_ALIASES} 个"),
-            ));
+            return Err(GeoError::validation("aliases", "out_of_range")
+                .with_param("expected", format!("<={MAX_ALIASES}")));
         }
         for alias in &self.aliases {
             let alias = alias.trim();
             if alias.is_empty() {
-                return Err(GeoError::validation("aliases", "别名不能为空"));
+                return Err(GeoError::validation("aliases", "required"));
             }
             if alias.chars().count() > MAX_ALIAS_CHARS {
-                return Err(GeoError::validation(
-                    "aliases",
-                    format!("单个别名不能超过 {MAX_ALIAS_CHARS} 字"),
-                ));
+                return Err(GeoError::validation("aliases", "too_long")
+                    .with_param("limit", MAX_ALIAS_CHARS));
             }
         }
         if let Some(name) = clean_optional(self.name.clone()) {
             if name.chars().count() > MAX_PROJECT_NAME_CHARS {
-                return Err(GeoError::validation(
-                    "name",
-                    format!("项目名不能超过 {MAX_PROJECT_NAME_CHARS} 字"),
-                ));
+                return Err(GeoError::validation("name", "too_long")
+                    .with_param("limit", MAX_PROJECT_NAME_CHARS));
             }
         }
         if let Some(website) = clean_optional(self.website.clone()) {
@@ -234,37 +226,31 @@ impl ProjectDraft {
         }
         if let Some(region) = clean_optional(self.region.clone()) {
             if region.chars().count() > MAX_REGION_CHARS {
-                return Err(GeoError::validation(
-                    "region",
-                    format!("地域不能超过 {MAX_REGION_CHARS} 字"),
-                ));
+                return Err(GeoError::validation("region", "too_long")
+                    .with_param("limit", MAX_REGION_CHARS));
             }
         }
         if self.tags.len() > MAX_TAGS {
-            return Err(GeoError::validation(
-                "tags",
-                format!("标签不能超过 {MAX_TAGS} 个"),
-            ));
+            return Err(GeoError::validation("tags", "out_of_range")
+                .with_param("expected", format!("<={MAX_TAGS}")));
         }
         if self.competitors.len() > MAX_COMPETITORS {
-            return Err(GeoError::validation(
-                "competitors",
-                format!("竞品不能超过 {MAX_COMPETITORS} 家"),
-            ));
+            return Err(GeoError::validation("competitors", "out_of_range")
+                .with_param("expected", format!("<={MAX_COMPETITORS}")));
         }
         for (index, competitor) in self.competitors.iter().enumerate() {
             let name = competitor.name.trim();
             if name.is_empty() {
                 return Err(GeoError::validation(
                     format!("competitors[{index}].name"),
-                    "竞品名称不能为空",
+                    "required",
                 ));
             }
             if name.chars().count() > MAX_BRAND_NAME_CHARS {
-                return Err(GeoError::validation(
-                    format!("competitors[{index}].name"),
-                    format!("长度不能超过 {MAX_BRAND_NAME_CHARS} 字"),
-                ));
+                return Err(
+                    GeoError::validation(format!("competitors[{index}].name"), "too_long")
+                        .with_param("limit", MAX_BRAND_NAME_CHARS),
+                );
             }
             if let Some(website) = clean_optional(competitor.website.clone()) {
                 normalize_url(&format!("competitors[{index}].website"), &website)?;

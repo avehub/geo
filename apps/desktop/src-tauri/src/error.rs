@@ -63,8 +63,8 @@ impl IpcError {
     ///
     /// `message` 用紧凑日志格式 `"{code} {k}={v} …"` 兜底：它不含任何自然语言，
     /// 因此前端切语言时不会露出另一种语言的散文；词典命中时前端根本不用它。
-    /// 该格式与 Task 3 要给 `GeoError::Display` 定的格式一致，届时下面四个
-    /// `From` 可以直接换成 `Self::with_params(error.code(), error.params())`。
+    /// 该格式与 `GeoError::Display` 逐字同构（Task 3 已落地），因此
+    /// `From<GeoError>` 直接委托 `Self::with_params(error.code(), error.params())`。
     pub fn with_params(
         code: impl Into<String>,
         params: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
@@ -125,37 +125,20 @@ impl std::fmt::Display for IpcError {
 
 impl std::error::Error for IpcError {}
 
-// 下面四个 `From` 各自就地拼 params：键名一律逐字取自冻结的
+// 下面三个 `From` 各自就地拼 params：键名一律逐字取自冻结的
 // `contracts/error-codes.json`（测试 `params_keys_stay_inside_the_shared_catalog`
 // 穷举核对），值原样透传，`match` 都不写 `_` 兜底——下游加变体这里立刻编译失败，
 // 逼实现者当场决定新变体带哪些键（与本文件测试模块的穷举守卫同一思路）。
-// 部分值今天仍是中文散文（`validation` 的 reason、`CrawlerError::Network` 那段
-// 合并文本）：换 reason key 是 Task 3/5 的活、拆变体是 Task 4 的活，
-// 本层只负责把管道接通。
+// 部分值今天仍是中文散文（`CrawlerError::Network` / `InvalidUrl` 那段
+// 合并文本）：拆变体是 Task 4 的活，本层只负责把管道接通。
 //
-// **这四份映射是临时的**（控制器裁定）：Task 2 不为「将来好改」提前抽共享 helper，
-// Task 3 收 `GeoError` 那份、Task 4 收另外三份，各自换成委托 `params()` 并删掉
-// 整个 match——同一映射存在两份必然漂移。
+// **这三份映射是临时的**（控制器裁定）：Task 2 不为「将来好改」提前抽共享 helper，
+// Task 4 把它们换成委托各自的 `params()` 并删掉整个 match——同一映射存在两份必然漂移。
 
+// `From<GeoError>` 已经收编（Task 3）：领域层自己产出 `params()`，这里只做委托。
 impl From<GeoError> for IpcError {
     fn from(error: GeoError) -> Self {
-        let ipc = Self::new(error.code(), error.user_message());
-        // Task 3 删除点：改成 `Self::with_params(error.code(), error.params())`
-        match error {
-            GeoError::Validation { field, reason } => {
-                ipc.with_param("field", field).with_param("reason", reason)
-            }
-            GeoError::NotFound { kind, id } => ipc.with_param("kind", kind).with_param("id", id),
-            GeoError::Conflict { reason } => ipc.with_param("reason", reason),
-            GeoError::Config { reason } => ipc.with_param("reason", reason),
-            // 上游原文按契约走包装族的两个键：upstream_code 是里层稳定码，
-            // upstream 是原文（不进词典，UI 以次要文本展示，spec §4.2）
-            GeoError::Upstream { code, message } => ipc
-                .with_param("upstream_code", code)
-                .with_param("upstream", message),
-            GeoError::Io(io_error) => ipc.with_param("reason", io_error.to_string()),
-            GeoError::Serde(serde_error) => ipc.with_param("reason", serde_error.to_string()),
-        }
+        Self::with_params(error.code(), error.params())
     }
 }
 
@@ -324,12 +307,16 @@ mod tests {
         assert!(!error.message.is_empty());
     }
 
+    /// 与 Task 2 的 `…_reason_params` 区分：这条钉的是**兜底文案**。
+    /// Task 3 之后它是紧凑日志格式（与 `GeoError::Display` 逐字同构），不再是中文散文。
     #[test]
-    fn validation_error_carries_field_and_reason() {
-        let error = IpcError::from(GeoError::validation("brand_name", "不能为空"));
+    fn validation_error_carries_field_and_reason_message() {
+        let error = IpcError::from(GeoError::validation("brand_name", "required"));
         assert_eq!(error.code, "validation/failed");
-        assert!(error.message.contains("brand_name"));
-        assert!(error.message.contains("不能为空"));
+        assert_eq!(
+            error.message,
+            "validation/failed field=brand_name reason=required"
+        );
     }
 
     #[test]
@@ -366,10 +353,11 @@ mod tests {
 
     #[test]
     fn serialises_to_the_shape_the_frontend_expects() {
-        let error = IpcError::from(GeoError::conflict("重复导入"));
+        let error = IpcError::from(GeoError::conflict("duplicate"));
         let json = serde_json::to_value(&error).expect("可序列化");
         assert_eq!(json["code"], "state/conflict");
-        assert_eq!(json["message"], "操作冲突：重复导入");
+        assert_eq!(json["params"], serde_json::json!({ "reason": "duplicate" }));
+        assert_eq!(json["message"], "state/conflict reason=duplicate");
         assert!(json["detail"].is_null());
     }
 
@@ -408,8 +396,11 @@ mod tests {
 
     #[test]
     fn redaction_leaves_ordinary_text_alone() {
-        let error = IpcError::from(GeoError::config("base_url 为空，任务已跳过"));
-        assert_eq!(error.message, "配置错误：base_url 为空，任务已跳过");
+        let error = IpcError::from(GeoError::config("missing_base_url"));
+        assert_eq!(error.code, "config/invalid");
+        assert_eq!(error.params["reason"], "missing_base_url");
+        // 兜底文案是紧凑日志格式：不含自然语言，也没被 redact 误伤
+        assert_eq!(error.message, "config/invalid reason=missing_base_url");
     }
 
     #[test]
@@ -796,6 +787,25 @@ mod tests {
         assert_eq!(stored.params["field"], "domain");
         assert_eq!(stored.params["reason"], "invalid_url");
         assert_eq!(stored.params.len(), 2);
+    }
+
+    /// Task 3：`From<GeoError>` 委托 `GeoError::params()`，壳内不再自己拼一份映射
+    /// （同一映射存在两份必然漂移）。逐键相等，含 `extra` 带出来的键。
+    #[test]
+    fn geo_error_conversion_delegates_params_including_extra() {
+        let geo = GeoError::validation("brand_name", "too_long").with_param("limit", 60);
+        let expected = geo.params();
+        assert_eq!(expected.len(), 3);
+
+        let error = IpcError::from(geo);
+        assert_eq!(error.code, "validation/failed");
+        assert_eq!(
+            error.params, expected,
+            "壳内 params 必须逐键等于 GeoError::params()"
+        );
+        // 兜底文案与 `GeoError::Display` 逐字同构（都是紧凑日志格式）
+        assert!(error.message.starts_with("validation/failed "), "{error}");
+        assert!(error.message.contains("limit=60"), "{error}");
     }
 
     #[test]

@@ -142,8 +142,8 @@
     },
     {
       "code": "state/conflict",
-      "params": ["reason"],
-      "note": "GeoError::Conflict、StoreError::Conflict，以及 StoreError::Sqlx 命中 SQLite 唯一约束/主键冲突（错误码 2067 / 1555 / 19）。reason 取 duplicate 等稳定 key。"
+      "params": ["reason", "value"],
+      "note": "GeoError::Conflict、StoreError::Conflict，以及 StoreError::Sqlx 命中 SQLite 唯一约束/主键冲突（错误码 2067 / 1555 / 19）。reason 取 duplicate / write_failed 等稳定 key；value 装底层错误原文（如 CSV 导出写失败时的 OS/驱动报文），不进词典。reason key 目录以 crates/geo-domain/src/error.rs 的模块文档注释为准。"
     },
     {
       "code": "upstream/crawler/blocked",
@@ -212,8 +212,8 @@
     },
     {
       "code": "validation/failed",
-      "params": ["field", "reason"],
-      "note": "GeoError::Validation 与 StoreError::Validation；field 是字段名（与前端表单一一对应），reason 是稳定 key（required / empty / too_long / too_short / invalid_url / invalid_id / invalid_format / duplicate / out_of_range / not_allowed / missing_header / row_invalid，目录由 Plan A Task 3 在 geo-domain/src/error.rs 定义）。"
+      "params": ["expected", "field", "limit", "reason", "value"],
+      "note": "GeoError::Validation 与 StoreError::Validation；field 是字段名（与前端表单一一对应），reason 是稳定 key（如 required / too_long / out_of_range）。reason key 目录以 crates/geo-domain/src/error.rs 的模块文档注释为准，本文件不再复制清单（两处清单必然漂移）；limit / expected / value 是该 key 的配套参数：limit 是字符数上限，expected 是语言中立区间表达式（如 1~5、<=5、0~9），value 是出错的原始值。"
     }
   ]
 }

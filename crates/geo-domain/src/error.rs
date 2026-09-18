@@ -1,32 +1,86 @@
 //! 跨层统一错误类型。
+//!
+//! 后端不产出自然语言：每个错误都是「稳定 `code` + 语言中立 `params`」，
+//! 文案由前端词典（`apps/desktop/ui/src/i18n`）按当前语言渲染，参数名由冻结的
+//! `contracts/error-codes.json` 登记（契约见
+//! `docs/superpowers/specs/2026-09-18-geo-desktop-demo-i18n-settings-design.md` §4.2）。
+//! 因此 [`GeoError`] 的 `Display` 是**日志格式**，不是给人读的句子。
+//!
+//! # reason key 目录（Plan A Task 4/5/7 的唯一真值源）
+//!
+//! `Validation` / `Conflict` / `Config` 的 `reason` 取下列 key 之一，一律小写下划线。
+//! 契约文件的 `note` 不再复制这份清单——两处清单必然漂移，以本注释为准。
+//!
+//! | key | 语义 | 配套参数 |
+//! | --- | --- | --- |
+//! | `required` | 必填项缺失/为空（表单字段） | — |
+//! | `empty` | 集合或文件整体为空 | — |
+//! | `too_long` | **字符数**超过上限 | `limit` |
+//! | `too_short` | **字符数**低于下限 | `limit` |
+//! | `invalid_url` | 网址无法解析或缺少合法域名 | `value` |
+//! | `invalid_id` | 不是合法 ID（UUID 等） | `value` |
+//! | `invalid_format` | 值的形状/类型不对（下标非法、父节点不是对象……） | `value` |
+//! | `duplicate` | 重复（唯一约束、重复导入） | — |
+//! | `out_of_range` | 数量或数值区间越界 | `expected`（`1~5` / `<=5` / `0~9`）、`value` |
+//! | `not_allowed` | 协议/取值/内容不被允许（含广告法红线词） | `value` |
+//! | `missing_header` | CSV 缺少必需列 | `value` |
+//! | `row_invalid` | CSV 单行非法（行级错误，配 `CsvRowError`） | `value` |
+//! | `unknown_provider` | 服务商档案不存在 | `value` |
+//! | `missing_base_url` | 服务商缺 base_url | — |
+//! | `missing_model` | 缺模型名 | — |
+//! | `parse_failed` | 解析上游响应/文件内容失败 | `value` |
+//! | `unknown_field` | 字段路径指向未知字段（路径本身格式是对的） | `value` |
+//! | `write_failed` | 导出/写文件失败（不是解析问题） | `value` |
+//!
+//! 三条语义规则：
+//!
+//! 1. `required` = 必填项缺失/为空（**表单字段**）；`empty` = 集合或文件整体为空。
+//! 2. `too_long` / `too_short` **只用于字符数**，配 `limit`；数量与数值区间一律
+//!    `out_of_range`，配 `expected`（语言中立表达式）。单位（字/个/家）属于文案，
+//!    只能由词典模板给出——参数里出现「60 字」等于把中文塞回 params。
+//! 3. **raw passthrough 例外**：`io/failed` 与 `data/invalid` 的 `reason` 是操作系统 /
+//!    serde 的**原文**，不是上表的 key（OS 错误没有有限词表，硬造 key 只会说谎）。
+//!    同一规则覆盖 `upstream/*` 的 `upstream`（上游返回的原文报文）。
+//!    由此定下前端词典规则（Task 7 依赖）：先查 `errors.reasons.<reason>`，
+//!    **查不到就原样显示该值**。
+//!
+//! 参数值一律是语言中立的原始值（数字、URL、ID、字段名、下标、底层错误原文），
+//! **绝不允许是句子**。密钥脱敏发生在 IPC 边界的 `IpcError::with_params`
+//! （AGENTS 规则 3），领域层不做——本 crate 也不该知道哪些字段像密钥。
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 /// 领域错误。所有 crate 对外暴露的错误最终都转换为该类型，
-/// 由桌面壳在 IPC 边界映射为稳定错误码 + 中文可读原因。
-#[derive(Debug, thiserror::Error)]
+/// 由桌面壳在 IPC 边界映射为稳定错误码 + 语言中立参数。
+#[derive(Debug)]
 pub enum GeoError {
-    /// 输入校验失败，携带字段名与原因。
-    #[error("{field} 校验失败：{reason}")]
-    Validation { field: String, reason: String },
+    /// 输入校验失败：`field` 是字段名，`reason` 是目录里的 key，
+    /// `extra` 是该 key 的配套参数（`limit` / `expected` / `value`）。
+    Validation {
+        field: String,
+        reason: String,
+        extra: BTreeMap<String, String>,
+    },
     /// 资源不存在，`kind` 为资源类别（如 `project`、`prompt_set`）。
-    #[error("{kind} 不存在：{id}")]
     NotFound { kind: String, id: String },
-    /// 状态冲突（如重复导入、版本冲突）。
-    #[error("操作冲突：{reason}")]
-    Conflict { reason: String },
+    /// 状态冲突（如重复导入、版本冲突、导出写失败）。
+    Conflict {
+        reason: String,
+        extra: BTreeMap<String, String>,
+    },
     /// 配置缺失或非法。
-    #[error("配置错误：{reason}")]
-    Config { reason: String },
-    /// 上游服务（LLM / 引擎 / 站点）返回的错误。
-    #[error("上游服务错误[{code}]：{message}")]
+    Config {
+        reason: String,
+        extra: BTreeMap<String, String>,
+    },
+    /// 上游服务（LLM / 引擎 / 站点）返回的错误：`code` 是里层稳定码，
+    /// `message` 是上游原文（不进词典，UI 以次要文本展示）。
     Upstream { code: String, message: String },
-    /// IO 错误。
-    #[error("读写错误：{0}")]
-    Io(#[from] std::io::Error),
-    /// 序列化/反序列化错误。
-    #[error("数据格式错误：{0}")]
-    Serde(#[from] serde_json::Error),
+    /// IO 错误。`params()["reason"]` 是操作系统原文（raw passthrough）。
+    Io(std::io::Error),
+    /// 序列化/反序列化错误。`params()["reason"]` 是 serde 原文（raw passthrough）。
+    Serde(serde_json::Error),
 }
 
 impl GeoError {
@@ -34,6 +88,7 @@ impl GeoError {
         Self::Validation {
             field: field.into(),
             reason: reason.into(),
+            extra: BTreeMap::new(),
         }
     }
 
@@ -47,12 +102,14 @@ impl GeoError {
     pub fn conflict(reason: impl Into<String>) -> Self {
         Self::Conflict {
             reason: reason.into(),
+            extra: BTreeMap::new(),
         }
     }
 
     pub fn config(reason: impl Into<String>) -> Self {
         Self::Config {
             reason: reason.into(),
+            extra: BTreeMap::new(),
         }
     }
 
@@ -63,8 +120,54 @@ impl GeoError {
         }
     }
 
+    /// 链式追加一个语言中立参数，落进变体的 `extra`。
+    ///
+    /// `key` 必须是 `contracts/error-codes.json` 里该 code 登记的参数名
+    /// （`limit` / `expected` / `value` …），`value` 是原始值而不是句子。
+    /// `NotFound` / `Upstream` / `Io` / `Serde` 的键集是固定的、没有 `extra`，
+    /// 对它们调用本方法会在 debug 构建里 `debug_assert!` 失败（release 下原样返回）——
+    /// 误用要在测试期就炸出来，不能静默吞掉。
+    ///
+    /// 注意与壳里的 `IpcError::with_param` 同名但不同层：脱敏（`redact`）只发生在
+    /// IPC 边界，领域层原样保留值。
+    pub fn with_param(self, key: &str, value: impl fmt::Display) -> Self {
+        let value = value.to_string();
+        match self {
+            Self::Validation {
+                field,
+                reason,
+                mut extra,
+            } => {
+                extra.insert(key.to_string(), value);
+                Self::Validation {
+                    field,
+                    reason,
+                    extra,
+                }
+            }
+            Self::Conflict { reason, mut extra } => {
+                extra.insert(key.to_string(), value);
+                Self::Conflict { reason, extra }
+            }
+            Self::Config { reason, mut extra } => {
+                extra.insert(key.to_string(), value);
+                Self::Config { reason, extra }
+            }
+            other @ (Self::NotFound { .. }
+            | Self::Upstream { .. }
+            | Self::Io(_)
+            | Self::Serde(_)) => {
+                debug_assert!(
+                    false,
+                    "{other:?} 的键集是固定的，参数 {key}={value} 会被丢弃"
+                );
+                other
+            }
+        }
+    }
+
     /// 稳定错误码，供前端分支处理。`NotFound` 会带上资源类别前缀，
-    /// 例如 `project/not_found`。
+    /// 例如 `project/not_found`；`Upstream` 套 `upstream/` 前缀。
     pub fn code(&self) -> String {
         match self {
             Self::Validation { .. } => "validation/failed".to_string(),
@@ -77,9 +180,93 @@ impl GeoError {
         }
     }
 
-    /// 面向用户的中文原因。
+    /// 语言中立参数：前端词典按这些键插值，键名由
+    /// `contracts/error-codes.json` 冻结。
+    ///
+    /// 键集（与契约逐字一致）：
+    /// `Validation` → `{field, reason} ∪ extra`、`NotFound` → `{kind, id}`、
+    /// `Conflict`/`Config` → `{reason} ∪ extra`、`Upstream` → `{upstream_code, upstream}`、
+    /// `Io`/`Serde` → `{reason}`（原文透传）。
+    ///
+    /// 这是 `code` 之外唯一的真值源：`Display` 与壳里的
+    /// `From<GeoError> for IpcError` 都复用它，不再各拼一份。
+    pub fn params(&self) -> BTreeMap<String, String> {
+        let mut params = BTreeMap::new();
+        match self {
+            Self::Validation {
+                field,
+                reason,
+                extra,
+            } => {
+                params.insert("field".to_string(), field.clone());
+                params.insert("reason".to_string(), reason.clone());
+                params.extend(
+                    extra
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone())),
+                );
+            }
+            Self::Conflict { reason, extra } | Self::Config { reason, extra } => {
+                params.insert("reason".to_string(), reason.clone());
+                params.extend(
+                    extra
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone())),
+                );
+            }
+            Self::NotFound { kind, id } => {
+                params.insert("kind".to_string(), kind.clone());
+                params.insert("id".to_string(), id.clone());
+            }
+            Self::Upstream { code, message } => {
+                // 上游原文按契约走包装族的两个键（不是 code/message）
+                params.insert("upstream_code".to_string(), code.clone());
+                params.insert("upstream".to_string(), message.clone());
+            }
+            Self::Io(io_error) => {
+                params.insert("reason".to_string(), io_error.to_string());
+            }
+            Self::Serde(serde_error) => {
+                params.insert("reason".to_string(), serde_error.to_string());
+            }
+        }
+        params
+    }
+
+    /// 日志/兜底文案。**不再承诺中文散文**：内容是紧凑日志格式
+    /// （`"{code} {k}={v} …"`），词典未命中时前端才会展示它。
     pub fn user_message(&self) -> String {
         self.to_string()
+    }
+}
+
+/// 紧凑日志格式：`"{code} {k}={v} {k}={v}…"`，键序按 `BTreeMap`（字典序）。
+///
+/// 与壳里 `IpcError::with_params` 的兜底文案**逐字同构**，因此同一条错误在
+/// 领域层日志与 IPC 兜底文案里长得一样，便于串起来查。
+/// 手写而不用 thiserror 的 `#[error("…")]`：`code()` 对 `NotFound` / `Upstream`
+/// 要动态拼前缀，模板里表达不了，而 `params()` 必须保持单一真值源。
+impl fmt::Display for GeoError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.code())?;
+        for (key, value) in self.params() {
+            write!(f, " {key}={value}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for GeoError {}
+
+impl From<std::io::Error> for GeoError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+impl From<serde_json::Error> for GeoError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Serde(error)
     }
 }
 
@@ -89,10 +276,10 @@ mod tests {
 
     #[test]
     fn validation_error_contains_field_and_reason() {
-        let err = GeoError::validation("brand_name", "不能为空");
+        let err = GeoError::validation("brand_name", "required");
         assert_eq!(err.code(), "validation/failed");
         assert!(err.user_message().contains("brand_name"));
-        assert!(err.user_message().contains("不能为空"));
+        assert!(err.user_message().contains("required"));
     }
 
     #[test]
@@ -106,5 +293,163 @@ mod tests {
     fn upstream_code_is_namespaced() {
         let err = GeoError::upstream("rate_limited", "请求过于频繁");
         assert_eq!(err.code(), "upstream/rate_limited");
+    }
+
+    // -----------------------------------------------------------------
+    // `params()` 与日志格式 `Display`（spec §4.2 / Plan A Task 3）。
+    //
+    // 断言只认 `code` + 语言中立的 `params` 键值，不认任何自然语言散文：
+    // 文案由前端词典按当前语言渲染，后端一旦把散文塞进 params 就等于把
+    // 一种语言焊死在契约里。
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn validation_params_carry_field_and_reason_key() {
+        let err = GeoError::validation("brand_name", "required");
+        let mut expected = BTreeMap::new();
+        expected.insert("field".to_string(), "brand_name".to_string());
+        expected.insert("reason".to_string(), "required".to_string());
+        assert_eq!(err.params(), expected);
+    }
+
+    #[test]
+    fn display_is_a_compact_log_line() {
+        let err = GeoError::validation("brand_name", "required");
+        assert_eq!(
+            err.to_string(),
+            "validation/failed field=brand_name reason=required"
+        );
+        assert_eq!(err.user_message(), err.to_string());
+    }
+
+    #[test]
+    fn with_param_adds_a_language_neutral_value_in_lexical_order() {
+        let err = GeoError::validation("brand_name", "too_long").with_param("limit", 60);
+        assert_eq!(
+            err.to_string(),
+            "validation/failed field=brand_name limit=60 reason=too_long"
+        );
+        assert_eq!(err.params()["limit"], "60");
+    }
+
+    #[test]
+    fn conflict_and_config_params_merge_extra() {
+        let conflict = GeoError::conflict("write_failed").with_param("value", "disk full");
+        assert_eq!(conflict.code(), "state/conflict");
+        assert_eq!(conflict.params()["reason"], "write_failed");
+        assert_eq!(conflict.params()["value"], "disk full");
+        assert_eq!(conflict.params().len(), 2);
+
+        let config = GeoError::config("missing_base_url");
+        assert_eq!(config.params()["reason"], "missing_base_url");
+        assert_eq!(config.params().len(), 1);
+    }
+
+    #[test]
+    fn not_found_params_carry_kind_and_id() {
+        let err = GeoError::not_found("project", "abc");
+        assert_eq!(err.params()["kind"], "project");
+        assert_eq!(err.params()["id"], "abc");
+        assert_eq!(err.params().len(), 2);
+        assert!(err.to_string().starts_with("project/not_found "), "{}", err);
+    }
+
+    #[test]
+    fn upstream_params_use_the_wrapper_keys() {
+        let err = GeoError::upstream("llm/server", "HTTP 503");
+        assert_eq!(err.code(), "upstream/llm/server");
+        assert_eq!(err.params()["upstream_code"], "llm/server");
+        assert_eq!(err.params()["upstream"], "HTTP 503");
+        assert_eq!(err.params().len(), 2);
+        assert_eq!(
+            err.to_string(),
+            "upstream/llm/server upstream=HTTP 503 upstream_code=llm/server"
+        );
+    }
+
+    /// 目录里的代表性 key：每个都带语言中立的原始值（数字 / 表达式 / 原始串），
+    /// 绝不带句子。`write_failed` 挂在 `Conflict` 上（CSV 导出写失败是操作冲突）。
+    #[test]
+    fn representative_reason_keys_carry_language_neutral_values() {
+        let cases: Vec<(GeoError, &str, &str, &str)> = vec![
+            (
+                GeoError::validation("website", "invalid_url").with_param("value", "not a url"),
+                "invalid_url",
+                "value",
+                "not a url",
+            ),
+            (
+                GeoError::validation("weight", "out_of_range").with_param("expected", "1~5"),
+                "out_of_range",
+                "expected",
+                "1~5",
+            ),
+            (
+                GeoError::validation("csv_header", "missing_header")
+                    .with_param("value", "intent, source"),
+                "missing_header",
+                "value",
+                "intent, source",
+            ),
+            (
+                GeoError::validation("field_path", "unknown_field").with_param("value", "products"),
+                "unknown_field",
+                "value",
+                "products",
+            ),
+            (
+                GeoError::conflict("write_failed").with_param("value", "broken pipe"),
+                "write_failed",
+                "value",
+                "broken pipe",
+            ),
+        ];
+        for (err, reason, key, value) in cases {
+            assert_eq!(err.params()["reason"], reason, "{err}");
+            assert_eq!(err.params()[key], value, "{err}");
+        }
+    }
+
+    /// raw passthrough 例外：`io/failed` 与 `data/invalid` 的 `reason` 是
+    /// 操作系统 / serde 的原文，不是目录里的 key（前端查不到就原样显示）。
+    #[test]
+    fn io_and_serde_reasons_are_raw_passthrough() {
+        let io_err = GeoError::Io(std::io::Error::other("disk full"));
+        assert_eq!(io_err.code(), "io/failed");
+        assert_eq!(io_err.params()["reason"], "disk full");
+        assert_eq!(io_err.to_string(), "io/failed reason=disk full");
+
+        let serde_err = GeoError::Serde(serde_json::from_str::<u8>("nope").unwrap_err());
+        assert_eq!(serde_err.code(), "data/invalid");
+        assert_eq!(serde_err.params().len(), 1);
+        // serde 的原文照抄，不强造 key
+        assert_eq!(
+            serde_err.params()["reason"],
+            "expected ident at line 1 column 2"
+        );
+    }
+
+    /// `with_param` 用在键集固定的变体上必须被 `debug_assert!` 抓到，
+    /// 不能静默吞掉参数。release 下 `debug_assert` 是空操作，故只在 debug 构建跑。
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "键集是固定的")]
+    fn with_param_on_a_fixed_keyset_variant_trips_the_debug_assert() {
+        let _err = GeoError::not_found("project", "abc").with_param("value", "x");
+    }
+
+    /// 领域错误仍是标准错误：`?` 与 `Box<dyn Error>` 都要能用（原 `#[from]` 语义）。
+    #[test]
+    fn geo_error_is_a_std_error_and_converts_from_io_and_serde() {
+        fn as_std_error(err: &dyn std::error::Error) -> String {
+            err.to_string()
+        }
+        let from_io: GeoError = std::io::Error::other("disk full").into();
+        assert!(matches!(from_io, GeoError::Io(_)));
+        assert_eq!(as_std_error(&from_io), "io/failed reason=disk full");
+
+        let from_serde: GeoError = serde_json::from_str::<u8>("nope").unwrap_err().into();
+        assert!(matches!(from_serde, GeoError::Serde(_)));
+        assert_eq!(as_std_error(&from_serde), from_serde.to_string());
     }
 }

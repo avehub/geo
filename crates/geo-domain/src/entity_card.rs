@@ -83,13 +83,11 @@ pub struct ProductSpec {
 impl ProductSpec {
     pub fn validate(&self) -> Result<(), GeoError> {
         if self.name.trim().is_empty() {
-            return Err(GeoError::validation("products.name", "产品名不能为空"));
+            return Err(GeoError::validation("products.name", "required"));
         }
         if self.name.trim().chars().count() > MAX_NAME_CHARS {
-            return Err(GeoError::validation(
-                "products.name",
-                format!("产品名不能超过 {MAX_NAME_CHARS} 字"),
-            ));
+            return Err(GeoError::validation("products.name", "too_long")
+                .with_param("limit", MAX_NAME_CHARS));
         }
         Ok(())
     }
@@ -136,20 +134,20 @@ impl EntityFields {
     /// LLM 抽取结果的合法性校验（结构之外的语义约束）。
     pub fn validate(&self) -> Result<(), GeoError> {
         if self.standard_name.trim().is_empty() {
-            return Err(GeoError::validation("standard_name", "标准名称不能为空"));
+            return Err(GeoError::validation("standard_name", "required"));
         }
         if self.standard_name.trim().chars().count() > MAX_NAME_CHARS {
-            return Err(GeoError::validation(
-                "standard_name",
-                format!("标准名称不能超过 {MAX_NAME_CHARS} 字"),
-            ));
+            return Err(GeoError::validation("standard_name", "too_long")
+                .with_param("limit", MAX_NAME_CHARS));
         }
         if let Some(year) = self.founded_year {
             if !(MIN_FOUNDING_YEAR..=MAX_FOUNDING_YEAR).contains(&year) {
-                return Err(GeoError::validation(
-                    "founded_year",
-                    format!("成立年份需在 {MIN_FOUNDING_YEAR}~{MAX_FOUNDING_YEAR} 之间"),
-                ));
+                return Err(
+                    GeoError::validation("founded_year", "out_of_range").with_param(
+                        "expected",
+                        format!("{MIN_FOUNDING_YEAR}~{MAX_FOUNDING_YEAR}"),
+                    ),
+                );
             }
         }
         for product in &self.products {
@@ -322,7 +320,7 @@ impl EntityCard {
         let old_value = get_at(&tree, &segments).cloned();
         set_at(&mut tree, &segments, value.clone())?;
         let fields: EntityFields = serde_json::from_value(tree)
-            .map_err(|err| GeoError::validation(path, format!("字段值类型不正确：{err}")))?;
+            .map_err(|err| GeoError::validation(path, "invalid_format").with_param("value", err))?;
         validate_field(root, &fields)?;
 
         self.fields = fields;
@@ -351,22 +349,22 @@ fn validate_field(field: &str, fields: &EntityFields) -> Result<(), GeoError> {
     match field {
         "standard_name" => {
             if fields.standard_name.trim().is_empty() {
-                return Err(GeoError::validation("standard_name", "标准名称不能为空"));
+                return Err(GeoError::validation("standard_name", "required"));
             }
             if fields.standard_name.trim().chars().count() > MAX_NAME_CHARS {
-                return Err(GeoError::validation(
-                    "standard_name",
-                    format!("标准名称不能超过 {MAX_NAME_CHARS} 字"),
-                ));
+                return Err(GeoError::validation("standard_name", "too_long")
+                    .with_param("limit", MAX_NAME_CHARS));
             }
         }
         "founded_year" => {
             if let Some(year) = fields.founded_year {
                 if !(MIN_FOUNDING_YEAR..=MAX_FOUNDING_YEAR).contains(&year) {
-                    return Err(GeoError::validation(
-                        "founded_year",
-                        format!("成立年份需在 {MIN_FOUNDING_YEAR}~{MAX_FOUNDING_YEAR} 之间"),
-                    ));
+                    return Err(
+                        GeoError::validation("founded_year", "out_of_range").with_param(
+                            "expected",
+                            format!("{MIN_FOUNDING_YEAR}~{MAX_FOUNDING_YEAR}"),
+                        ),
+                    );
                 }
             }
         }
@@ -401,7 +399,7 @@ enum Segment {
 fn parse_path(path: &str) -> Result<Vec<Segment>, GeoError> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return Err(GeoError::validation("field_path", "不能为空"));
+        return Err(GeoError::validation("field_path", "required"));
     }
     let mut segments = Vec::new();
     for part in trimmed.split('.') {
@@ -419,17 +417,17 @@ fn parse_path(path: &str) -> Result<Vec<Segment>, GeoError> {
                     continue;
                 }
                 let index: usize = chunk.parse().map_err(|_| {
-                    GeoError::validation("field_path", format!("非法下标：{chunk}"))
+                    GeoError::validation("field_path", "invalid_format").with_param("value", chunk)
                 })?;
                 segments.push(Segment::Index(index));
             }
         }
     }
     if segments.is_empty() {
-        return Err(GeoError::validation("field_path", "不能为空"));
+        return Err(GeoError::validation("field_path", "required"));
     }
     if !matches!(segments[0], Segment::Key(_)) {
-        return Err(GeoError::validation("field_path", "必须以字段名开头"));
+        return Err(GeoError::validation("field_path", "invalid_format").with_param("value", path));
     }
     Ok(segments)
 }
@@ -439,8 +437,12 @@ fn root_field(segments: &[Segment]) -> Result<&'static str, GeoError> {
         Segment::Key(key) => ALL_FIELDS
             .into_iter()
             .find(|field| *field == key.as_str())
-            .ok_or_else(|| GeoError::validation("field_path", format!("未知字段：{key}"))),
-        Segment::Index(_) => Err(GeoError::validation("field_path", "必须以字段名开头")),
+            .ok_or_else(|| {
+                GeoError::validation("field_path", "unknown_field").with_param("value", key)
+            }),
+        Segment::Index(index) => {
+            Err(GeoError::validation("field_path", "invalid_format").with_param("value", index))
+        }
     }
 }
 
@@ -463,29 +465,33 @@ fn set_at(root: &mut Value, segments: &[Segment], value: Value) -> Result<(), Ge
         match segment {
             Segment::Key(key) => {
                 if !current.is_object() {
-                    return Err(GeoError::validation(
-                        "field_path",
-                        format!("{key} 的父节点不是对象"),
-                    ));
+                    return Err(GeoError::validation("field_path", "invalid_format")
+                        .with_param("value", key));
                 }
                 if is_last {
                     current[key] = value;
                     return Ok(());
                 }
                 let entry = current.get_mut(key).ok_or_else(|| {
-                    GeoError::validation("field_path", format!("未知字段：{key}"))
+                    GeoError::validation("field_path", "unknown_field").with_param("value", key)
                 })?;
                 current = entry;
             }
             Segment::Index(index) => {
                 let array = current.as_array_mut().ok_or_else(|| {
-                    GeoError::validation("field_path", format!("下标 {index} 的目标不是数组"))
+                    GeoError::validation("field_path", "invalid_format").with_param("value", index)
                 })?;
                 if *index >= array.len() {
-                    return Err(GeoError::validation(
-                        "field_path",
-                        format!("下标 {index} 越界（数组长度 {}）", array.len()),
-                    ));
+                    // 空数组的合法区间本身就是空的，`len - 1` 会下溢成谎话（"0~0"），
+                    // 因此退化成 `<0`：同样是语言中立表达式，词典模板照渲染。
+                    let expected = if array.is_empty() {
+                        "<0".to_string()
+                    } else {
+                        format!("0~{}", array.len() - 1)
+                    };
+                    return Err(GeoError::validation("field_path", "out_of_range")
+                        .with_param("expected", expected)
+                        .with_param("value", index));
                 }
                 if is_last {
                     array[*index] = value;
@@ -602,9 +608,13 @@ mod tests {
     fn validate_rejects_empty_name_and_bad_year() {
         let mut fields = full_fields();
         fields.standard_name = "  ".into();
+        let err = fields.validate().unwrap_err();
+        assert_eq!(err.code(), "validation/failed");
+        assert_eq!(err.params()["field"], "standard_name");
+        assert_eq!(err.params()["reason"], "required");
         assert_eq!(
-            fields.validate().unwrap_err().user_message(),
-            "standard_name 校验失败：标准名称不能为空"
+            err.user_message(),
+            "validation/failed field=standard_name reason=required"
         );
         let mut fields = full_fields();
         fields.founded_year = Some(1700);
@@ -723,6 +733,48 @@ mod tests {
         assert!(card
             .set_field("", json!("x"), FieldStatus::Official, now(), None)
             .is_err());
+    }
+
+    /// 下标越界要给出语言中立的合法区间：非空数组是 `0~{len-1}`，
+    /// 空数组退化成 `<0`（`len - 1` 会下溢，写出「0~0」就是谎话）。
+    #[test]
+    fn out_of_range_index_reports_a_language_neutral_expected_range() {
+        let mut card = EntityCard::from_manual(ProjectId::new(), full_fields(), now());
+        let err = card
+            .set_field(
+                "products[9].name",
+                json!("x"),
+                FieldStatus::Official,
+                now(),
+                None,
+            )
+            .unwrap_err();
+        assert_eq!(err.code(), "validation/failed");
+        assert_eq!(err.params()["field"], "field_path");
+        assert_eq!(err.params()["reason"], "out_of_range");
+        assert_eq!(err.params()["expected"], "0~0", "只有 1 个产品");
+        assert_eq!(err.params()["value"], "9");
+
+        let mut empty = EntityCard::from_manual(
+            ProjectId::new(),
+            EntityFields {
+                products: Vec::new(),
+                ..full_fields()
+            },
+            now(),
+        );
+        let err = empty
+            .set_field(
+                "products[0].name",
+                json!("x"),
+                FieldStatus::Official,
+                now(),
+                None,
+            )
+            .unwrap_err();
+        assert_eq!(err.params()["reason"], "out_of_range");
+        assert_eq!(err.params()["expected"], "<0", "空数组没有合法下标");
+        assert_eq!(err.params()["value"], "0");
     }
 
     #[test]

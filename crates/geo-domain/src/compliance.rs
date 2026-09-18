@@ -88,10 +88,9 @@ pub fn check(text: &str) -> Result<(), GeoError> {
             unique.push(hit.term);
         }
     }
-    Err(GeoError::validation(
-        "content",
-        format!("含绝对化用语，需改写：{}", unique.join("、")),
-    ))
+    // `value` 装命中的原始词（数据，不是文案）：词典模板只说「需改写」，
+    // 绝不复述红线词本身（AGENTS 规则 6）。
+    Err(GeoError::validation("content", "not_allowed").with_param("value", unique.join("、")))
 }
 
 #[cfg(test)]

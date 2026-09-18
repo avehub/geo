@@ -55,7 +55,7 @@ pub fn prompts_to_csv(items: &[PromptItem]) -> Result<String, GeoError> {
     let mut writer = Writer::from_writer(Vec::new());
     writer
         .write_record(PROMPT_CSV_HEADER)
-        .map_err(|err| GeoError::conflict(format!("写 CSV 表头失败：{err}")))?;
+        .map_err(|err| GeoError::conflict("write_failed").with_param("value", err))?;
     for item in items {
         let record = [
             item.text.clone(),
@@ -68,11 +68,11 @@ pub fn prompts_to_csv(items: &[PromptItem]) -> Result<String, GeoError> {
         ];
         writer
             .write_record(&record)
-            .map_err(|err| GeoError::conflict(format!("写 CSV 行失败：{err}")))?;
+            .map_err(|err| GeoError::conflict("write_failed").with_param("value", err))?;
     }
     let bytes = writer
         .into_inner()
-        .map_err(|err| GeoError::conflict(format!("结束 CSV 写入失败：{err}")))?;
+        .map_err(|err| GeoError::conflict("write_failed").with_param("value", err))?;
     // 加 BOM，保证 Excel 打开中文不乱码
     let mut out = String::from("\u{FEFF}");
     out.push_str(&String::from_utf8_lossy(&bytes));
@@ -88,7 +88,7 @@ pub fn prompts_from_csv(raw: &str, set_id: PromptSetId) -> Result<CsvImportResul
         .from_reader(content.as_bytes());
     let headers = reader
         .headers()
-        .map_err(|err| GeoError::conflict(format!("CSV 表头解析失败：{err}")))?
+        .map_err(|err| GeoError::conflict("parse_failed").with_param("value", err))?
         .clone();
     let columns: Vec<String> = headers
         .iter()
@@ -101,10 +101,8 @@ pub fn prompts_from_csv(raw: &str, set_id: PromptSetId) -> Result<CsvImportResul
         }
     }
     if !missing.is_empty() {
-        return Err(GeoError::validation(
-            "csv_header",
-            format!("缺少必需列：{}", missing.join(", ")),
-        ));
+        return Err(GeoError::validation("csv_header", "missing_header")
+            .with_param("value", missing.join(", ")));
     }
     let index_of = |name: &str| columns.iter().position(|column| column == name).unwrap();
 
@@ -214,7 +212,7 @@ pub fn competitors_to_csv(competitors: &[Competitor]) -> Result<String, GeoError
     let mut writer = Writer::from_writer(Vec::new());
     writer
         .write_record(COMPETITOR_CSV_HEADER)
-        .map_err(|err| GeoError::conflict(format!("写 CSV 表头失败：{err}")))?;
+        .map_err(|err| GeoError::conflict("write_failed").with_param("value", err))?;
     for competitor in competitors {
         writer
             .write_record(&[
@@ -224,7 +222,7 @@ pub fn competitors_to_csv(competitors: &[Competitor]) -> Result<String, GeoError
                 competitor.note.clone().unwrap_or_default(),
                 competitor.position.to_string(),
             ])
-            .map_err(|err| GeoError::conflict(format!("写 CSV 行失败：{err}")))?;
+            .map_err(|err| GeoError::conflict("write_failed").with_param("value", err))?;
     }
     finish(writer)
 }
@@ -233,7 +231,7 @@ pub fn assets_to_csv(assets: &[ProjectAsset]) -> Result<String, GeoError> {
     let mut writer = Writer::from_writer(Vec::new());
     writer
         .write_record(ASSET_CSV_HEADER)
-        .map_err(|err| GeoError::conflict(format!("写 CSV 表头失败：{err}")))?;
+        .map_err(|err| GeoError::conflict("write_failed").with_param("value", err))?;
     for asset in assets {
         let kind: serde_json::Value = serde_json::to_value(asset.kind)?;
         writer
@@ -243,7 +241,7 @@ pub fn assets_to_csv(assets: &[ProjectAsset]) -> Result<String, GeoError> {
                 asset.title.clone().unwrap_or_default(),
                 asset.note.clone().unwrap_or_default(),
             ])
-            .map_err(|err| GeoError::conflict(format!("写 CSV 行失败：{err}")))?;
+            .map_err(|err| GeoError::conflict("write_failed").with_param("value", err))?;
     }
     finish(writer)
 }
@@ -251,7 +249,7 @@ pub fn assets_to_csv(assets: &[ProjectAsset]) -> Result<String, GeoError> {
 fn finish(writer: Writer<Vec<u8>>) -> Result<String, GeoError> {
     let bytes = writer
         .into_inner()
-        .map_err(|err| GeoError::conflict(format!("结束 CSV 写入失败：{err}")))?;
+        .map_err(|err| GeoError::conflict("write_failed").with_param("value", err))?;
     let mut out = String::from("\u{FEFF}");
     out.push_str(&String::from_utf8_lossy(&bytes));
     Ok(out)

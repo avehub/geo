@@ -140,8 +140,10 @@ fn charset_label(text: &str) -> Option<String> {
 
 /// 提取标题、正文与同域链接。`raw.url` 无法解析时返回 [`CrawlerError::InvalidUrl`]。
 pub fn extract(raw: &RawPage) -> Result<ExtractedPage, CrawlerError> {
-    let base = Url::parse(&raw.url)
-        .map_err(|error| CrawlerError::InvalidUrl(format!("{}（{error}）", raw.url)))?;
+    let base = Url::parse(&raw.url).map_err(|error| CrawlerError::InvalidUrl {
+        url: raw.url.clone(),
+        reason: error.to_string(),
+    })?;
     let encoding = detect_charset(raw.content_type.as_deref(), &raw.bytes);
     let html = decode(&raw.bytes, encoding);
     let document = Html::parse_document(&html);
@@ -649,8 +651,11 @@ mod tests {
             status: 200,
         };
         let error = extract(&raw).expect_err("非法 URL 应报错");
-        assert!(matches!(error, CrawlerError::InvalidUrl(_)));
+        assert!(matches!(error, CrawlerError::InvalidUrl { .. }));
         assert_eq!(error.code(), "crawler/invalid_url");
         assert!(error.user_message().contains("not a url"));
+        // url 与 reason 分开装：reason 是 `url` crate 的原文
+        assert_eq!(error.params()["url"], "not a url", "{error}");
+        assert!(!error.params()["reason"].is_empty(), "{error}");
     }
 }

@@ -152,7 +152,13 @@ async fn degradation_notes_redact_a_key_echoed_by_the_gateway() {
     let notes = set.notes.clone().expect("降级要写原因");
     assert!(notes.contains("降级"), "{notes}");
     assert!(!notes.contains(TEST_API_KEY), "notes 泄漏了 Key：{notes}");
-    assert!(notes.contains("***"), "应留下脱敏痕迹：{notes}");
+    // Task 4 之后 `LlmError::user_message()` 是紧凑日志格式，上游回显的原文不再进
+    // 错误载荷，`redact` 因此没有可抹的东西（泄漏面被结构性关闭，`redact` 仍在
+    // `prompt_service.rs` 里兜着）。钉住紧凑文案：谁把原文塞回去这条会红。
+    assert!(
+        notes.contains("llm/transport reason=other"),
+        "降级原因应是紧凑日志格式：{notes}"
+    );
 }
 
 #[tokio::test]

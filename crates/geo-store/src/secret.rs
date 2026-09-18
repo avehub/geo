@@ -80,7 +80,9 @@ impl MemorySecretStore {
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, HashMap<String, String>>, StoreError> {
         self.inner
             .lock()
-            .map_err(|_| StoreError::secret("内存密钥存储已损坏（锁中毒）"))
+            // `Secret` 的原文会成为 `config/invalid` 的 `value` 直送前端，因此装的是
+            // **数据**（ASCII 记号）而不是文案；中文散文只能由前端词典渲染（AGENTS 规则 7）
+            .map_err(|_| StoreError::secret("lock_poisoned"))
     }
 }
 

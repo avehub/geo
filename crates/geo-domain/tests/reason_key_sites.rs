@@ -782,7 +782,8 @@ fn every_reachable_site_maps_to_its_pinned_code_field_reason_and_extra() {
 
 /// reason key → 配套参数的可执行不变式（复审者建议 2）。
 ///
-/// **与 `crates/geo-domain/src/error.rs:14-46` 的目录注释同源，改一处必须改另一处。**
+/// **与 `crates/geo-domain/src/error.rs` 模块注释里那张 `| key | 语义 | 配套参数 |`
+/// 目录表同源（19 个 key），改一处必须改另一处。**
 /// 目录里那张表的「配套参数」列就是这里的 `match`：`limit` 只配字符数、`expected` 只配区间、
 /// `value` 装出错的原始值、无参数的 key 一个都不许带。键名撞车（如 `too_long` 配 `expected`）
 /// 在这里红，不用等到 Task 7 的词典模板渲出空占位符。
@@ -792,7 +793,8 @@ fn every_reachable_site_maps_to_its_pinned_code_field_reason_and_extra() {
 /// 对照源码字面量核过，不是凭空声明的）。
 #[test]
 fn reason_key_pins_its_companion_params() {
-    /// 与 `error.rs:14-46` 同源。返回该 key **必须**带的参数键。
+    /// 与 `error.rs` 模块注释里那张 `| key | 语义 | 配套参数 |` 表同源。
+    /// 返回该 key **必须**带的参数键。
     fn companion(reason: &str) -> Companion {
         match reason {
             // 语义规则 2：`too_long` / `too_short` 只表字符数，恰配 `limit`
@@ -800,14 +802,19 @@ fn reason_key_pins_its_companion_params() {
             // 数量与数值区间一律 `out_of_range` + `expected`（可另带 `value`）
             "out_of_range" => Companion::Contains(&["expected"]),
             // 这些 key 自身就说完了，带任何参数都是噪声
-            "required" | "empty" | "duplicate" | "row_invalid" | "unknown_provider"
-            | "missing_base_url" | "missing_model" => Companion::Exactly(&[]),
-            // 这些 key 必须给出「出错的原始值」，否则前端只能干说「格式不对」
-            "invalid_format" | "parse_failed" | "invalid_url" | "invalid_id" | "not_allowed"
-            | "missing_header" | "write_failed" | "unknown_field" => {
-                Companion::Contains(&["value"])
+            "required" | "empty" | "duplicate" | "missing_base_url" | "missing_model" => {
+                Companion::Exactly(&[])
             }
-            other => panic!("{other:?} 不在 error.rs:14-46 的 18 key 目录里"),
+            // 这些 key 必须给出「出错的原始值」，否则前端只能干说「格式不对」。
+            // `row_invalid` / `unknown_provider` 在目录里同样登记了 `value`（复审 N-1：
+            // 此前被错归进 `Exactly(&[])`）；`secret_unavailable` 是 Task 4 新增的第 19 个 key，
+            // 它的 `value` = 钥匙串/内存实现的底层原文。
+            "invalid_format" | "parse_failed" | "invalid_url" | "invalid_id" | "not_allowed"
+            | "missing_header" | "write_failed" | "unknown_field" | "row_invalid"
+            | "unknown_provider" | "secret_unavailable" => Companion::Contains(&["value"]),
+            other => panic!(
+                "{other:?} 不在 error.rs 模块注释那张 `| key | 语义 | 配套参数 |` 表的 19 key 目录里"
+            ),
         }
     }
 
@@ -934,13 +941,18 @@ fn production_sites(source: &str) -> usize {
 #[test]
 fn the_table_covers_every_production_site() {
     // 逐文件点数，与复审者的独立盘点一致：asset 4 / compliance 1 / csv_io 10 /
-    // entity_card 19 / ids 1 / project 11 / prompt 4 = 50
-    let per_file: [(&str, &str, usize); 7] = [
+    // dedupe 0 / entity_card 19 / error 0 / ids 1 / lib 0 / project 11 / prompt 4 = 50。
+    // `crates/geo-domain/src/` 下**每个**文件都要列进来：漏掉一个就等于给未来的
+    // 生产站点留了一个静默缺口（复审 N-2：此前只列了 7 个，实有 10 个）。
+    let per_file: [(&str, &str, usize); 10] = [
         ("asset.rs", include_str!("../src/asset.rs"), 4),
         ("compliance.rs", include_str!("../src/compliance.rs"), 1),
         ("csv_io.rs", include_str!("../src/csv_io.rs"), 10),
+        ("dedupe.rs", include_str!("../src/dedupe.rs"), 0),
         ("entity_card.rs", include_str!("../src/entity_card.rs"), 19),
+        ("error.rs", include_str!("../src/error.rs"), 0),
         ("ids.rs", include_str!("../src/ids.rs"), 1),
+        ("lib.rs", include_str!("../src/lib.rs"), 0),
         ("project.rs", include_str!("../src/project.rs"), 11),
         ("prompt.rs", include_str!("../src/prompt.rs"), 4),
     ];

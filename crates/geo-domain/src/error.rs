@@ -11,6 +11,12 @@
 //! `Validation` / `Conflict` / `Config` 的 `reason` 取下列 key 之一，一律小写下划线。
 //! 契约文件的 `note` 不再复制这份清单——两处清单必然漂移，以本注释为准。
 //!
+//! **适用范围**：本目录是后端所有 `reason` 参数的词表，不只属于 `GeoError`——
+//! `unknown_provider` / `missing_base_url` / `missing_model` 经 `LlmError::Config`
+//! （code `llm/config`）发出而不是 `GeoError::Config`；`row_invalid` / `missing_header`
+//! 经 CSV 导入导出路径发出；`secret_unavailable` 经 `StoreError::Secret`
+//! （code `config/invalid`）发出。
+//!
 //! | key | 语义 | 配套参数 |
 //! | --- | --- | --- |
 //! | `required` | 必填项缺失/为空（表单字段） | — |
@@ -19,7 +25,7 @@
 //! | `too_short` | **字符数**低于下限 | `limit` |
 //! | `invalid_url` | 网址无法解析或缺少合法域名 | `value` |
 //! | `invalid_id` | 不是合法 ID（UUID 等） | `value` |
-//! | `invalid_format` | 值的形状/类型不对（下标非法、父节点不是对象……） | `value` |
+//! | `invalid_format` | 我们自己写的形状/类型判据不通过（下标非法、父节点不是数组、协议不是 http/https） | `value` |
 //! | `duplicate` | 重复（唯一约束、重复导入） | — |
 //! | `out_of_range` | 数量或数值区间越界 | `expected`（`1~5` / `<=5` / `0~9`）、`value` |
 //! | `not_allowed` | 协议/取值/内容不被允许（含广告法红线词） | `value` |
@@ -28,17 +34,23 @@
 //! | `unknown_provider` | 服务商档案不存在 | `value` |
 //! | `missing_base_url` | 服务商缺 base_url | — |
 //! | `missing_model` | 缺模型名 | — |
-//! | `parse_failed` | 解析上游响应/文件内容失败 | `value` |
+//! | `parse_failed` | 序列化/反序列化失败（上游响应、文件内容、请求体） | `value` |
 //! | `unknown_field` | 字段路径指向未知字段（路径本身格式是对的） | `value` |
 //! | `write_failed` | 导出/写文件失败（不是解析问题） | `value` |
+//! | `secret_unavailable` | 系统钥匙串读写失败（`StoreError::Secret`） | `value` |
 //!
-//! 三条语义规则：
+//! 四条语义规则：
 //!
 //! 1. `required` = 必填项缺失/为空（**表单字段**）；`empty` = 集合或文件整体为空。
 //! 2. `too_long` / `too_short` **只用于字符数**，配 `limit`；数量与数值区间一律
-//!    `out_of_range`，配 `expected`（语言中立表达式）。单位（字/个/家）属于文案，
-//!    只能由词典模板给出——参数里出现「60 字」等于把中文塞回 params。
-//! 3. **raw passthrough 例外**：`io/failed` 与 `data/invalid` 的 `reason` 是操作系统 /
+//!    `out_of_range`，配 `expected`（语言中立表达式）。`expected` 只有三种纯 ASCII 形态：
+//!    `a~b`（闭区间）/ `<=n` / `<n`，**不带单位**——单位（字/个/家）属于文案，
+//!    只能由词典模板给出，参数里出现「60 字」等于把中文塞回 params。
+//! 3. `parse_failed` = **解析器/序列化器库**返回的 `Error`（csv / serde / url / html2text），
+//!    `value` 装库原文；`invalid_format` = **我们自己写的形状/类型判据**（下标非法、
+//!    父节点不是数组、协议不是 http/https），`value` 装出错的值。两者都不用于
+//!    「上游说的原因」——那是 `upstream/*` 的 `upstream`。
+//! 4. **raw passthrough 例外**：`io/failed` 与 `data/invalid` 的 `reason` 是操作系统 /
 //!    serde 的**原文**，不是上表的 key（OS 错误没有有限词表，硬造 key 只会说谎）。
 //!    同一规则覆盖 `upstream/*` 的 `upstream`（上游返回的原文报文）。
 //!    由此定下前端词典规则（Task 7 依赖）：先查 `errors.reasons.<reason>`，
@@ -266,7 +278,7 @@ impl GeoError {
 ///
 /// 与壳里 `IpcError::with_params` 的兜底文案**逐字同构**，因此同一条错误在
 /// 领域层日志与 IPC 兜底文案里长得一样，便于串起来查。
-/// 手写而不用 thiserror 的 `#[error("…")]`：`code()` 对 `NotFound` / `Upstream`
+/// 手写而不用派生宏的 `#[error("…")]` 模板：`code()` 对 `NotFound` / `Upstream`
 /// 要动态拼前缀，模板里表达不了，而 `params()` 必须保持单一真值源。
 impl fmt::Display for GeoError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

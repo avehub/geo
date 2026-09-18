@@ -104,15 +104,39 @@ impl HttpResponse {
 }
 
 /// 传输层错误：网络不可达、超时，以及 fixture 未命中等其它情况。
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+///
+/// `Display` 是紧凑日志格式（[`reason_key`](Self::reason_key) 打头，有底层原文时挂
+/// `reason=`）。进 `params` 的**只有** `reason_key()`：清单给 `llm/transport` 登记的
+/// 就是这三个 key，底层原文（可能夹带上游回显的 Authorization）只留给日志。
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportError {
-    #[error("网络连接失败：{0}")]
     Network(String),
-    #[error("请求超时")]
     Timeout,
-    #[error("传输层错误：{0}")]
     Other(String),
 }
+
+impl TransportError {
+    /// `llm/transport` 的 `reason` 取值：契约登记的三个稳定 key。
+    pub fn reason_key(&self) -> &'static str {
+        match self {
+            Self::Network(_) => "network",
+            Self::Timeout => "timeout",
+            Self::Other(_) => "other",
+        }
+    }
+}
+
+impl fmt::Display for TransportError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.reason_key())?;
+        match self {
+            Self::Network(reason) | Self::Other(reason) => write!(f, " reason={reason}"),
+            Self::Timeout => Ok(()),
+        }
+    }
+}
+
+impl std::error::Error for TransportError {}
 
 /// 传输抽象。真实实现走 reqwest，测试实现走 fixture 回放。
 #[async_trait]
@@ -476,5 +500,44 @@ mod tests {
             ReqwestTransport::new(Duration::from_secs(5), Some("http://[::1".to_string()))
                 .unwrap_err();
         assert!(invalid.to_string().contains("代理"), "实际：{invalid}");
+    }
+
+    /// Task 4：`llm/transport` 的 `reason` 必须是这三个稳定 key（契约 note 早就这么写），
+    /// 而不是底层原文——原文只进日志，不进 params。
+    #[test]
+    fn reason_key_is_one_of_the_three_catalog_keys() {
+        assert_eq!(
+            TransportError::Network("conn refused".into()).reason_key(),
+            "network"
+        );
+        assert_eq!(TransportError::Timeout.reason_key(), "timeout");
+        assert_eq!(
+            TransportError::Other("fixture miss".into()).reason_key(),
+            "other"
+        );
+    }
+
+    /// `Display` 转紧凑日志格式：`{reason_key}` 打头，有底层原文时挂 `reason=`。
+    #[test]
+    fn display_is_compact_log_format() {
+        assert_eq!(TransportError::Timeout.to_string(), "timeout");
+        assert_eq!(
+            TransportError::Network("conn refused".into()).to_string(),
+            "network reason=conn refused"
+        );
+        assert_eq!(
+            TransportError::Other("fixture miss: abc".into()).to_string(),
+            "other reason=fixture miss: abc"
+        );
+    }
+
+    /// `Display` / `Error` 改成手写之后，`TransportError` 仍是标准错误类型
+    /// （`Box<dyn Error>` 可用）。
+    #[test]
+    fn transport_error_is_a_std_error() {
+        fn as_std_error(error: &dyn std::error::Error) -> String {
+            error.to_string()
+        }
+        assert_eq!(as_std_error(&TransportError::Timeout), "timeout");
     }
 }

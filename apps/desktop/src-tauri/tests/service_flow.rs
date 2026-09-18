@@ -253,11 +253,11 @@ async fn provider_test_without_a_key_reports_missing_secret() {
         .expect_err("没 Key 必须报错");
 
     assert_eq!(error.code, "llm/missing_secret");
-    assert!(
-        error.message.contains("未配置 API Key"),
-        "{}",
-        error.message
-    );
+    // Task 4：`From<LlmError>` 委托 `params()`，兜底文案是紧凑日志格式；清单给
+    // `llm/missing_secret` 登记的 params 是空数组，因此文案就是 code 本身。
+    // 「未配置 API Key」这句话改由前端词典按 locale 渲染（spec §4.2 / AGENTS 规则 7）。
+    assert_eq!(error.message, "llm/missing_secret", "{}", error.message);
+    assert!(error.params.is_empty(), "{:?}", error.params);
     assert!(!error.message.contains(TEST_API_KEY));
 }
 
@@ -302,7 +302,10 @@ async fn provider_test_reports_a_failed_call_without_leaking_the_key() {
 }
 
 /// 上游把 `Authorization` 回显进错误体时，Key 也不许出现在**成功返回**的
-/// `LlmTestResult.message` 里——这条路径不经过 `IpcError`，是脱敏的盲区。
+/// `LlmTestResult.message` 里——这条路径不经过 `IpcError`，曾是脱敏的盲区。
+///
+/// Task 4 之后 `llm/transport` 只发 `reason=network/timeout/other`，上游回显的原文
+/// 根本不再进错误载荷：泄漏面被**结构性**关闭，`redact` 退化成第二道保险。
 #[tokio::test]
 async fn provider_test_redacts_a_key_echoed_by_the_gateway() {
     let (state, _server, _secrets) = state_with_transport(KeyEchoingTransport::new()).await;
@@ -315,7 +318,9 @@ async fn provider_test_redacts_a_key_echoed_by_the_gateway() {
     assert!(!result.ok);
     let message = result.message.clone().expect("失败要说明原因");
     assert!(!message.contains(TEST_API_KEY), "泄漏了 Key：{message}");
-    assert!(message.contains("***"), "应留下脱敏痕迹：{message}");
+    // 钉住紧凑文案而不是 `***` 痕迹：谁把上游原文塞回 params / Display，这条会红，
+    // 届时必须把脱敏断言加回来（`redact` 仍在 `settings_service.rs` 里兜着）。
+    assert_eq!(message, "llm/transport reason=other", "{message}");
 }
 
 #[tokio::test]

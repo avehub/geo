@@ -236,8 +236,28 @@ async fn custom_provider_without_base_url_is_config_error() {
     let client = client(LlmConfig::for_provider(LlmProvider::Custom, ""), "sk-test");
     let error = client.chat(&hello_request()).await.unwrap_err();
 
-    assert!(matches!(error, LlmError::Config(_)), "实际：{error:?}");
+    assert!(matches!(error, LlmError::Config { .. }), "实际：{error:?}");
     assert_eq!(error.code(), "llm/config");
+    // reason 是稳定 key，value 是 `Provider::as_str()` 的稳定 id（不是 `label_zh()` 的中文）
+    let params = error.params();
+    assert_eq!(params["reason"], "missing_base_url", "{error}");
+    assert_eq!(params["value"], "custom", "{error}");
+    assert_eq!(params.len(), 2, "{params:?}");
+}
+
+/// 缺模型名走 `missing_model`（清单给 `llm/config` 登记了 `value`，但这个 key 没有配套值）。
+#[tokio::test]
+async fn blank_model_is_a_config_error_with_the_missing_model_key() {
+    let mut config = LlmConfig::for_provider(LlmProvider::Custom, "keyring://llm/test");
+    config.base_url = "https://api.example.com/v1".to_string();
+    config.model = "   ".to_string();
+    let client = client(config, "sk-test");
+    let error = client.chat(&hello_request()).await.unwrap_err();
+
+    assert_eq!(error.code(), "llm/config");
+    assert_eq!(error.params()["reason"], "missing_model", "{error}");
+    assert_eq!(error.params().len(), 1, "{error:?}");
+    assert_eq!(error.to_string(), "llm/config reason=missing_model");
 }
 
 #[tokio::test]

@@ -125,17 +125,14 @@ impl std::fmt::Display for IpcError {
 
 impl std::error::Error for IpcError {}
 
-// 下面三个 `From` 各自就地拼 params：键名一律逐字取自冻结的
-// `contracts/error-codes.json`（测试 `params_keys_stay_inside_the_shared_catalog`
-// 穷举核对），值原样透传，`match` 都不写 `_` 兜底——下游加变体这里立刻编译失败，
-// 逼实现者当场决定新变体带哪些键（与本文件测试模块的穷举守卫同一思路）。
-// 部分值今天仍是中文散文（`CrawlerError::Network` / `InvalidUrl` 那段
-// 合并文本）：拆变体是 Task 4 的活，本层只负责把管道接通。
+// 四个 `From` 一律委托下游自己的 `params()`：键名与取值都由各 crate 的错误类型单点
+// 产出（`GeoError::params()` / `StoreError::params()` / `LlmError::params()` /
+// `CrawlerError::params()`），本层只负责 `redact` 与紧凑兜底文案。
 //
-// **这三份映射是临时的**（控制器裁定）：Task 2 不为「将来好改」提前抽共享 helper，
-// Task 4 把它们换成委托各自的 `params()` 并删掉整个 match——同一映射存在两份必然漂移。
-
-// `From<GeoError>` 已经收编（Task 3）：领域层自己产出 `params()`，这里只做委托。
+// Task 2 曾在这里就地拼三份映射，Task 4 按控制器裁定删掉整个 match——同一映射存在
+// 两份必然漂移。「下游加变体这里立刻编译失败」的守卫职责移交给本文件测试模块的四个
+// 无兜底 `match`（`llm_code` / `crawler_code` / `store_code` / `geo_code`），
+// 「清单声明的 params 与实际发出的键集一致」由 `catalog_params_equal_the_emitted_union` 守。
 impl From<GeoError> for IpcError {
     fn from(error: GeoError) -> Self {
         Self::with_params(error.code(), error.params())
@@ -144,65 +141,19 @@ impl From<GeoError> for IpcError {
 
 impl From<StoreError> for IpcError {
     fn from(error: StoreError) -> Self {
-        let ipc = Self::new(error.code(), error.to_string());
-        // Task 4 删除点：改成 `Self::with_params(error.code(), error.params())`
-        // `Sqlx` 按 code() 落到 state/conflict 或 io/failed，两者登记的都是 reason，
-        // 因此这里不必重复 geo-store 私有的唯一约束判定。
-        match error {
-            StoreError::NotFound { kind, id } => ipc.with_param("kind", kind).with_param("id", id),
-            StoreError::Validation { field, reason } => {
-                ipc.with_param("field", field).with_param("reason", reason)
-            }
-            StoreError::Conflict(reason) => ipc.with_param("reason", reason),
-            StoreError::Sqlx(sqlx_error) => ipc.with_param("reason", sqlx_error.to_string()),
-            StoreError::Serde(serde_error) => ipc.with_param("reason", serde_error.to_string()),
-            StoreError::Secret(reason) => ipc.with_param("reason", reason),
-            StoreError::Io(io_error) => ipc.with_param("reason", io_error.to_string()),
-        }
+        Self::with_params(error.code(), error.params())
     }
 }
 
 impl From<LlmError> for IpcError {
     fn from(error: LlmError) -> Self {
-        let ipc = Self::new(error.code(), error.user_message());
-        // Task 4 删除点：改成 `Self::with_params(error.code(), error.params())`
-        // rate_limited / missing_secret 在清单里 params 是空数组，一个键都不塞；
-        // bad_response / deserialize 登记的 upstream 要等 Task 4 拆变体才填得上。
-        match error {
-            LlmError::Config(reason) => ipc.with_param("reason", reason),
-            LlmError::Transport(transport_error) => {
-                ipc.with_param("reason", transport_error.to_string())
-            }
-            LlmError::RateLimited | LlmError::MissingSecret => ipc,
-            LlmError::Server { status } => ipc.with_param("status", status.to_string()),
-            LlmError::BadResponse(reason) => ipc.with_param("reason", reason),
-            LlmError::Deserialize(reason) => ipc.with_param("reason", reason),
-        }
+        Self::with_params(error.code(), error.params())
     }
 }
 
 impl From<CrawlerError> for IpcError {
     fn from(error: CrawlerError) -> Self {
-        let ipc = Self::new(error.code(), error.user_message());
-        // Task 4 删除点：改成 `Self::with_params(error.code(), error.params())`
-        // 本 match 有 3 个 code 今天只能填清单键的**子集**，Task 4 拆变体后补齐
-        // 并把断言从子集收紧成相等：
-        // - `crawler/network`：变体 `Network(String)` 只有一段合并文本，实发 `reason`，
-        //   缺清单登记的 `url`、`status`。
-        // - `crawler/too_large`：变体 `TooLarge { url }` 没有 limit 字段，实发 `url`，缺 `limit`。
-        // - `crawler/invalid_url`：变体 `InvalidUrl(String)` 装的同样是合并文本
-        //   （`fetch.rs` 的代理地址那句、`extract.rs` 的 `url（error）`），因此落 `reason`
-        //   而不是 `url`——与 `Network` / `Decode` 一致；实发 `reason`，缺 `url`。
-        match error {
-            CrawlerError::Blocked { url, reason } => {
-                ipc.with_param("url", url).with_param("reason", reason)
-            }
-            CrawlerError::Timeout { url } => ipc.with_param("url", url),
-            CrawlerError::Network(reason) => ipc.with_param("reason", reason),
-            CrawlerError::TooLarge { url } => ipc.with_param("url", url),
-            CrawlerError::InvalidUrl(reason) => ipc.with_param("reason", reason),
-            CrawlerError::Decode(reason) => ipc.with_param("reason", reason),
-        }
+        Self::with_params(error.code(), error.params())
     }
 }
 
@@ -288,7 +239,7 @@ mod tests {
     use geo_crawler::CrawlerError;
     use geo_llm::{LlmError, TransportError};
     use geo_store::StoreError;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{BTreeSet, HashMap, HashSet};
     use std::io;
 
     /// 前后端共享的错误码真值源：`contracts/error-codes.json`。
@@ -435,7 +386,9 @@ mod tests {
 
     fn llm_variants() -> Vec<LlmError> {
         vec![
-            LlmError::Config("missing_base_url".into()),
+            // `Config` 带上 `value`：清单给 `llm/config` 登记了 `["reason","value"]`，
+            // 漂移守卫要求清单里存在能发出**全部**登记键的实例
+            LlmError::config("missing_base_url").with_param("value", "deep_seek"),
             LlmError::Transport(TransportError::Timeout),
             LlmError::RateLimited,
             LlmError::Server { status: 500 },
@@ -445,6 +398,9 @@ mod tests {
         ]
     }
 
+    /// `CrawlerError` 的全部 6 个变体，`Network` 占两条：一条带 `url` + `status`
+    /// （拿到非 2xx 响应），一条两者都拿不到（构造客户端失败）。清单给
+    /// `crawler/network` 登记了三个键，按 code 取并集时才凑得齐。
     fn crawler_variants() -> Vec<CrawlerError> {
         vec![
             CrawlerError::Blocked {
@@ -454,37 +410,62 @@ mod tests {
             CrawlerError::Timeout {
                 url: "https://a.example/x".into(),
             },
-            CrawlerError::Network("HTTP 500".into()),
+            CrawlerError::Network {
+                url: Some("https://a.example/x".into()),
+                status: Some(500),
+                reason: "http_status".into(),
+            },
+            CrawlerError::Network {
+                url: None,
+                status: None,
+                reason: "client build failed".into(),
+            },
             CrawlerError::TooLarge {
                 url: "https://a.example/x".into(),
+                limit: 2 * 1024 * 1024,
             },
-            CrawlerError::InvalidUrl("abc".into()),
-            CrawlerError::Decode("非法字节".into()),
+            CrawlerError::InvalidUrl {
+                url: "abc".into(),
+                reason: "relative URL without a base".into(),
+            },
+            CrawlerError::Decode("invalid byte sequence".into()),
         ]
     }
 
     /// `StoreError` 的全部 7 个变体。`Sqlx` 用 `RowNotFound` 造（不碰数据库、不联网），
     /// 它不满足 `is_unique_violation`，因此映射到 `io/failed`；唯一约束那条分支产出的是
     /// `state/conflict`，与 `StoreError::conflict` 同码，由 `store_code` 的 match 臂覆盖类型。
+    /// `Conflict` 带上 `value`（唯一约束/CSV 写失败的真实形状），`Secret` 自己就会发出
+    /// `config/invalid` 登记的 `["reason","value"]` 两个键。
     fn store_variants() -> Vec<StoreError> {
         vec![
             StoreError::not_found("project", "x"),
             StoreError::validation("brand_name", "required"),
-            StoreError::conflict("duplicate"),
+            StoreError::conflict("duplicate").with_param("value", "UNIQUE constraint failed"),
             StoreError::Sqlx(sqlx::Error::RowNotFound),
             StoreError::Serde(serde_json::from_str::<u8>("nope").unwrap_err()),
-            StoreError::secret("keyring unavailable"),
+            StoreError::secret("keyring_unavailable"),
             StoreError::Io(io::Error::other("磁盘满")),
         ]
     }
 
     /// `GeoError` 的代表性用例：除 `NotFound`（kind 是运行期字符串，由
-    /// `NOT_FOUND_KINDS` 显式列举）外每个变体各一条。
+    /// `NOT_FOUND_KINDS` 显式列举）外每个变体各一条，并覆盖 `Validation` / `Conflict` /
+    /// `Config` 带 `extra` 的形状——漂移守卫按 code 取并集，清单登记的键少发一个就红。
     fn geo_cases() -> Vec<GeoError> {
         vec![
             GeoError::validation("brand_name", "required"),
+            GeoError::validation("brand_name", "too_long").with_param("limit", 60),
+            GeoError::validation("region", "out_of_range")
+                .with_param("expected", "1~5")
+                .with_param("value", "9"),
             GeoError::conflict("duplicate"),
+            GeoError::conflict("write_failed").with_param("value", "disk full"),
             GeoError::config("missing_base_url"),
+            // R-D / 复审 M-2：`config/invalid` 登记了 `["reason","value"]`，清单里必须有
+            // 一个带 extra 的实例；否则 Task 5 写 `with_param("value", …)` 时发出清单外
+            // 的键也不会有任何测试变红。
+            GeoError::config("secret_unavailable").with_param("value", "keyring_unavailable"),
             GeoError::upstream("llm/server", "HTTP 503"),
             GeoError::Io(io::Error::other("磁盘满")),
             GeoError::Serde(serde_json::from_str::<u8>("nope").unwrap_err()),
@@ -504,7 +485,7 @@ mod tests {
 
     fn llm_code(error: &LlmError) -> &'static str {
         match error {
-            LlmError::Config(_)
+            LlmError::Config { .. }
             | LlmError::Transport(_)
             | LlmError::RateLimited
             | LlmError::Server { .. }
@@ -518,9 +499,9 @@ mod tests {
         match error {
             CrawlerError::Blocked { .. }
             | CrawlerError::Timeout { .. }
-            | CrawlerError::Network(_)
+            | CrawlerError::Network { .. }
             | CrawlerError::TooLarge { .. }
-            | CrawlerError::InvalidUrl(_)
+            | CrawlerError::InvalidUrl { .. }
             | CrawlerError::Decode(_) => error.code(),
         }
     }
@@ -541,7 +522,7 @@ mod tests {
         match error {
             StoreError::NotFound { .. }
             | StoreError::Validation { .. }
-            | StoreError::Conflict(_)
+            | StoreError::Conflict { .. }
             | StoreError::Sqlx(_)
             | StoreError::Serde(_)
             | StoreError::Secret(_)
@@ -572,7 +553,7 @@ mod tests {
             IpcError::from(GeoError::not_found("project", "x")).code,
             IpcError::from(GeoError::validation("brand_name", "required")).code,
             IpcError::from(LlmError::MissingSecret).code,
-            IpcError::from(StoreError::Conflict("dup".into())).code,
+            IpcError::from(StoreError::conflict("dup")).code,
             IpcError::from(CrawlerError::Timeout { url: "u".into() }).code,
             IpcError::internal("boom").code,
         ];
@@ -856,19 +837,80 @@ mod tests {
         assert_eq!(blocked.params["reason"], "robots");
         assert_eq!(blocked.params.len(), 2);
 
-        // `InvalidUrl(String)` 装的是合并文本（`fetch.rs` 的代理地址那句、
-        // `extract.rs` 的 `url（error）`），不是裸 URL，因此落 `reason`——
-        // 与同样装合并文本的 `Network` / `Decode` 对齐。清单给该 code 登记了
-        // `["url","reason"]`，只发 `reason` 是合法子集，缺的 `url` 由 Task 4 拆变体补。
-        let invalid_url = IpcError::from(CrawlerError::InvalidUrl("not a url".into()));
+        // Task 4 把 `InvalidUrl(String)` 富化成 `InvalidUrl { url, reason }`：
+        // url 是裸地址、reason 是解析器原文，因此断言从「只发 reason 的合法子集」
+        // 收紧成与清单登记的 `["url","reason"]` 逐键相等。
+        let invalid_url = IpcError::from(CrawlerError::InvalidUrl {
+            url: "not a url".into(),
+            reason: "relative URL without a base".into(),
+        });
         assert_eq!(invalid_url.code, "crawler/invalid_url");
-        assert_eq!(invalid_url.params["reason"], "not a url");
+        assert_eq!(invalid_url.params["url"], "not a url");
+        assert_eq!(invalid_url.params["reason"], "relative URL without a base");
         assert!(
-            !invalid_url.params.contains_key("url"),
-            "合并文本不能冒充裸 URL：{:?}",
+            invalid_url.params.contains_key("url"),
+            "富化后必须带上裸 URL：{:?}",
             invalid_url.params
         );
-        assert_eq!(invalid_url.params.len(), 1);
+        assert_eq!(invalid_url.params.len(), 2);
+
+        // `Network` 同样富化：拿到非 2xx 响应时三个键都发，reason 是稳定记号而不是合并文本
+        let network = IpcError::from(CrawlerError::Network {
+            url: Some("https://a.example/x".into()),
+            status: Some(500),
+            reason: "http_status".into(),
+        });
+        assert_eq!(network.code, "crawler/network");
+        assert_eq!(network.params["url"], "https://a.example/x");
+        assert_eq!(network.params["status"], "500");
+        assert_eq!(network.params["reason"], "http_status");
+        assert_eq!(network.params.len(), 3);
+
+        // `TooLarge` 补上 `limit`，前端才能说清「超过多少字节」
+        let too_large = IpcError::from(CrawlerError::TooLarge {
+            url: "https://a.example/x".into(),
+            limit: 512,
+        });
+        assert_eq!(too_large.params["url"], "https://a.example/x");
+        assert_eq!(too_large.params["limit"], "512");
+        assert_eq!(too_large.params.len(), 2);
+
+        // `llm/transport` 的 reason 是三个稳定 key 之一，不是 `TransportError` 的原文
+        let transport = IpcError::from(LlmError::Transport(TransportError::Timeout));
+        assert_eq!(transport.code, "llm/transport");
+        assert_eq!(transport.params["reason"], "timeout");
+        assert_eq!(transport.params.len(), 1);
+    }
+
+    /// Task 4：`StoreError::Secret(String)` 形状不变，但那个 String（已 `redact` 的
+    /// 钥匙串底层原文）从 `reason` 降级进 `value`，`reason` 恒为目录里新增的第 19 个
+    /// key `secret_unavailable`——否则前端词典永远查不到它。
+    #[test]
+    fn store_secret_params_follow_the_contract() {
+        let secret = IpcError::from(StoreError::secret("keyring_unavailable"));
+        assert_eq!(secret.code, "config/invalid");
+        assert_eq!(secret.params["reason"], "secret_unavailable");
+        assert_eq!(secret.params["value"], "keyring_unavailable");
+        assert_eq!(secret.params.len(), 2);
+        assert_eq!(
+            secret.message,
+            "config/invalid reason=secret_unavailable value=keyring_unavailable"
+        );
+
+        // 上游万一把密钥样式片段拼进钥匙串原文，IPC 这道关仍要抹掉（AGENTS 规则 3）
+        let leaked = IpcError::from(StoreError::secret("write failed: sk-abc123XYZ_-9"));
+        assert_eq!(leaked.params["reason"], "secret_unavailable");
+        assert!(
+            !leaked.params["value"].contains("sk-"),
+            "{:?}",
+            leaked.params
+        );
+        assert!(
+            leaked.params["value"].contains("***"),
+            "{:?}",
+            leaked.params
+        );
+        assert!(!leaked.message.contains("sk-"), "{leaked}");
     }
 
     /// 跨 crate 转成 `GeoError::Upstream` 后，params 换成包装族的那两个键
@@ -882,7 +924,9 @@ mod tests {
         assert!(error.params.contains_key("upstream"));
         assert_eq!(error.params.len(), 2);
 
-        let crawled = IpcError::from(GeoError::from(CrawlerError::Decode("非法字节".into())));
+        let crawled = IpcError::from(GeoError::from(CrawlerError::Decode(
+            "invalid byte sequence".into(),
+        )));
         assert_eq!(crawled.code, "upstream/crawler/decode");
         assert_eq!(crawled.params["upstream_code"], "crawler/decode");
         assert_eq!(crawled.params.len(), 2);
@@ -970,9 +1014,9 @@ mod tests {
     /// 多一个没登记的键就是渲染出一个空占位符。
     ///
     /// 变体清单由上面四个无兜底 `match` 强制（加变体即编译失败）；
-    /// 只断言「子集」而不是「相等」，因为部分变体今天携带的信息不足以填满清单
-    /// （如 `CrawlerError::Network(String)` 拿不到独立的 url / status），
-    /// 补齐属于 Task 4。
+    /// 这里只断言「子集」，因为它连壳内字面量站点一起管（`compliance/violation` 等），
+    /// 而那些站点今天还不发 params（Task 5 才逐个补）。「清单声明 == 实际发出键的并集」
+    /// 那条**相等**断言在 [`catalog_params_equal_the_emitted_union`] 里。
     #[test]
     fn params_keys_stay_inside_the_shared_catalog() {
         let allowed = catalog_params();
@@ -1026,5 +1070,96 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// 漂移守卫（Task 4 · 控制器裁定）：**每个 code 的「清单声明 params」必须等于
+    /// 「守卫清单里所有实例发出的键的并集」**——按 code 聚合取并集，不是逐实例相等
+    /// （`CrawlerError::Network` 构造客户端失败时只有 `reason`，拿到非 2xx 时三个键都有，
+    /// 逐实例相等会把这两种合法形态判成漂移）。
+    ///
+    /// 两端都用集合比较，避免键序造成假红。它同时挡住两个方向的漂移：
+    /// 实现少发一个键（清单许诺了前端拿不到 → 词典渲出空占位符），
+    /// 以及实现多发一个清单外的键（[`params_keys_stay_inside_the_shared_catalog`]
+    /// 也管这个方向，但那条只到「子集」为止）。
+    ///
+    /// 覆盖范围 = 四张变体清单 + `NOT_FOUND_KINDS` + 跨 crate 的 `upstream/*` 包装形态。
+    /// 壳内字面量站点与前端专属码今天发不出（或根本不由 Rust 发出）清单登记的键，
+    /// 因此显式列在 `EXEMPT` 里豁免；豁免清单本身也被断言，免得某个 code 因为
+    /// 「谁都没发它」而悄悄逃出上面的相等断言。
+    #[test]
+    fn catalog_params_equal_the_emitted_union() {
+        let declared = catalog_params();
+
+        let mut cases: Vec<IpcError> = Vec::new();
+        cases.extend(llm_variants().into_iter().map(IpcError::from));
+        cases.extend(crawler_variants().into_iter().map(IpcError::from));
+        cases.extend(store_variants().into_iter().map(IpcError::from));
+        cases.extend(geo_cases().into_iter().map(IpcError::from));
+        // 先转 GeoError::Upstream 的形态（upstream/{code}），键集换成包装族那两个
+        cases.extend(
+            llm_variants()
+                .into_iter()
+                .map(|error| IpcError::from(GeoError::from(error))),
+        );
+        cases.extend(
+            crawler_variants()
+                .into_iter()
+                .map(|error| IpcError::from(GeoError::from(error))),
+        );
+        // 动态的 `{kind}/not_found`：GeoError 与 StoreError 两条路都要覆盖
+        for kind in NOT_FOUND_KINDS {
+            cases.push(IpcError::from(GeoError::not_found(kind, "x")));
+            cases.push(IpcError::from(StoreError::not_found(kind, "x")));
+        }
+        assert!(!cases.is_empty());
+
+        // 按 code 聚合取并集
+        let mut union: HashMap<String, BTreeSet<String>> = HashMap::new();
+        for case in &cases {
+            union
+                .entry(case.code.clone())
+                .or_default()
+                .extend(case.params.keys().cloned());
+        }
+
+        for (code, emitted) in &union {
+            let registered: BTreeSet<String> = declared
+                .get(code)
+                .unwrap_or_else(|| panic!("{code} 不在 contracts/error-codes.json 里"))
+                .iter()
+                .cloned()
+                .collect();
+            assert_eq!(
+                emitted, &registered,
+                "{code} 的 params 与清单漂移（左：清单里所有实例发出键的并集，右：清单声明）"
+            );
+        }
+
+        /// 本守卫**不覆盖**的 code，以及为什么。改动这里必须同时说明理由。
+        const EXEMPT: [&str; 7] = [
+            // 壳内字面量站点：Task 5 才会逐个补 params，今天发不出登记键
+            "compliance/violation",
+            "crawler/empty",
+            "ipc/internal",
+            "prompt_set/empty_import",
+            // 前端专属：Rust 侧没有发射点（清单里先收着，见
+            // `catalog_reserves_the_frontend_only_ipc_codes`）
+            "ipc/invoke_failed",
+            "ipc/unknown",
+            "ipc/unknown_command",
+        ];
+        let uncovered: BTreeSet<String> = declared
+            .keys()
+            .filter(|code| !union.contains_key(*code))
+            .cloned()
+            .collect();
+        assert_eq!(
+            uncovered,
+            EXEMPT
+                .iter()
+                .map(|code| (*code).to_string())
+                .collect::<BTreeSet<_>>(),
+            "守卫的覆盖范围变了：豁免清单要同步（新增 code 记得决定它归谁发 params）"
+        );
     }
 }

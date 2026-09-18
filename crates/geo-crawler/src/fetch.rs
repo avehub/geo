@@ -15,6 +15,12 @@ use crate::extract::{decode, detect_charset, RawPage};
 /// 最多跟随的重定向次数。
 const MAX_REDIRECTS: usize = 5;
 
+/// `crawler/network` 的 reason 记号：拿到了 HTTP 响应，但状态非 2xx。
+///
+/// 其余网络失败（构造客户端、请求本身失败）的 `reason` 装 reqwest 的原文，
+/// 属目录注释里的 raw passthrough 例外——OS/网络栈错误没有有限词表。
+const REASON_HTTP_STATUS: &str = "http_status";
+
 /// 抓取限额：页数、超时与体积。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FetchLimits {
@@ -73,16 +79,21 @@ impl SiteFetcher {
             .timeout(limits.per_page_timeout)
             .redirect(reqwest::redirect::Policy::limited(MAX_REDIRECTS));
         if let Some(proxy_url) = normalize_proxy(proxy) {
-            let proxy = reqwest::Proxy::all(&proxy_url).map_err(|error| {
-                CrawlerError::InvalidUrl(format!("代理地址无效：{proxy_url}（{error}）"))
-            })?;
+            let proxy =
+                reqwest::Proxy::all(&proxy_url).map_err(|error| CrawlerError::InvalidUrl {
+                    url: proxy_url.clone(),
+                    reason: error.to_string(),
+                })?;
             builder = builder.proxy(proxy);
         } else {
             builder = builder.no_proxy();
         }
-        let http = builder
-            .build()
-            .map_err(|error| CrawlerError::Network(format!("构造 HTTP 客户端失败：{error}")))?;
+        let http = builder.build().map_err(|error| CrawlerError::Network {
+            // 客户端都没造出来：既没有目标地址，也没有 HTTP 状态
+            url: None,
+            status: None,
+            reason: error.to_string(),
+        })?;
         Ok(Self {
             http,
             limits,
@@ -123,7 +134,11 @@ impl SiteFetcher {
 
         let status = response.status();
         if !status.is_success() {
-            return Err(CrawlerError::Network(format!("HTTP {status} {url}")));
+            return Err(CrawlerError::Network {
+                url: Some(url.to_string()),
+                status: Some(status.as_u16()),
+                reason: REASON_HTTP_STATUS.to_string(),
+            });
         }
         // 跟随重定向后以最终地址为准：后续 robots 判定与去重都要用它。
         let final_url = response.url().clone();
@@ -143,6 +158,7 @@ impl SiteFetcher {
             if usize::try_from(length).unwrap_or(usize::MAX) > self.limits.max_bytes {
                 return Err(CrawlerError::TooLarge {
                     url: final_url.to_string(),
+                    limit: self.limits.max_bytes,
                 });
             }
         }
@@ -156,6 +172,7 @@ impl SiteFetcher {
             if bytes.len() > self.limits.max_bytes {
                 return Err(CrawlerError::TooLarge {
                     url: final_url.to_string(),
+                    limit: self.limits.max_bytes,
                 });
             }
         }
@@ -201,7 +218,12 @@ fn transport_error(error: reqwest::Error, url: &Url) -> CrawlerError {
             url: url.to_string(),
         }
     } else {
-        CrawlerError::Network(format!("{url} 请求失败：{error}"))
+        // 请求发出去了但没拿到响应：有 url、没有 status
+        CrawlerError::Network {
+            url: Some(url.to_string()),
+            status: None,
+            reason: error.to_string(),
+        }
     }
 }
 
@@ -314,9 +336,11 @@ mod tests {
             Some("::: 不是代理地址 :::".to_string()),
         )
         .expect_err("非法代理应报错");
-        assert!(matches!(error, CrawlerError::InvalidUrl(_)), "{error}");
+        assert!(matches!(error, CrawlerError::InvalidUrl { .. }), "{error}");
         assert_eq!(error.code(), "crawler/invalid_url");
-        assert!(error.user_message().contains("代理"));
+        // 富化后 url 与 reason 分开：url 是那段非法代理地址，reason 是解析器原文
+        assert!(error.params()["url"].contains(":::"), "{error}");
+        assert!(!error.params()["reason"].is_empty(), "{error}");
     }
 
     /// 回归：reqwest 默认自动探测环境变量与宿主机系统代理（workspace 开了 `system-proxy`
@@ -441,9 +465,16 @@ mod tests {
                 .fetch(&url_of(&server, &route))
                 .await
                 .expect_err("非 2xx 应报错");
-            assert!(matches!(error, CrawlerError::Network(_)), "{error}");
-            assert!(error.to_string().contains(&status.to_string()), "{error}");
+            assert!(matches!(error, CrawlerError::Network { .. }), "{error}");
             assert_eq!(error.code(), "crawler/network");
+            // 富化后 status 是独立参数，不用再从合并文本里搜数字
+            assert_eq!(error.params()["status"], status.to_string(), "{error}");
+            assert_eq!(error.params()["reason"], "http_status", "{error}");
+            assert_eq!(
+                error.params()["url"],
+                url_of(&server, &route).to_string(),
+                "{error}"
+            );
         }
     }
 
@@ -471,6 +502,9 @@ mod tests {
         assert!(matches!(error, CrawlerError::TooLarge { .. }), "{error}");
         assert_eq!(error.code(), "crawler/too_large");
         assert!(error.to_string().contains(url.as_str()), "{error}");
+        // `limit` 就是 `FetchLimits::max_bytes`，前端才能说清「超过多少」
+        assert_eq!(error.params()["limit"], "512", "{error}");
+        assert_eq!(error.params()["url"], url.as_str(), "{error}");
     }
 
     #[tokio::test]

@@ -250,7 +250,7 @@ mod tests {
     use super::*;
     use crate::db::open_in_memory;
     use crate::testutil::{base_time, later, sample_project};
-    use geo_domain::{Industry, Language};
+    use geo_domain::{GeoError, Industry, Language};
 
     async fn setup() -> ProjectRepo {
         ProjectRepo::new(open_in_memory().await.expect("内存库可用"))
@@ -582,9 +582,25 @@ mod tests {
         let repo = setup().await;
         let project = sample_project("重复 ID");
         repo.create(&project).await.unwrap();
+        let error = repo
+            .create(&project)
+            .await
+            .expect_err("主键冲突必须报错而不是静默覆盖");
+
+        // Task 4：唯一约束命中 `state/conflict`，`reason` 是稳定 key `duplicate`，
+        // 驱动原文降级进 `value`——此前 reason 装的是 SQL 原文，违反「reason 是稳定 key」，
+        // 前端词典永远查不到它。
+        assert_eq!(error.code(), "state/conflict", "{error:?}");
+        assert_eq!(error.params()["reason"], "duplicate", "{error:?}");
         assert!(
-            repo.create(&project).await.is_err(),
-            "主键冲突必须报错而不是静默覆盖"
+            !error.params()["value"].is_empty(),
+            "驱动原文要留在 value 里便于排查：{error:?}"
         );
+
+        // 转成 `GeoError` 后 code 与 params 都不变（无损）
+        let expected_params = error.params();
+        let geo = GeoError::from(error);
+        assert_eq!(geo.code(), "state/conflict");
+        assert_eq!(geo.params(), expected_params);
     }
 }

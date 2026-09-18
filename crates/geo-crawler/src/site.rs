@@ -38,7 +38,13 @@ impl CrawlRequest {
     }
 }
 
-/// 被跳过的页面与中文原因（robots / 网络 / 解码）。
+/// 被跳过的页面与原因（robots / 网络 / 解码）。
+///
+/// `reason` 今天混着两种形态：robots 与总超时是 `site.rs` 自己写的中文说明；
+/// 抓取失败那条来自 [`CrawlerError::user_message`](crate::CrawlerError::user_message)，
+/// Task 4 之后是紧凑日志格式（`crawler/network reason=http_status status=503 url=…`）。
+/// 它最终经 `entity_card_service` 落进 `crawler/empty` 的 `skipped` 参数，
+/// 统一成稳定 key 属 Plan A 后续 task 的活。
 #[derive(Debug, Clone, PartialEq)]
 pub struct SkippedPage {
     pub url: String,

@@ -209,15 +209,13 @@ impl LlmClient {
     fn request_url(&self) -> Result<String, LlmError> {
         let url = self.config.chat_completions_url();
         if url.is_empty() {
-            return Err(LlmError::Config(format!(
-                "{} 未配置服务地址，请在「设置 → 模型」中填写 base_url",
-                self.config.provider.label_zh()
-            )));
+            // `value` 装 `Provider::as_str()` 的稳定 id：`label_zh()` 是中文，
+            // 进 params 就等于把散文直送前端（en locale 下露馅）
+            return Err(LlmError::config("missing_base_url")
+                .with_param("value", self.config.provider.as_str()));
         }
         if self.config.model.trim().is_empty() {
-            return Err(LlmError::Config(
-                "未配置模型名，请在「设置 → 模型」中填写".to_string(),
-            ));
+            return Err(LlmError::config("missing_model"));
         }
         if self.api_key.trim().is_empty() {
             return Err(LlmError::MissingSecret);
@@ -235,8 +233,10 @@ impl LlmClient {
                 kind: "json_object",
             }),
         };
+        // 请求体序列化失败属目录里的 `parse_failed`（序列化器库返回的 Error），
+        // `value` 装 serde 原文
         serde_json::to_string(&payload)
-            .map_err(|err| LlmError::Config(format!("请求体序列化失败：{err}")))
+            .map_err(|err| LlmError::config("parse_failed").with_param("value", err))
     }
 }
 

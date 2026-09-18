@@ -12,8 +12,8 @@
     },
     {
       "code": "config/invalid",
-      "params": ["reason"],
-      "note": "GeoError::Config 与 StoreError::Secret（系统钥匙串读写失败）共用此码；reason 是稳定 key（如 missing_base_url），取值不得含密钥（AGENTS 规则 3）。"
+      "params": ["reason", "value"],
+      "note": "GeoError::Config 与 StoreError::Secret（系统钥匙串读写失败）共用此码；reason 是稳定 key（如 missing_base_url / secret_unavailable），value 是该 key 的配套原始值——StoreError::Secret 装已 redact 的钥匙串底层原文。取值不得含密钥（AGENTS 规则 3）。reason key 目录以 crates/geo-domain/src/error.rs 的模块文档注释为准。"
     },
     {
       "code": "crawler/blocked",
@@ -33,12 +33,12 @@
     {
       "code": "crawler/invalid_url",
       "params": ["url", "reason"],
-      "note": "CrawlerError::InvalidUrl：链接无法解析或非 http/https（extract.rs），代理地址非法也走这里（fetch.rs）。"
+      "note": "CrawlerError::InvalidUrl { url, reason }：链接无法解析或非 http/https（extract.rs），代理地址非法也走这里（fetch.rs）。url 是裸地址，reason 是解析器原文（raw passthrough），不进词典。"
     },
     {
       "code": "crawler/network",
       "params": ["url", "status", "reason"],
-      "note": "CrawlerError::Network：连接失败或 HTTP 非 2xx（fetch.rs）；status 仅在有 HTTP 响应时出现，构造客户端失败时只有 reason。"
+      "note": "CrawlerError::Network { url, status, reason }：连接失败或 HTTP 非 2xx（fetch.rs）。url / status 是 Option：拿到非 2xx 响应时两者都有且 reason 为稳定记号 http_status；请求发出后失败时只有 url；构造客户端失败时两者都没有。后两种 reason 装 reqwest 原文（raw passthrough），不进词典。"
     },
     {
       "code": "crawler/timeout",
@@ -48,7 +48,7 @@
     {
       "code": "crawler/too_large",
       "params": ["url", "limit"],
-      "note": "CrawlerError::TooLarge：响应体超过 FetchLimits::max_bytes（fetch.rs）；limit 为该上限的字节数。"
+      "note": "CrawlerError::TooLarge { url, limit }：响应体超过 FetchLimits::max_bytes（fetch.rs）；limit 为该上限的字节数。"
     },
     {
       "code": "data/invalid",
@@ -87,18 +87,18 @@
     },
     {
       "code": "llm/bad_response",
-      "params": ["reason", "upstream"],
-      "note": "LlmError::BadResponse：响应体不是合法 JSON 或缺 choices（client.rs）；upstream 放上游原文，不进词典，UI 以次要文本展示（spec §4.2）。"
+      "params": ["reason"],
+      "note": "LlmError::BadResponse：响应体不是合法 JSON 或缺 choices（client.rs / json.rs）。reason 是一段说明：四个站点都拿不到上游原文，而且把响应体塞进错误违反「错误里不得出现完整回答正文」（crates/geo-llm/src/error.rs 模块注释），因此本码不登记 upstream。跨 crate 转成 GeoError::Upstream 后走 upstream/llm/bad_response。"
     },
     {
       "code": "llm/config",
-      "params": ["reason"],
-      "note": "LlmError::Config（client.rs）与 state.rs / settings_service.rs 里 IpcError::new 直接构造的配置错误共用；reason 取 missing_base_url / missing_model / unknown_provider（Plan A Task 5 落地）。"
+      "params": ["reason", "value"],
+      "note": "LlmError::Config（client.rs）与 state.rs / settings_service.rs 里 IpcError::new 直接构造的配置错误共用；reason 取 missing_base_url / missing_model / unknown_provider / parse_failed（unknown_provider 由 Plan A Task 5 落地），value 装该 key 的配套原始值（provider 的稳定 id、合法取值列表、serde 原文）。reason key 目录以 crates/geo-domain/src/error.rs 的模块文档注释为准。"
     },
     {
       "code": "llm/deserialize",
-      "params": ["reason", "upstream"],
-      "note": "LlmError::Deserialize：带错误说明重试一次后结构仍不符合预期（json.rs）。"
+      "params": ["reason"],
+      "note": "LlmError::Deserialize：带错误说明追问一次后结构仍不符合预期（json.rs）。reason 是一段说明；站点拿不到上游原文，也不得把响应正文塞进错误，因此本码不登记 upstream（同 llm/bad_response）。"
     },
     {
       "code": "llm/missing_secret",
@@ -118,7 +118,7 @@
     {
       "code": "llm/transport",
       "params": ["reason"],
-      "note": "LlmError::Transport（TransportError::Network / Timeout / Other）；reason 取 network / timeout / other。"
+      "note": "LlmError::Transport（TransportError::Network / Timeout / Other）；reason 取 network / timeout / other（TransportError::reason_key()）。底层 reqwest / fixture 原文只进日志（TransportError::Display），不进 params。"
     },
     {
       "code": "project/not_found",

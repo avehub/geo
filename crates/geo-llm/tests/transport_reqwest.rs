@@ -113,7 +113,9 @@ async fn slow_response_yields_timeout() {
     let error = transport.send(request(server.uri())).await.unwrap_err();
 
     assert_eq!(error, TransportError::Timeout);
-    assert_eq!(error.to_string(), "请求超时");
+    // Display 是紧凑日志格式：`reason_key` 打头，超时没有底层原文可挂
+    assert_eq!(error.reason_key(), "timeout");
+    assert_eq!(error.to_string(), "timeout");
 }
 
 #[tokio::test]

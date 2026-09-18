@@ -308,9 +308,12 @@ describe('PromptSetPage', () => {
     const user = userEvent.setup();
     renderPage();
     await screen.findByText('第 1 版题库');
+    // 先筛到 2 条：整页 20 行在 jsdom 下渲染很慢，行为完全等价
+    fireEvent.click(screen.getByRole('radio', { name: '品牌对比' }));
+    await screen.findByText('宏宇泵业和南方泵业哪个更靠谱？');
 
     // 页面上还有生成面板的意图勾选框，必须把范围收进表格
-    const table = await screen.findByRole('table');
+    const table = screen.getByRole('table');
     const boxes = within(table).getAllByRole('checkbox');
     await user.click(boxes[1]);
     await user.click(boxes[2]);
@@ -320,7 +323,7 @@ describe('PromptSetPage', () => {
     await waitFor(() => expect(mockInvoke.callsOf('prompt_item_delete')).toHaveLength(1));
     const args = mockInvoke.lastArgsOf('prompt_item_delete')!;
     expect(args.set_id).toBe(SET_ID);
-    expect(args.ids).toEqual(['item-0', 'item-1']);
+    expect(args.ids).toEqual(['item-cmp-1', 'item-cmp-2']);
     expect(await screen.findByText(/已删除 2 条/)).toBeInTheDocument();
   });
 

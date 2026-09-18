@@ -27,9 +27,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    // 向导类测试要跑完 5 步表单交互，默认 5s 不够。
-    testTimeout: 25_000,
-    hookTimeout: 25_000,
+    // 向导类测试要跑完 5 步表单交互；antd 表格在 jsdom 下一次渲染 20 行 ×
+    // 每行两个 InputNumber 也很慢。实测单个用例空机 2~5s、机器有负载时能到 27s，
+    // 25s 会在门禁里偶发超时，因此给到 60s（不是掩盖卡死：空机跑远低于此）。
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
     setupFiles: [r('./src/test/setup.ts')],
     include: ['src/**/*.test.{ts,tsx}'],
     alias: {

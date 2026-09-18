@@ -17,8 +17,8 @@
     },
     {
       "code": "crawler/blocked",
-      "params": ["url", "reason"],
-      "note": "CrawlerError::Blocked：robots.txt 或内容类型策略拒绝抓取（fetch.rs）。"
+      "params": ["url", "reason", "value"],
+      "note": "CrawlerError::Blocked { url, content_type }：MIME 白名单拒收响应体（fetch.rs）。reason 恒为稳定 key not_allowed（目录里「协议/取值/内容不被允许」），value = 响应的 content-type，头缺失或不可解码时是 unknown（永远发 value，前端不必条件渲染）。robots.txt 的拒绝不走本码——那是 site.rs 的 SkippedPage，最终落进 crawler/empty 的 skipped（Plan A Task 5 接管）。"
     },
     {
       "code": "crawler/decode",
@@ -87,18 +87,18 @@
     },
     {
       "code": "llm/bad_response",
-      "params": ["reason"],
-      "note": "LlmError::BadResponse：响应体不是合法 JSON 或缺 choices（client.rs / json.rs）。reason 是一段说明：四个站点都拿不到上游原文，而且把响应体塞进错误违反「错误里不得出现完整回答正文」（crates/geo-llm/src/error.rs 模块注释），因此本码不登记 upstream。跨 crate 转成 GeoError::Upstream 后走 upstream/llm/bad_response。"
+      "params": ["reason", "value"],
+      "note": "LlmError::BadResponse { reason, extra }：响应体不是合法 JSON 或缺 choices（client.rs / json.rs）。reason 取 parse_failed / json_not_found / missing_choices（目录 key，不是散文）；value 只在 parse_failed 时发，装 serde 的库消息，可能含上游响应片段，已按字符限长 200（crates/geo-llm/src/error.rs 的 library_reason）。**被禁的是 upstream（上游响应体原文）**：站点拿不到它，且把响应体塞进错误违反「错误里不得出现完整回答正文」（crates/geo-llm/src/error.rs 模块注释）——value 是库原文而非回答正文，登记 value 不是对 upstream 禁令的回退。跨 crate 转成 GeoError::Upstream 后走 upstream/llm/bad_response。"
     },
     {
       "code": "llm/config",
       "params": ["reason", "value"],
-      "note": "LlmError::Config（client.rs）与 state.rs / settings_service.rs 里 IpcError::new 直接构造的配置错误共用；reason 取 missing_base_url / missing_model / unknown_provider / parse_failed（unknown_provider 由 Plan A Task 5 落地），value 装该 key 的配套原始值（provider 的稳定 id、合法取值列表、serde 原文）。reason key 目录以 crates/geo-domain/src/error.rs 的模块文档注释为准。"
+      "note": "LlmError::Config（client.rs）与 state.rs / settings_service.rs 里 IpcError::new 直接构造的配置错误共用；reason 取 missing_base_url / missing_model / unknown_provider / parse_failed（unknown_provider 由 Plan A Task 5 落地），value 装该 key 的配套原始值（provider 的稳定 id、用户传入的那个不存在的档案标识、serde 原文）；合法取值**列表**属文案，只能由词典模板给出，不得进 params（CF-1）。reason key 目录以 crates/geo-domain/src/error.rs 的模块文档注释为准。"
     },
     {
       "code": "llm/deserialize",
-      "params": ["reason"],
-      "note": "LlmError::Deserialize：带错误说明追问一次后结构仍不符合预期（json.rs）。reason 是一段说明；站点拿不到上游原文，也不得把响应正文塞进错误，因此本码不登记 upstream（同 llm/bad_response）。"
+      "params": ["reason", "value"],
+      "note": "LlmError::Deserialize { reason, extra }：带错误说明追问一次后结构仍不符合预期（json.rs）。reason 取 parse_failed / json_not_found / validation_failed（目录 key）；value 只在 parse_failed 时发，装 serde 的库消息，可能含上游响应片段，已按字符限长 200。字段校验器的原文（validate 闭包返回的那句）**不进 params**：它是我们自己的判据说的话，塞进 value 会让 UI 出现「错误套错误」的开发腔，只进日志与追问文案（裁定 G-3.1）。同样不登记 upstream（同 llm/bad_response）。"
     },
     {
       "code": "llm/missing_secret",

@@ -57,6 +57,10 @@ const REASON_SECRET_UNAVAILABLE: &str = "secret_unavailable";
 /// 命中 SQLite 唯一约束/主键冲突时的 reason：目录里的稳定 key `duplicate`。
 const REASON_DUPLICATE: &str = "duplicate";
 
+/// 反向转换 `GeoError::Upstream` 时的 reason（M-9）：目录里的稳定 key `not_allowed`。
+/// 上游原文（`message`）可能是散文甚至中文，只落日志，不进 params。
+const REASON_NOT_ALLOWED: &str = "not_allowed";
+
 impl StoreError {
     pub fn not_found(kind: impl Into<String>, id: impl std::fmt::Display) -> Self {
         Self::NotFound {
@@ -132,7 +136,8 @@ impl StoreError {
         }
     }
 
-    /// 稳定错误码，与 `GeoError::code()` 对齐（见 `code_matches_geo_error` 测试）。
+    /// 稳定错误码，与 `GeoError::code()` 对齐（见 `store_error_converts_to_geo_error_keeping_code`
+    /// 与 `geo_error_converts_back_keeping_code` 两个测试）。
     pub fn code(&self) -> String {
         match self {
             Self::NotFound { kind, .. } => format!("{kind}/not_found"),
@@ -159,6 +164,10 @@ impl StoreError {
     ///
     /// 这是 `code` 之外唯一的真值源：`Display`、`From<StoreError> for GeoError` 与壳里的
     /// `From<StoreError> for IpcError` 都复用它，不再各拼一份。
+    ///
+    /// 插入顺序是**先 `extra` 后基础键**：`with_param` 撞基础键的守卫是 `debug_assert!`，
+    /// release 构建下不生效，此时插入顺序就是「基础键不被 `extra` 顶掉」的唯一保证
+    /// （复审 M-2）。基础键的取值永远来自变体字段。
     pub fn params(&self) -> BTreeMap<String, String> {
         let mut params = BTreeMap::new();
         match self {
@@ -171,21 +180,21 @@ impl StoreError {
                 reason,
                 extra,
             } => {
+                params.extend(
+                    extra
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone())),
+                );
                 params.insert("field".to_string(), field.clone());
                 params.insert("reason".to_string(), reason.clone());
-                params.extend(
-                    extra
-                        .iter()
-                        .map(|(key, value)| (key.clone(), value.clone())),
-                );
             }
             Self::Conflict { reason, extra } => {
-                params.insert("reason".to_string(), reason.clone());
                 params.extend(
                     extra
                         .iter()
                         .map(|(key, value)| (key.clone(), value.clone())),
                 );
+                params.insert("reason".to_string(), reason.clone());
             }
             Self::Sqlx(sqlx_error) => {
                 if is_unique_violation(sqlx_error) {
@@ -316,8 +325,16 @@ impl From<GeoError> for StoreError {
                 StoreError::Secret(extra.get("value").cloned().unwrap_or(reason))
             }
             // 存储层不会产生上游错误；仅为反向转换完整性保留，降级为冲突。
+            // M-9：reason 必须是目录里的 key，因此用 `not_allowed` + `value` 装里层 code；
+            // `message` 是上游原文（可能是散文、可能非 ASCII），只落日志不进 params。
             GeoError::Upstream { code, message } => {
-                StoreError::conflict(format!("upstream/{code}：{message}"))
+                tracing::debug!(
+                    upstream_code = %code,
+                    upstream = %message,
+                    "反向转换 GeoError::Upstream：丢弃上游原文，只保留里层 code"
+                );
+                StoreError::conflict(REASON_NOT_ALLOWED)
+                    .with_param("value", format!("upstream/{code}"))
             }
             GeoError::Io(io_error) => StoreError::Io(io_error),
             GeoError::Serde(serde_error) => StoreError::Serde(serde_error),
@@ -369,6 +386,11 @@ mod tests {
 
     /// Task 4：`params()` 是 IPC 边界唯一的真值源（壳侧 `From<StoreError>` 直接委托），
     /// 键集必须逐字等于 `contracts/error-codes.json` 给该 code 登记的 params。
+    /// 名字里的「frozen catalog」指的是**契约给该 code 登记的键集**，但本测试并不读
+    /// `contracts/error-codes.json`（清单只在壳侧 `include_str!`，crate 层拿不到），
+    /// 期望 map 是硬编码的。真正读契约文件的是壳侧的
+    /// `catalog_params_equal_the_emitted_union` 与 `store_secret_params_follow_the_contract`
+    /// ——契约改了而这里没跟上，红的是那两条（复审 M-6）。
     #[test]
     fn params_match_the_frozen_catalog() {
         assert_eq!(
@@ -538,6 +560,58 @@ mod tests {
     #[should_panic(expected = "键集是固定的")]
     fn with_param_on_a_fixed_keyset_variant_trips_the_debug_assert() {
         let _error = StoreError::secret("keyring_unavailable").with_param("value", "x");
+    }
+
+    /// M-2：`debug_assert!` 只在 debug 构建生效，release 下 `extra` 里的同名键会**静默**
+    /// 顶掉变体字段，产出一个不在目录里的 `reason` 值（漂移守卫比的是键集不是取值，
+    /// 抓不到）。`params()` 因此先铺 `extra` 再插基础键。这里直接构造 `extra`
+    /// （绕过 `with_param`，免得 `debug_assert!` 在测试里先炸）。
+    #[test]
+    fn base_keys_win_over_a_shadowing_extra_entry() {
+        let mut extra = BTreeMap::new();
+        extra.insert("reason".to_string(), "not_a_catalog_key".to_string());
+        extra.insert("field".to_string(), "aliases".to_string());
+        extra.insert("value".to_string(), "disk full".to_string());
+
+        let validation = StoreError::Validation {
+            field: "brand_name".to_string(),
+            reason: "too_long".to_string(),
+            extra: extra.clone(),
+        };
+        let params = validation.params();
+        assert_eq!(params["reason"], "too_long", "{params:?}");
+        assert_eq!(params["field"], "brand_name", "{params:?}");
+        assert_eq!(
+            params["value"], "disk full",
+            "非基础键要照常透传：{params:?}"
+        );
+
+        let conflict = StoreError::Conflict {
+            reason: "duplicate".to_string(),
+            extra,
+        };
+        let params = conflict.params();
+        assert_eq!(params["reason"], "duplicate", "{params:?}");
+        assert_eq!(params.len(), 3, "{params:?}");
+    }
+
+    /// M-9：反向转换的 `Upstream` 分支此前把 `format!("upstream/{code}：{message}")`
+    /// 整段当 reason（散文 + 中文冒号），前端词典永远查不到它。现在 reason 是目录里的
+    /// `not_allowed`、`value` 装里层 code，上游原文只落日志。该分支零生产调用点，
+    /// 因此这里只钉 code 守恒 + 键的语言中立性。
+    #[test]
+    fn reverse_upstream_conversion_emits_a_catalog_key_not_prose() {
+        let geo = GeoError::upstream("llm/server", "HTTP 503 服务不可用");
+        let back = StoreError::from(geo);
+
+        assert_eq!(back.code(), "state/conflict", "code 必须守恒");
+        assert_eq!(back.params()["reason"], "not_allowed", "{back:?}");
+        assert_eq!(back.params()["value"], "upstream/llm/server", "{back:?}");
+        assert!(
+            back.params().values().all(|value| value.is_ascii()),
+            "上游散文不得经 params 直送前端：{back:?}"
+        );
+        assert!(!back.to_string().contains("服务不可用"), "{back}");
     }
 
     /// `Display` / `Error` / `From` 改成手写之后，原 `#[from]` 语义仍在：

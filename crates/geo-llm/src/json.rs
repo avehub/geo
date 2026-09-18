@@ -1,24 +1,77 @@
 //! 结构化输出：从模型回答里抽取 JSON，并在失败时带错误说明重试一次。
 //!
 //! 国产模型即使被要求 `response_format=json_object`，仍常见三种输出形态：
-//! 裸 JSON、```json 代码块、以及前后夹带说明文字。这里统一抽取，
+//! 裸 JSON、```json 代码块、以及夹带说明文字。这里统一抽取，
 //! 抽取不到就明确报 `BadResponse`，由 `chat_json` 追问一次。
+//!
+//! 一次失败有**两副面孔**，本模块负责把它们分开（裁定 A-3）：
+//! ① 给前端的 `reason` —— 目录里的稳定 key（`json_not_found` / `parse_failed` /
+//! `validation_failed`），语言中立，配 `value` 时只装库原文；
+//! ② 给模型的追问文案 —— 中文说明（含 serde / 校验器原文，模型要看得懂才能改对）。
+//! 改造前这两者共用一个 `String`，于是「给模型看的中文」被迫同时当 `reason` 用，
+//! `params` 里就出现了散文（AGENTS 规则 7：面向用户的文案只能由前端词典渲染）。
+//! 追问文案是**模型输入**不是 UI 文案，因此继续用中文。
 
 use serde::de::DeserializeOwned;
 
 use crate::client::{ChatMessage, ChatRequest, LlmClient};
-use crate::error::LlmError;
+use crate::error::{
+    library_reason, LlmError, REASON_JSON_NOT_FOUND, REASON_PARSE_FAILED, REASON_VALIDATION_FAILED,
+};
 
 /// 修复重试次数：解析或校验失败后只追问一次（spec FR-L3）。
 const REPAIR_ATTEMPTS: u8 = 1;
 /// 扫描 JSON 起点的最多尝试次数，避免超长输出把复杂度推到 O(n²)。
 const MAX_SCAN_STARTS: usize = 64;
 
+/// 抽取不到 JSON 时给模型看的追问说明（原文照搬改造前那句，模型侧行为不变）。
+const HINT_JSON_NOT_FOUND: &str = "模型输出中未找到合法 JSON，请检查提示词或更换模型";
+
+/// 一次解析/校验失败的两副面孔（见模块注释）。
+#[derive(Debug)]
+struct ParseFailure {
+    /// 目录里的 reason key，进 `params()["reason"]`。
+    reason_key: &'static str,
+    /// 该 key 的配套 `value`：只有 `parse_failed` 有（serde 库原文，已限长）。
+    value: Option<String>,
+    /// 给模型看的中文追问说明（含底层原文，模型要看得懂才能改对）。**不进 params**。
+    repair_hint: String,
+}
+
+impl ParseFailure {
+    /// 上抛成 `llm/bad_response`（`extract_json` 这条路）。
+    fn into_bad_response(self) -> LlmError {
+        self.into_error(LlmError::bad_response)
+    }
+
+    /// 上抛成 `llm/deserialize`（追问一次后仍失败）。
+    fn into_deserialize(self) -> LlmError {
+        self.into_error(LlmError::deserialize)
+    }
+
+    fn into_error(self, make: fn(String) -> LlmError) -> LlmError {
+        let error = make(self.reason_key.to_string());
+        match self.value {
+            Some(value) => error.with_param("value", value),
+            None => error,
+        }
+    }
+}
+
 /// 从模型输出中抽取 JSON 文本。
 ///
 /// 支持裸 JSON、```json 代码块、以及夹带在说明文字中的 JSON；
 /// 三种形态返回同一份 JSON 文本，方便上层直接 `serde_json::from_str`。
+///
+/// 公开签名保持 `Result<String, LlmError>` 不变（裁定 A-3：`apps/**` 无人调用它，
+/// 但它是 `pub`，改签名要动 `lib.rs` 的导出，不值得）；本体在 [`scan_json_body`]，
+/// 它返回 [`ParseFailure`]，好让 [`parse_and_validate`] 拿到那副「给模型看」的面孔。
 pub fn extract_json(text: &str) -> Result<String, LlmError> {
+    scan_json_body(text).map_err(ParseFailure::into_bad_response)
+}
+
+/// [`extract_json`] 的本体：抽取失败时返回两副面孔都在的 [`ParseFailure`]。
+fn scan_json_body(text: &str) -> Result<String, ParseFailure> {
     // 1. 优先取代码块内容：模型最常用的包裹方式。
     if let Some(fenced) = code_fence_content(text).filter(|content| is_json(content)) {
         return Ok(fenced);
@@ -35,9 +88,11 @@ pub fn extract_json(text: &str) -> Result<String, LlmError> {
         return Ok(embedded);
     }
 
-    Err(LlmError::BadResponse(
-        "模型输出中未找到合法 JSON，请检查提示词或更换模型".to_string(),
-    ))
+    Err(ParseFailure {
+        reason_key: REASON_JSON_NOT_FOUND,
+        value: None,
+        repair_hint: HINT_JSON_NOT_FOUND.to_string(),
+    })
 }
 
 /// 要求模型输出结构化 JSON：解析或校验失败时，把错误说明作为 user 消息追问一次；
@@ -48,33 +103,54 @@ pub async fn chat_json<T: DeserializeOwned>(
     validate: impl Fn(&T) -> Result<(), String>,
 ) -> Result<T, LlmError> {
     let mut request = req.clone();
-    let mut reason = String::new();
-    for attempt in 0..=REPAIR_ATTEMPTS {
-        if attempt > 0 {
-            tracing::warn!(attempt, reason = %reason, "结构化输出失败，带错误说明追问一次");
-            request = request
-                .clone()
-                .with_message(ChatMessage::user(repair_prompt(&reason)));
-        }
+    // 首轮失败后才进入追问，因此 `failure` 不需要 `Option`：循环要么 `return Ok(..)`，
+    // 要么带着上一轮的失败退出。
+    let response = client.chat(&request).await?;
+    let mut failure = match parse_and_validate::<T>(&response.content, &validate) {
+        Ok(value) => return Ok(value),
+        Err(failure) => failure,
+    };
+    for attempt in 1..=REPAIR_ATTEMPTS {
+        // 日志里带 reason key（稳定、可聚合）；中文追问文案只进模型输入，不进 params。
+        tracing::warn!(
+            attempt,
+            reason = failure.reason_key,
+            "结构化输出失败，带错误说明追问一次"
+        );
+        tracing::debug!(attempt, hint = %failure.repair_hint, "追问文案与底层原文");
+        request = request
+            .clone()
+            .with_message(ChatMessage::user(repair_prompt(&failure.repair_hint)));
         // 传输/限流/5xx 等错误由 `LlmClient` 自己的重试策略处理，这里直接上抛。
         let response = client.chat(&request).await?;
         match parse_and_validate::<T>(&response.content, &validate) {
             Ok(value) => return Ok(value),
-            Err(failure) => reason = failure,
+            Err(next) => failure = next,
         }
     }
-    Err(LlmError::Deserialize(reason))
+    Err(failure.into_deserialize())
 }
 
-/// 抽取 → 反序列化 → 业务校验，任一步失败都返回中文原因。
+/// 抽取 → 反序列化 → 业务校验，任一步失败都返回 [`ParseFailure`]。
 fn parse_and_validate<T: DeserializeOwned>(
     content: &str,
     validate: &impl Fn(&T) -> Result<(), String>,
-) -> Result<T, String> {
-    let json = extract_json(content).map_err(|err| err.user_message())?;
-    let value: T =
-        serde_json::from_str(&json).map_err(|err| format!("JSON 反序列化失败：{err}"))?;
-    validate(&value).map_err(|err| format!("字段校验失败：{err}"))?;
+) -> Result<T, ParseFailure> {
+    let json = scan_json_body(content)?;
+    let value: T = serde_json::from_str(&json).map_err(|err| ParseFailure {
+        reason_key: REASON_PARSE_FAILED,
+        // `value` 装 serde 库原文（英文、已限长）；模型那边要看到同一段原文才改得对
+        value: Some(library_reason(&err)),
+        repair_hint: format!("JSON 反序列化失败：{err}"),
+    })?;
+    validate(&value).map_err(|detail| ParseFailure {
+        // 裁定 G-3.1：校验器原文（来自 `services/**` 的 `error.user_message()`，可能是
+        // 一整条紧凑错误串）塞进 `value` 会在 UI 里出现「错误套错误」的开发腔，
+        // 因此 reason 用专门的 key、**不发 value**，原文只进日志与追问文案。
+        reason_key: REASON_VALIDATION_FAILED,
+        value: None,
+        repair_hint: format!("字段校验失败：{detail}"),
+    })?;
     Ok(value)
 }
 
@@ -209,8 +285,16 @@ mod tests {
     #[test]
     fn text_without_json_is_bad_response() {
         let error = extract_json("没有 JSON").unwrap_err();
-        assert!(matches!(error, LlmError::BadResponse(_)), "实际：{error:?}");
+        assert!(
+            matches!(error, LlmError::BadResponse { .. }),
+            "实际：{error:?}"
+        );
         assert_eq!(error.code(), "llm/bad_response");
+        // A-7.3：reason 是目录里的稳定 key，不是那句中文说明；
+        // `json_not_found` 不配套参数，因此 params 里**没有** `value` 键
+        assert_eq!(error.params()["reason"], "json_not_found", "{error}");
+        assert!(!error.params().contains_key("value"), "{error}");
+        assert_eq!(error.params().len(), 1, "{error}");
         assert!(extract_json("").is_err());
         assert!(extract_json("```json\n```").is_err());
     }

@@ -307,7 +307,7 @@ async fn provider_test_reports_a_failed_call_without_leaking_the_key() {
 /// Task 4 之后 `llm/transport` 只发 `reason=network/timeout/other`，上游回显的原文
 /// 根本不再进错误载荷：泄漏面被**结构性**关闭，`redact` 退化成第二道保险。
 #[tokio::test]
-async fn provider_test_redacts_a_key_echoed_by_the_gateway() {
+async fn provider_test_failure_does_not_echo_the_gateway_key() {
     let (state, _server, _secrets) = state_with_transport(KeyEchoingTransport::new()).await;
 
     let result = SettingsService::from_state(&state)

@@ -150,7 +150,10 @@ impl SiteFetcher {
         if !is_accepted_mime(content_type.as_deref()) {
             return Err(CrawlerError::Blocked {
                 url: final_url.to_string(),
-                reason: "非 HTML 内容".to_string(),
+                // `params()` 把它落进 `value`（reason 恒为目录里的 `not_allowed`）：
+                // content-type 是**数据**不是文案，中文散文只能由前端词典渲染
+                // （AGENTS 规则 7）。拿不到头时 `params()` 发 `unknown`。
+                content_type: content_type.clone(),
             });
         }
         // 先看 Content-Length 提前止损，再边读边校验，防住没有长度声明的分块响应。
@@ -229,6 +232,7 @@ fn transport_error(error: reqwest::Error, url: &Url) -> CrawlerError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::time::{Duration, Instant};
 
     use url::Url;
@@ -560,8 +564,18 @@ mod tests {
             .await
             .expect_err("非 HTML 内容应被拒绝");
         assert!(matches!(error, CrawlerError::Blocked { .. }), "{error}");
-        assert!(error.to_string().contains("非 HTML 内容"), "{error}");
         assert_eq!(error.code(), "crawler/blocked");
+        // A-1：reason 是目录里的稳定 key，content-type 落 `value`。
+        // 逐键相等的期望 map，不用 contains_key ——「只发子集也算过」是假绿。
+        let wanted: BTreeMap<String, String> = [
+            ("reason", "not_allowed".to_string()),
+            ("url", url_of(&server, "/manual.pdf").to_string()),
+            ("value", "application/pdf".to_string()),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect();
+        assert_eq!(error.params(), wanted, "{error}");
     }
 
     #[tokio::test]

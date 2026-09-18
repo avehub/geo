@@ -335,8 +335,15 @@ async fn malformed_200_body_is_bad_response_without_retry() {
     );
     let error = client.chat(&hello_request()).await.unwrap_err();
 
-    assert!(matches!(error, LlmError::BadResponse(_)), "实际：{error:?}");
+    assert!(
+        matches!(error, LlmError::BadResponse { .. }),
+        "实际：{error:?}"
+    );
     assert_eq!(error.code(), "llm/bad_response");
+    // A-6/A-7.3：响应体不是合法 JSON 走目录里的 `parse_failed`，`value` 装 serde 库原文
+    assert_eq!(error.params()["reason"], "parse_failed", "{error}");
+    assert!(!error.params()["value"].is_empty(), "{error}");
+    assert_eq!(error.params().len(), 2, "{error}");
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
@@ -355,5 +362,12 @@ async fn response_without_choices_is_bad_response() {
     );
     let error = client.chat(&hello_request()).await.unwrap_err();
 
-    assert!(matches!(error, LlmError::BadResponse(_)), "实际：{error:?}");
+    assert!(
+        matches!(error, LlmError::BadResponse { .. }),
+        "实际：{error:?}"
+    );
+    // A-7.3：缺 choices 是新键 `missing_choices`，它不配套参数 ⇒ params 里**没有** `value`
+    assert_eq!(error.params()["reason"], "missing_choices", "{error}");
+    assert!(!error.params().contains_key("value"), "{error}");
+    assert_eq!(error.params().len(), 1, "{error}");
 }

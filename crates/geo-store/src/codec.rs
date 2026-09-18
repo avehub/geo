@@ -32,7 +32,26 @@ pub(crate) fn decode_time(raw: &str) -> Result<DateTime<Utc>, StoreError> {
 pub(crate) fn encode_scalar<T: Serialize>(value: &T) -> Result<String, StoreError> {
     match serde_json::to_value(value)? {
         Value::String(text) => Ok(text),
-        other => Err(serde_error(format!("期望字符串列，实际是 {other}"))),
+        // M-7：报 **ASCII 记号 + 值的类型名**，不是中文散文。`StoreError::Serde` 的
+        // `reason` 走 raw passthrough（目录规则 4）直送前端，一句中文会被前端按
+        // 「查不到就原样显示」渲进 en-US 界面。
+        // 也**不许**把 `other` 本身插进消息：那是库内数据，可能含中文品牌名。
+        other => Err(serde_error(format!(
+            "expected_string_column:{}",
+            json_kind(&other)
+        ))),
+    }
+}
+
+/// `serde_json::Value` 的类型名（ASCII 记号，供 [`encode_scalar`] 的报错用）。
+fn json_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
     }
 }
 
@@ -71,6 +90,7 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
     use geo_domain::{FieldStatus, Industry, IntentCategory, Language, ProjectId, ProjectStatus};
+    use serde_json::json;
     use std::collections::HashMap;
 
     fn time(secs: i64) -> DateTime<Utc> {
@@ -134,6 +154,34 @@ mod tests {
             assert_eq!(format!("\"{column}\""), json);
             assert_eq!(decode_scalar::<Industry>(&column).unwrap(), industry);
         }
+    }
+
+    /// M-7：非字符串列的报错是 ASCII 记号 + 值的类型名，不是「期望字符串列，实际是 …」。
+    #[test]
+    fn non_string_scalar_reports_an_ascii_token_with_the_json_kind() {
+        for (value, kind) in [
+            (json!(123), "number"),
+            (json!(["a"]), "array"),
+            (json!({"a": 1}), "object"),
+            (json!(true), "boolean"),
+            (json!(null), "null"),
+        ] {
+            let error = encode_scalar(&value).expect_err("非字符串列必须报错");
+            assert!(matches!(error, StoreError::Serde(_)), "{error:?}");
+            assert_eq!(error.code(), "data/invalid");
+            assert_eq!(
+                error.params()["reason"],
+                format!("expected_string_column:{kind}"),
+                "{error}"
+            );
+            assert!(
+                error.params()["reason"].is_ascii(),
+                "reason 直送前端，不许出现非 ASCII：{error}"
+            );
+        }
+        // 库内数据本身（可能含中文品牌名）不许被插进消息
+        let error = encode_scalar(&json!({"standard_name": "宏宇泵业"})).unwrap_err();
+        assert!(!error.to_string().contains("宏宇泵业"), "{error}");
     }
 
     #[test]

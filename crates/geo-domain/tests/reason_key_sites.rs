@@ -40,6 +40,7 @@ use geo_domain::{
 };
 use serde_json::json;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::str::FromStr;
 
 /// 期望的参数值。
@@ -780,49 +781,205 @@ fn every_reachable_site_maps_to_its_pinned_code_field_reason_and_extra() {
     }
 }
 
+/// reason key 的配套参数约束。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Companion {
+    /// 配套参数必须**恰好**是这些键（多一个少一个都红）。
+    Exactly(&'static [&'static str]),
+    /// **至少**要带这些键（如 `out_of_range` 必带 `expected`，可另带 `value`）。
+    Contains(&'static [&'static str]),
+}
+
 /// reason key → 配套参数的可执行不变式（复审者建议 2）。
 ///
 /// **与 `crates/geo-domain/src/error.rs` 模块注释里那张 `| key | 语义 | 配套参数 |`
-/// 目录表同源（19 个 key），改一处必须改另一处。**
-/// 目录里那张表的「配套参数」列就是这里的 `match`：`limit` 只配字符数、`expected` 只配区间、
-/// `value` 装出错的原始值、无参数的 key 一个都不许带。键名撞车（如 `too_long` 配 `expected`）
-/// 在这里红，不用等到 Task 7 的词典模板渲出空占位符。
+/// 目录表同源（23 个 key），改一处必须改另一处**——这句「同源」不再靠人手核对：
+/// [`the_directory_table_and_companion_table_agree`] 直接解析目录表逐行比对。
+///
+/// 目录里那张表的「配套参数」列就是这张表：`limit` 只配字符数、`expected` 只配区间、
+/// `value` 装出错的原始值、无参数的 key 一个都不许带。键名撞车（如 `too_long` 配
+/// `expected`）在这里红，不用等到 Task 7 的词典模板渲出空占位符。
+///
+/// 写成数据而不是 `match`：`match` 的分组（`"a" | "b" => …`）无法被别的测试枚举，
+/// 于是「目录加了一个 key 而这里没跟上」只能等到某个站点恰好用它才被动 panic。
+const COMPANIONS: &[(&str, Companion)] = &[
+    // 语义规则 2：`too_long` / `too_short` 只表字符数，恰配 `limit`
+    ("too_long", Companion::Exactly(&["limit"])),
+    ("too_short", Companion::Exactly(&["limit"])),
+    // 数量与数值区间一律 `out_of_range` + `expected`（可另带 `value`）
+    ("out_of_range", Companion::Contains(&["expected"])),
+    // 这些 key 自身就说完了，带任何参数都是噪声
+    ("required", Companion::Exactly(&[])),
+    ("empty", Companion::Exactly(&[])),
+    ("duplicate", Companion::Exactly(&[])),
+    ("missing_base_url", Companion::Exactly(&[])),
+    ("missing_model", Companion::Exactly(&[])),
+    // Task 4 fix round 1 新增的 4 个：它们描述的是「上游响应/校验器的哪种失败形态」，
+    // 详情（校验器原文、reqwest 原文）只进日志不进 params，因此都不配套参数。
+    ("missing_choices", Companion::Exactly(&[])),
+    ("json_not_found", Companion::Exactly(&[])),
+    ("validation_failed", Companion::Exactly(&[])),
+    ("http_status", Companion::Exactly(&[])),
+    // 这些 key 必须给出「出错的原始值」，否则前端只能干说「格式不对」。
+    // `row_invalid` / `unknown_provider` 在目录里同样登记了 `value`（复审 N-1：
+    // 此前被错归进 `Exactly(&[])`，而这个错归在域内零站点下**全绿**——I-1）；
+    // `secret_unavailable` 的 `value` = 钥匙串/内存实现的底层原文。
+    ("invalid_format", Companion::Contains(&["value"])),
+    ("parse_failed", Companion::Contains(&["value"])),
+    ("invalid_url", Companion::Contains(&["value"])),
+    ("invalid_id", Companion::Contains(&["value"])),
+    ("not_allowed", Companion::Contains(&["value"])),
+    ("missing_header", Companion::Contains(&["value"])),
+    ("write_failed", Companion::Contains(&["value"])),
+    ("unknown_field", Companion::Contains(&["value"])),
+    ("row_invalid", Companion::Contains(&["value"])),
+    ("unknown_provider", Companion::Contains(&["value"])),
+    ("secret_unavailable", Companion::Contains(&["value"])),
+];
+
+/// 查 [`COMPANIONS`]，返回该 key **必须**带的参数键。
+///
+/// 查不到就 panic：目录里的 key 一定在表里，这一点由
+/// [`the_directory_table_and_companion_table_agree`] 的键集双向相等保证。
+fn companion(reason: &str) -> Companion {
+    COMPANIONS
+        .iter()
+        .find(|(key, _)| *key == reason)
+        .map(|(_, companion)| *companion)
+        .unwrap_or_else(|| {
+            panic!(
+                "{reason:?} 不在 error.rs 模块注释那张 `| key | 语义 | 配套参数 |` 表的 23 key 目录里"
+            )
+        })
+}
+
+/// 目录表 ⟷ [`COMPANIONS`] 同源守卫（复审 I-1，Task 4 fix round 1 的验收核心）。
+///
+/// 复审实证：把 `row_invalid` 从 `Contains(&["value"])` 移回 `Exactly(&[])`（与目录
+/// `crates/geo-domain/src/error.rs` 那行的 `value` 相反），`cargo test -p geo-domain`
+/// 85 + 4 + 0 **全绿**——因为 [`companion`] 只被本文件的站点清单驱动，而 `row_invalid`
+/// 在 geo-domain 内**零站点**，永远不会以它为参数被调用。也就是说「与目录同源」这句
+/// 注释此前没有任何机械保障，Task 3 的 N-1 修复是装饰性的。
+///
+/// 这条测试因此**以目录表本身为输入**：目录是机器可解析的
+/// （`//! | \`key\` | 语义 | 配套参数 |`），逐行抽出 `(key, 配套参数)` 后核对三件事——
+/// ① 无重复键且恰好 [`EXPECTED_KEY_COUNT`] 条；② 键集与 `COMPANIONS` **双向**相等
+/// （两侧差集都进 panic 文案，便于定位是目录漏了还是镜像表漏了）；③ 逐键的配套参数
+/// 一致（`Exactly(req)` ⇒ 抽出的集合 == req；`Contains(req)` ⇒ 抽出的集合 ⊇ req）。
+///
+/// 于是三件事都会红：目录改配套参数列而镜像表没跟上、镜像表归错组（I-1 的 M8'）、
+/// 目录加/删 key 而镜像表没同步（此前只有 `other => panic!` 那条被动分支，且要恰好
+/// 有站点用到该 key 才触发）。报告里那张人工 `awk` 核对表也就此变成测试。
+#[test]
+fn the_directory_table_and_companion_table_agree() {
+    /// 目录表的键数。改目录必须同步改这里——这是**故意**的：键数是冻结口径
+    /// （Task 7 的词典照这张表逐行建），静默增减键等于静默改词典。
+    const EXPECTED_KEY_COUNT: usize = 23;
+
+    /// 解析 `crates/geo-domain/src/error.rs` 模块注释里的目录表，
+    /// 返回 `(key, 该行登记的配套参数集合)`，按目录里的出现顺序。
+    fn directory() -> Vec<(String, BTreeSet<String>)> {
+        /// 「配套参数」列里唯一可能被登记的三个键。
+        /// 该列还夹着 `1~5` / `<=5` 这类示例与中文说明，因此抽出反引号 token 后只认这三个；
+        /// **不是白名单豁免**——目录规则里能当配套参数的就只有这三个名字。
+        const PARAM_TOKENS: [&str; 3] = ["expected", "limit", "value"];
+        include_str!("../src/error.rs")
+            .lines()
+            .filter(|line| line.starts_with("//! |"))
+            .filter_map(|line| {
+                // `//! | key | 语义 | 配套参数 |` 按 `|` 切成 5 段（首尾各一个空串）
+                let cells: Vec<&str> = line.trim_start_matches("//!").split('|').collect();
+                if cells.len() != 5 {
+                    return None;
+                }
+                let key = cells[1].trim().trim_matches('`');
+                // 跳过表头行与 `| --- | --- | --- |` 分隔行
+                if key.is_empty() || key == "key" || key.chars().all(|ch| ch == '-') {
+                    return None;
+                }
+                // 反引号 token = 奇数段（`` `value` `` 被 split('`') 切成 ["", "value", ""]）
+                let params = cells[3]
+                    .split('`')
+                    .skip(1)
+                    .step_by(2)
+                    .filter(|token| PARAM_TOKENS.contains(token))
+                    .map(str::to_string)
+                    .collect();
+                Some((key.to_string(), params))
+            })
+            .collect()
+    }
+
+    let rows = directory();
+    assert!(
+        !rows.is_empty(),
+        "目录表一行都没解析出来：`crates/geo-domain/src/error.rs` 的表格式变了？"
+    );
+
+    // ① 无重复键 + 键数
+    let directory_keys: BTreeSet<&str> = rows.iter().map(|(key, _)| key.as_str()).collect();
+    assert_eq!(
+        directory_keys.len(),
+        rows.len(),
+        "目录表里有重复的 key：{rows:?}"
+    );
+    assert_eq!(
+        rows.len(),
+        EXPECTED_KEY_COUNT,
+        "目录表的键数变了（解析出 {rows:?}）：加/删 key 必须同步 COMPANIONS 与 EXPECTED_KEY_COUNT"
+    );
+
+    // ② 键集双向相等
+    let table_keys: BTreeSet<&str> = COMPANIONS.iter().map(|(key, _)| *key).collect();
+    assert_eq!(
+        table_keys.len(),
+        COMPANIONS.len(),
+        "COMPANIONS 里有重复的 key：{COMPANIONS:?}"
+    );
+    let only_in_directory: Vec<&str> = directory_keys.difference(&table_keys).copied().collect();
+    let only_in_table: Vec<&str> = table_keys.difference(&directory_keys).copied().collect();
+    assert!(
+        only_in_directory.is_empty() && only_in_table.is_empty(),
+        "目录表与 COMPANIONS 的键集不一致——只在目录里：{only_in_directory:?}，\
+         只在 COMPANIONS 里：{only_in_table:?}"
+    );
+
+    // ③ 逐键的配套参数一致
+    for (key, declared) in &rows {
+        match companion(key) {
+            Companion::Exactly(required) => {
+                let required: BTreeSet<String> =
+                    required.iter().map(|name| (*name).to_string()).collect();
+                assert_eq!(
+                    declared, &required,
+                    "目录里 `{key}` 那行的配套参数是 {declared:?}，\
+                     而 COMPANIONS 要求恰好 {required:?}"
+                );
+            }
+            Companion::Contains(required) => {
+                for name in required {
+                    assert!(
+                        declared.contains(*name),
+                        "COMPANIONS 要求 `{key}` 必带 {name:?}，而目录那行的配套参数是 {declared:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// reason key → 配套参数的可执行不变式（站点侧）。
 ///
 /// 覆盖全部 50 处：40 处用 `trigger` 产出的真实实例，10 处不可达站点用表里声明的
 /// reason + extra 键（这两个字段本身由 [`unreachable_sites_keep_their_literal_mapping`]
 /// 对照源码字面量核过，不是凭空声明的）。
+///
+/// 注意这条**只以站点为输入**：域内零站点的 key（`row_invalid` / `unknown_provider` /
+/// `missing_choices` / `json_not_found` / `validation_failed` / `http_status` /
+/// `secret_unavailable`）永远不会以它们为参数调用 [`companion`]，因此归错组也不红。
+/// 那个盲区由 [`the_directory_table_and_companion_table_agree`] 兜（I-1）。
 #[test]
 fn reason_key_pins_its_companion_params() {
-    /// 与 `error.rs` 模块注释里那张 `| key | 语义 | 配套参数 |` 表同源。
-    /// 返回该 key **必须**带的参数键。
-    fn companion(reason: &str) -> Companion {
-        match reason {
-            // 语义规则 2：`too_long` / `too_short` 只表字符数，恰配 `limit`
-            "too_long" | "too_short" => Companion::Exactly(&["limit"]),
-            // 数量与数值区间一律 `out_of_range` + `expected`（可另带 `value`）
-            "out_of_range" => Companion::Contains(&["expected"]),
-            // 这些 key 自身就说完了，带任何参数都是噪声
-            "required" | "empty" | "duplicate" | "missing_base_url" | "missing_model" => {
-                Companion::Exactly(&[])
-            }
-            // 这些 key 必须给出「出错的原始值」，否则前端只能干说「格式不对」。
-            // `row_invalid` / `unknown_provider` 在目录里同样登记了 `value`（复审 N-1：
-            // 此前被错归进 `Exactly(&[])`）；`secret_unavailable` 是 Task 4 新增的第 19 个 key，
-            // 它的 `value` = 钥匙串/内存实现的底层原文。
-            "invalid_format" | "parse_failed" | "invalid_url" | "invalid_id" | "not_allowed"
-            | "missing_header" | "write_failed" | "unknown_field" | "row_invalid"
-            | "unknown_provider" | "secret_unavailable" => Companion::Contains(&["value"]),
-            other => panic!(
-                "{other:?} 不在 error.rs 模块注释那张 `| key | 语义 | 配套参数 |` 表的 19 key 目录里"
-            ),
-        }
-    }
-
-    enum Companion {
-        Exactly(&'static [&'static str]),
-        Contains(&'static [&'static str]),
-    }
-
     fn check(where_: String, reason: &str, extra_keys: &[&str]) {
         match companion(reason) {
             Companion::Exactly(want) => assert_eq!(

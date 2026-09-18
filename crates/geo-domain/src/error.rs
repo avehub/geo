@@ -14,8 +14,12 @@
 //! **适用范围**：本目录是后端所有 `reason` 参数的词表，不只属于 `GeoError`——
 //! `unknown_provider` / `missing_base_url` / `missing_model` 经 `LlmError::Config`
 //! （code `llm/config`）发出而不是 `GeoError::Config`；`row_invalid` / `missing_header`
-//! 经 CSV 导入导出路径发出；`secret_unavailable` 经 `StoreError::Secret`
-//! （code `config/invalid`）发出。
+//! 经 CSV 导入导出路径发出；`parse_failed` / `json_not_found` / `missing_choices` /
+//! `validation_failed` 经 `LlmError::BadResponse` / `LlmError::Deserialize`
+//! （code `llm/bad_response` / `llm/deserialize`）发出；`http_status` 与 `not_allowed`
+//! 经 `CrawlerError::Network` / `CrawlerError::Blocked`（code `crawler/network` /
+//! `crawler/blocked`）发出；`secret_unavailable` 与 `duplicate` 经 `StoreError::Secret` /
+//! `StoreError::Sqlx`（命中唯一约束，code `config/invalid` / `state/conflict`）发出。
 //!
 //! | key | 语义 | 配套参数 |
 //! | --- | --- | --- |
@@ -35,7 +39,11 @@
 //! | `missing_base_url` | 服务商缺 base_url | — |
 //! | `missing_model` | 缺模型名 | — |
 //! | `parse_failed` | 序列化/反序列化失败（上游响应、文件内容、请求体） | `value` |
+//! | `json_not_found` | 模型输出里找不到合法 JSON | — |
+//! | `missing_choices` | 上游响应缺 choices（多为网关拦截） | — |
+//! | `http_status` | 上游返回非 2xx 状态码（配该 code 自己的 `status` 参数） | — |
 //! | `unknown_field` | 字段路径指向未知字段（路径本身格式是对的） | `value` |
+//! | `validation_failed` | 字段校验器判失败（校验器原文只进日志，不进参数） | — |
 //! | `write_failed` | 导出/写文件失败（不是解析问题） | `value` |
 //! | `secret_unavailable` | 系统钥匙串读写失败（`StoreError::Secret`） | `value` |
 //!
@@ -224,6 +232,10 @@ impl GeoError {
     ///
     /// 这是 `code` 之外唯一的真值源：`Display` 与壳里的
     /// `From<GeoError> for IpcError` 都复用它，不再各拼一份。
+    ///
+    /// 插入顺序是**先 `extra` 后基础键**：`with_param` 撞基础键的守卫是
+    /// `debug_assert!`，release 构建下不生效，此时插入顺序就是「基础键不被 `extra`
+    /// 顶掉」的唯一保证（复审 M-2）。基础键的取值永远来自变体字段。
     pub fn params(&self) -> BTreeMap<String, String> {
         let mut params = BTreeMap::new();
         match self {
@@ -232,21 +244,21 @@ impl GeoError {
                 reason,
                 extra,
             } => {
+                params.extend(
+                    extra
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone())),
+                );
                 params.insert("field".to_string(), field.clone());
                 params.insert("reason".to_string(), reason.clone());
-                params.extend(
-                    extra
-                        .iter()
-                        .map(|(key, value)| (key.clone(), value.clone())),
-                );
             }
             Self::Conflict { reason, extra } | Self::Config { reason, extra } => {
-                params.insert("reason".to_string(), reason.clone());
                 params.extend(
                     extra
                         .iter()
                         .map(|(key, value)| (key.clone(), value.clone())),
                 );
+                params.insert("reason".to_string(), reason.clone());
             }
             Self::NotFound { kind, id } => {
                 params.insert("kind".to_string(), kind.clone());
@@ -504,6 +516,49 @@ mod tests {
     fn with_param_refuses_to_shadow_the_config_reason_key() {
         let _err = GeoError::config("missing_base_url").with_param("reason", "x");
         panic!("上面那行本该先炸");
+    }
+
+    /// M-2：`debug_assert!` 只在 debug 构建生效，release 下 `extra` 里的同名键会
+    /// **静默**顶掉变体字段，产出一个不在目录里的 `reason` 值（键集守卫比的是键不是值，
+    /// 抓不到）。`params()` 因此先铺 `extra` 再插基础键，让插入顺序成为第二道防线。
+    ///
+    /// 这里直接构造 `extra`（绕过 `with_param`，免得上面那几条 `debug_assert!` 先炸），
+    /// 断言基础键的取值永远来自变体字段、非基础键照常透传。
+    #[test]
+    fn base_keys_win_over_a_shadowing_extra_entry() {
+        let mut extra = BTreeMap::new();
+        extra.insert("reason".to_string(), "not_a_catalog_key".to_string());
+        extra.insert("field".to_string(), "aliases".to_string());
+        extra.insert("limit".to_string(), "60".to_string());
+
+        let validation = GeoError::Validation {
+            field: "brand_name".to_string(),
+            reason: "too_long".to_string(),
+            extra: extra.clone(),
+        };
+        let params = validation.params();
+        assert_eq!(params["reason"], "too_long", "{params:?}");
+        assert_eq!(params["field"], "brand_name", "{params:?}");
+        assert_eq!(params["limit"], "60", "非基础键要照常透传：{params:?}");
+        assert_eq!(params.len(), 3, "{params:?}");
+
+        for error in [
+            GeoError::Conflict {
+                reason: "duplicate".to_string(),
+                extra: extra.clone(),
+            },
+            GeoError::Config {
+                reason: "secret_unavailable".to_string(),
+                extra,
+            },
+        ] {
+            let params = error.params();
+            assert_eq!(params.len(), 3, "{params:?}");
+            assert!(
+                params["reason"] != "not_a_catalog_key",
+                "extra 顶掉了基础键 reason：{params:?}"
+            );
+        }
     }
 
     /// M-3：panic 信息不得夹带用户数据（`Debug` 不经 `redact`）。

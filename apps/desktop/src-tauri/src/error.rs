@@ -392,20 +392,31 @@ mod tests {
             LlmError::Transport(TransportError::Timeout),
             LlmError::RateLimited,
             LlmError::Server { status: 500 },
-            LlmError::BadResponse("empty_choices".into()),
-            LlmError::Deserialize("missing_field".into()),
+            // `llm/bad_response` / `llm/deserialize` 登记 `["reason","value"]`，但只有
+            // `parse_failed` 会发 `value`（`missing_choices` / `json_not_found` /
+            // `validation_failed` 都不配套参数）⇒ 每个 code 各需两条实例，
+            // 按并集才凑得齐（与 `Network` 同一写法，见 A-6）
+            LlmError::bad_response("missing_choices"),
+            LlmError::bad_response("parse_failed").with_param("value", "expected value at line 1"),
+            LlmError::deserialize("validation_failed"),
+            LlmError::deserialize("parse_failed").with_param("value", "invalid type"),
             LlmError::MissingSecret,
         ]
     }
 
-    /// `CrawlerError` 的全部 6 个变体，`Network` 占两条：一条带 `url` + `status`
-    /// （拿到非 2xx 响应），一条两者都拿不到（构造客户端失败）。清单给
-    /// `crawler/network` 登记了三个键，按 code 取并集时才凑得齐。
+    /// `CrawlerError` 的全部 6 个变体，`Network` 与 `Blocked` 各占两条：
+    /// `Network` 一条带 `url` + `status`（拿到非 2xx 响应）、一条两者都拿不到
+    /// （构造客户端失败）；`Blocked` 一条带 content-type、一条拿不到（`value` 发
+    /// `unknown`）。清单给这两个 code 登记的键，按并集时才凑得齐。
     fn crawler_variants() -> Vec<CrawlerError> {
         vec![
             CrawlerError::Blocked {
                 url: "https://a.example/x".into(),
-                reason: "robots".into(),
+                content_type: Some("application/pdf".into()),
+            },
+            CrawlerError::Blocked {
+                url: "https://a.example/x".into(),
+                content_type: None,
             },
             CrawlerError::Timeout {
                 url: "https://a.example/x".into(),
@@ -445,7 +456,7 @@ mod tests {
             StoreError::Sqlx(sqlx::Error::RowNotFound),
             StoreError::Serde(serde_json::from_str::<u8>("nope").unwrap_err()),
             StoreError::secret("keyring_unavailable"),
-            StoreError::Io(io::Error::other("磁盘满")),
+            StoreError::Io(io::Error::other("disk full")),
         ]
     }
 
@@ -467,7 +478,7 @@ mod tests {
             // 的键也不会有任何测试变红。
             GeoError::config("secret_unavailable").with_param("value", "keyring_unavailable"),
             GeoError::upstream("llm/server", "HTTP 503"),
-            GeoError::Io(io::Error::other("磁盘满")),
+            GeoError::Io(io::Error::other("disk full")),
             GeoError::Serde(serde_json::from_str::<u8>("nope").unwrap_err()),
         ]
     }
@@ -489,8 +500,8 @@ mod tests {
             | LlmError::Transport(_)
             | LlmError::RateLimited
             | LlmError::Server { .. }
-            | LlmError::BadResponse(_)
-            | LlmError::Deserialize(_)
+            | LlmError::BadResponse { .. }
+            | LlmError::Deserialize { .. }
             | LlmError::MissingSecret => error.code(),
         }
     }
@@ -829,13 +840,49 @@ mod tests {
         assert_eq!(timeout.params["url"], "https://a.example/x");
         assert_eq!(timeout.params.len(), 1);
 
+        // A-1：`Blocked` 的 reason 恒为目录里的 `not_allowed`，content-type 落 `value`；
+        // 拿不到 content-type 时 `value` 发 `unknown`（永远发 value，不留条件渲染）
         let blocked = IpcError::from(CrawlerError::Blocked {
             url: "https://a.example/x".into(),
-            reason: "robots".into(),
+            content_type: Some("application/pdf".into()),
         });
+        assert_eq!(blocked.code, "crawler/blocked");
         assert_eq!(blocked.params["url"], "https://a.example/x");
-        assert_eq!(blocked.params["reason"], "robots");
-        assert_eq!(blocked.params.len(), 2);
+        assert_eq!(blocked.params["reason"], "not_allowed");
+        assert_eq!(blocked.params["value"], "application/pdf");
+        assert_eq!(blocked.params.len(), 3);
+
+        let blocked_unknown = IpcError::from(CrawlerError::Blocked {
+            url: "https://a.example/x".into(),
+            content_type: None,
+        });
+        assert_eq!(blocked_unknown.params["value"], "unknown");
+        assert_eq!(blocked_unknown.params.len(), 3);
+
+        // A-2：`llm/bad_response` / `llm/deserialize` 的 reason 是目录里的 key（不再是散文），
+        // `value` 只有 `parse_failed` 会发（serde 库原文，已限长 200 字符）
+        for error in [
+            LlmError::bad_response("parse_failed").with_param("value", "expected value"),
+            LlmError::deserialize("parse_failed").with_param("value", "invalid type"),
+        ] {
+            let ipc = IpcError::from(error);
+            assert_eq!(ipc.params["reason"], "parse_failed", "{:?}", ipc.params);
+            assert!(!ipc.params["value"].is_empty(), "{:?}", ipc.params);
+            assert_eq!(ipc.params.len(), 2, "{:?}", ipc.params);
+        }
+        for error in [
+            LlmError::bad_response("missing_choices"),
+            LlmError::bad_response("json_not_found"),
+            LlmError::deserialize("validation_failed"),
+        ] {
+            let ipc = IpcError::from(error);
+            assert!(
+                !ipc.params.contains_key("value"),
+                "这些 key 不配套参数：{:?}",
+                ipc.params
+            );
+            assert_eq!(ipc.params.len(), 1, "{:?}", ipc.params);
+        }
 
         // Task 4 把 `InvalidUrl(String)` 富化成 `InvalidUrl { url, reason }`：
         // url 是裸地址、reason 是解析器原文，因此断言从「只发 reason 的合法子集」
@@ -1077,10 +1124,19 @@ mod tests {
     /// （`CrawlerError::Network` 构造客户端失败时只有 `reason`，拿到非 2xx 时三个键都有，
     /// 逐实例相等会把这两种合法形态判成漂移）。
     ///
-    /// 两端都用集合比较，避免键序造成假红。它同时挡住两个方向的漂移：
-    /// 实现少发一个键（清单许诺了前端拿不到 → 词典渲出空占位符），
-    /// 以及实现多发一个清单外的键（[`params_keys_stay_inside_the_shared_catalog`]
-    /// 也管这个方向，但那条只到「子集」为止）。
+    /// 两端都用集合比较，避免键序造成假红。
+    ///
+    /// **边界（复审 M-1：别把它当全能网）**：并集语义有一个「少发」盲区——某个变体少发
+    /// 一键，只要**同 code 的另一个实例**把它补上，并集仍等于清单声明，这条就不会红。
+    /// 复审 M10 实证过：删掉 `StoreError::Secret` 的 `value`，本守卫**存活**（`geo_cases()`
+    /// 里那条带 `value` 的 `GeoError::Config` 替 `config/invalid` 凑齐了两个键），真正红的是
+    /// 逐实例的 `store_secret_params_follow_the_contract` 与 geo-store 的
+    /// `params_match_the_frozen_catalog`。这是 R-D 钦定并集语义的必然结果，不是实现错。
+    /// 分工因此是：**少发**方向由各 crate 的 `params_match_the_frozen_catalog`
+    /// （逐变体、逐键相等的期望 map）与壳侧逐码断言
+    /// （`llm_and_crawler_params_follow_the_contract` / `store_secret_params_follow_the_contract`）
+    /// 兜住；本守卫负责**多发**方向（发出清单外的键，`params_keys_stay_inside_the_shared_catalog`
+    /// 也管这个方向但只到「子集」为止）与「整个 code 谁都没发」。
     ///
     /// 覆盖范围 = 四张变体清单 + `NOT_FOUND_KINDS` + 跨 crate 的 `upstream/*` 包装形态。
     /// 壳内字面量站点与前端专属码今天发不出（或根本不由 Rust 发出）清单登记的键，
@@ -1136,14 +1192,26 @@ mod tests {
         }
 
         /// 本守卫**不覆盖**的 code，以及为什么。改动这里必须同时说明理由。
+        /// 三类情况分开写（复审 M-5：此前混成一句，其中两处不准确）。
         const EXEMPT: [&str; 7] = [
-            // 壳内字面量站点：Task 5 才会逐个补 params，今天发不出登记键
+            // ① 壳内**有**字面量站点、清单也登记了 params，但今天一个都不发：
+            //    `services/prompt_service.rs:558` 与 `services/entity_card_service.rs:104`
+            //    都是 `IpcError::new(code, 中文散文)`。逐个补 params 是 **Task 5** 的活
+            //    （`crawler/empty` 的 `skipped` 还要等 `SkippedPage.reason` 统一成稳定 key）。
             "compliance/violation",
             "crawler/empty",
-            "ipc/internal",
+            // 注：`prompt_set/empty_import` 的清单声明本来就是 `[]`，**没有 params 可补**；
+            // 它进 EXEMPT 的真实原因只是「四张变体清单里没有它的实例」（壳内发射点在
+            // `services/prompt_service.rs`，属 Task 5）。放在这一组是因为发射点同类。
             "prompt_set/empty_import",
-            // 前端专属：Rust 侧没有发射点（清单里先收着，见
-            // `catalog_reserves_the_frontend_only_ipc_codes`）
+            // ② 壳内**有**发射点、但今天不带清单登记的参数：`ipc/internal` 由
+            //    `IpcError::internal`（本文件 `:109`）发出，契约给它登记了 `["reason"]`
+            //    却从来没人填 —— 一处既存的契约/实现漂移。**owner = Task 5**：
+            //    `IpcError::internal` 在本文件而不在 `services/**`，不在 Task 5「服务层站点
+            //    key 化」的字面范围内，容易两头都不认领，所以在这里点名。
+            "ipc/internal",
+            // ③ 前端专属：Rust 侧没有发射点（清单里先收着，见
+            //    `catalog_reserves_the_frontend_only_ipc_codes`）
             "ipc/invoke_failed",
             "ipc/unknown",
             "ipc/unknown_command",
@@ -1161,5 +1229,65 @@ mod tests {
                 .collect::<BTreeSet<_>>(),
             "守卫的覆盖范围变了：豁免清单要同步（新增 code 记得决定它归谁发 params）"
         );
+    }
+
+    /// 中文散文哨兵（裁定 A-7.4 / G-8）：**键集**守卫管不住**取值语言**。
+    ///
+    /// 这正是 C-1 能溜过去的结构性原因——`crawler/blocked` 的 `reason` 曾是
+    /// 「非 HTML 内容」、`llm/bad_response` 的 `reason` 曾是「响应体不是合法 JSON：…」，
+    /// 键名一个都没错，值却是中文散文，en-US 下直接露馅（AGENTS 规则 7：面向用户的文案
+    /// 只能由前端词典按 locale 渲染）。有了这条，将来任何人往 params 里写中文当场红。
+    ///
+    /// **边界（别让它看起来比实际更强）**：它只覆盖**本文件四张守卫清单里的夹具**，
+    /// 不是全量证明。生产环境的 `value` 完全可能合法地带非 ASCII —— 那是**用户数据**
+    /// （中文品牌名、中文别名、用户填的网址），由输入决定，本守卫不覆盖、也不该覆盖。
+    /// 它证明的是一件更窄但更硬的事：**我们自己的夹具与常量里没有中文散文**，
+    /// 因此「params 的取值只能是语言中立的数据或目录里的 reason key」在常量层面成立。
+    ///
+    /// 遇到带非 ASCII 数据的夹具就**改夹具**（本轮把 `io::Error::other("磁盘满")` 改成
+    /// `"disk full"` 就是为此），**不许给这条守卫加白名单**——白名单等于给散文发通行证。
+    #[test]
+    fn guard_instance_params_stay_ascii() {
+        let mut cases: Vec<IpcError> = Vec::new();
+        cases.extend(llm_variants().into_iter().map(IpcError::from));
+        cases.extend(crawler_variants().into_iter().map(IpcError::from));
+        cases.extend(store_variants().into_iter().map(IpcError::from));
+        cases.extend(geo_cases().into_iter().map(IpcError::from));
+        // 跨 crate 包装形态（`upstream/{code}`）：`upstream` 那个键装的是里层的紧凑文案
+        cases.extend(
+            llm_variants()
+                .into_iter()
+                .map(|error| IpcError::from(GeoError::from(error))),
+        );
+        cases.extend(
+            crawler_variants()
+                .into_iter()
+                .map(|error| IpcError::from(GeoError::from(error))),
+        );
+        for kind in NOT_FOUND_KINDS {
+            cases.push(IpcError::from(GeoError::not_found(kind, "x")));
+            cases.push(IpcError::from(StoreError::not_found(kind, "x")));
+        }
+        assert!(!cases.is_empty());
+
+        for case in &cases {
+            for (key, value) in &case.params {
+                assert!(
+                    value.is_ascii(),
+                    "{} 的 params[{key:?}] 含非 ASCII 字符：{value:?}\n\
+                     params 的取值只能是语言中立的数据或目录里的 reason key，\n\
+                     面向用户的文案由前端词典按 locale 渲染（AGENTS 规则 7）。\n\
+                     若这是夹具带进来的非 ASCII 数据，改夹具，不要给本守卫加白名单。",
+                    case.code
+                );
+            }
+            // 兜底文案与 params 同源（`{code} k=v …`），一并守住
+            assert!(
+                case.message.is_ascii(),
+                "{} 的兜底文案含非 ASCII 字符：{:?}",
+                case.code,
+                case.message
+            );
+        }
     }
 }

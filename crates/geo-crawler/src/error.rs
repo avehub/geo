@@ -14,11 +14,29 @@ use std::fmt;
 
 use geo_domain::GeoError;
 
+/// `crawler/blocked` 的固定 reason：目录里的 `not_allowed`
+/// （「协议/取值/**内容**不被允许」——MIME 白名单拒收正属此类）。
+///
+/// 做成常量而不是让站点自由填 `reason` 字段：`Blocked` 的唯一生产站点
+/// （`fetch.rs` 的 MIME 判定）只有一种语义，把 reason 变成变体不变量，
+/// 「往 params 里塞一句中文散文」这件事在类型上就不可表达（裁定 A-1）。
+const REASON_NOT_ALLOWED: &str = "not_allowed";
+
+/// `Blocked` 拿不到 content-type（响应头缺失或不是合法 UTF-8）时 `value` 的取值。
+const CONTENT_TYPE_UNKNOWN: &str = "unknown";
+
 /// 抓取与解析过程中的错误。
 #[derive(Debug)]
 pub enum CrawlerError {
-    /// 被 robots.txt 或内容类型策略拒绝抓取。
-    Blocked { url: String, reason: String },
+    /// 内容类型策略拒绝抓取（MIME 白名单外的响应体）。
+    ///
+    /// `params()` 的 `reason` 恒为 [`REASON_NOT_ALLOWED`]，`content_type` 落进
+    /// `value`（拿不到时是 `"unknown"`）。robots.txt 的拒绝**不走这里**——那是
+    /// `site.rs` 的 `SkippedPage`（不报错，只记跳过原因）。
+    Blocked {
+        url: String,
+        content_type: Option<String>,
+    },
     /// 单页抓取超时。
     Timeout { url: String },
     /// 网络连接失败或 HTTP 状态非 2xx。
@@ -53,16 +71,30 @@ impl CrawlerError {
     }
 
     /// 语言中立参数，键名由 `contracts/error-codes.json` 冻结：
-    /// `blocked` / `invalid_url` → `{url, reason}`、`timeout` → `{url}`、
+    /// `blocked` → `{url, reason:"not_allowed", value:<content-type|unknown>}`、
+    /// `invalid_url` → `{url, reason}`、`timeout` → `{url}`、
     /// `network` → `{reason}` ∪ 拿得到的 `url` / `status`、
     /// `too_large` → `{url, limit}`、`decode` → `{reason}`。
     ///
     /// 这是 `code` 之外唯一的真值源：`Display` 与壳里的
     /// `From<CrawlerError> for IpcError` 都复用它，不再各拼一份。
+    ///
+    /// `value` 一律 ASCII：content-type 是 HTTP 头，非 ASCII 的取值到不了这里
+    /// （`HeaderValue::to_str()` 已经先过滤掉），拿不到就是 `"unknown"`。
     pub fn params(&self) -> BTreeMap<String, String> {
         let mut params = BTreeMap::new();
         match self {
-            Self::Blocked { url, reason } | Self::InvalidUrl { url, reason } => {
+            Self::Blocked { url, content_type } => {
+                params.insert("url".to_string(), url.clone());
+                params.insert("reason".to_string(), REASON_NOT_ALLOWED.to_string());
+                params.insert(
+                    "value".to_string(),
+                    content_type
+                        .clone()
+                        .unwrap_or_else(|| CONTENT_TYPE_UNKNOWN.to_string()),
+                );
+            }
+            Self::InvalidUrl { url, reason } => {
                 params.insert("url".to_string(), url.clone());
                 params.insert("reason".to_string(), reason.clone());
             }
@@ -141,7 +173,14 @@ mod tests {
             (
                 CrawlerError::Blocked {
                     url: URL.to_string(),
-                    reason: "not_html".to_string(),
+                    content_type: Some("application/pdf".to_string()),
+                },
+                "crawler/blocked",
+            ),
+            (
+                CrawlerError::Blocked {
+                    url: URL.to_string(),
+                    content_type: None,
                 },
                 "crawler/blocked",
             ),
@@ -197,6 +236,12 @@ mod tests {
 
     /// Task 4：`params()` 是 IPC 边界唯一的真值源（壳侧 `From<CrawlerError>` 直接委托），
     /// 键集必须逐字等于 `contracts/error-codes.json` 给该 code 登记的 params。
+    ///
+    /// 名字里的「frozen catalog」指的是**契约给该 code 登记的键集**，但本测试并不读
+    /// `contracts/error-codes.json`（清单只在壳侧 `include_str!`，crate 层拿不到），
+    /// 期望 map 是硬编码的。真正读契约文件的是壳侧的
+    /// `catalog_params_equal_the_emitted_union` 与 `llm_and_crawler_params_follow_the_contract`
+    /// ——契约改了而这里没跟上，红的是那两条（复审 M-6）。
     #[test]
     fn params_match_the_frozen_catalog() {
         assert_eq!(
@@ -209,10 +254,30 @@ mod tests {
         assert_eq!(
             CrawlerError::Blocked {
                 url: URL.to_string(),
-                reason: "not_html".to_string()
+                content_type: Some("application/pdf".to_string())
             }
             .params(),
-            expected(&[("reason", "not_html"), ("url", URL)])
+            // A-1：reason 恒为目录里的 `not_allowed`（内容类型不被白名单接受 =
+            // 「内容不被允许」），具体是什么 content-type 属**数据**，装 `value`
+            expected(&[
+                ("reason", "not_allowed"),
+                ("url", URL),
+                ("value", "application/pdf")
+            ])
+        );
+        // 头缺失/不可解码时 `value` 发 `unknown`：**永远发 value**，
+        // 不给前端留「有时有这个键」的条件渲染（裁定 A-1）
+        assert_eq!(
+            CrawlerError::Blocked {
+                url: URL.to_string(),
+                content_type: None
+            }
+            .params(),
+            expected(&[
+                ("reason", "not_allowed"),
+                ("url", URL),
+                ("value", "unknown")
+            ])
         );
         // `Network` 富化后：有 HTTP 响应时三个键都发；构造客户端失败时只有 reason
         assert_eq!(
@@ -269,10 +334,10 @@ mod tests {
         assert_eq!(
             CrawlerError::Blocked {
                 url: "https://a.example/admin".to_string(),
-                reason: "not_html".to_string()
+                content_type: Some("application/pdf".to_string())
             }
             .to_string(),
-            "crawler/blocked reason=not_html url=https://a.example/admin"
+            "crawler/blocked reason=not_allowed url=https://a.example/admin value=application/pdf"
         );
         assert_eq!(
             CrawlerError::TooLarge {

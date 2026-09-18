@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::LlmError;
+use crate::error::{library_reason, LlmError, REASON_MISSING_CHOICES, REASON_PARSE_FAILED};
 use crate::provider::LlmConfig;
 use crate::transport::{HttpRequest, HttpResponse, Transport, TransportError};
 
@@ -318,12 +318,16 @@ fn classify(result: Result<HttpResponse, TransportError>) -> Attempt {
 
 /// 解析 OpenAI 兼容响应；结构不符一律归为 `BadResponse`（重试也不会变好）。
 fn parse_chat_response(response: &HttpResponse) -> Result<ChatResponse, LlmError> {
-    let wire: WireChatResponse = serde_json::from_str(&response.body)
-        .map_err(|err| LlmError::BadResponse(format!("响应体不是合法 JSON：{err}")))?;
-    let choice =
-        wire.choices.into_iter().next().ok_or_else(|| {
-            LlmError::BadResponse("响应缺少 choices，可能被上游网关拦截".to_string())
-        })?;
+    // `reason` 是目录里的稳定 key，serde 原文降级进 `value`（已限长）：
+    // 改造前这两句都是一整段中文散文当 reason，en-US 下就是中文泄漏（裁定 R-C1）
+    let wire: WireChatResponse = serde_json::from_str(&response.body).map_err(|err| {
+        LlmError::bad_response(REASON_PARSE_FAILED).with_param("value", library_reason(&err))
+    })?;
+    let choice = wire
+        .choices
+        .into_iter()
+        .next()
+        .ok_or_else(|| LlmError::bad_response(REASON_MISSING_CHOICES))?;
     Ok(ChatResponse {
         content: choice
             .message

@@ -34,9 +34,11 @@
 - Test: `apps/desktop/ui/src/i18n/error-codes.test.ts`（Task 7 才补词典断言，本任务先建导入与形状断言）
 
 **Interfaces:**
-- Produces: `contracts/error-codes.json` 形状 `{ "codes": [ { "code": string, "params": [string], "note": string } ] }`；TS 侧 `import catalog from '../../../contracts/error-codes.json'` 后 `catalog.codes` 可用；Rust 侧 `const ERROR_CATALOG: &str = include_str!("../../../../contracts/error-codes.json");`
-- Produces: 现存全部 code 的完整清单（`validation/failed`、`{kind}/not_found` 的 6 个具体值、`state/conflict`、`config/invalid`、`data/invalid`、`io/failed`、`ipc/internal`、`llm/*` 7 个、`crawler/*` 6 个、`compliance/violation`、`prompt_set/empty_import`、`upstream/*`）
-- Produces: IPC 层三个码一次收全——`ipc/internal`（已有）、`ipc/invoke_failed`（Task 9 起由前端 `invoke` 失败时发射）、`ipc/unknown_command`（Task 11 起由 demo 后端运行时守卫发射）。后两者本轮暂无 Rust 发射点，**这是预期的**，任何测试都不得因此失败；契约文件此后不再被后续 task 修改。
+- Produces: `contracts/error-codes.json` 形状 `{ "codes": [ { "code": string, "params": [string], "note": string } ] }`；TS 侧 `import catalog from '../../../../../contracts/error-codes.json'`（**从 `apps/desktop/ui/src/i18n/` 上 5 层**才到仓库根，已实测；3 层只到 `apps/desktop/`）后 `catalog.codes` 可用；Rust 侧 `const ERROR_CATALOG: &str = include_str!("../../../../contracts/error-codes.json");`（4 层，正确）
+- Produces: 现存全部 code 的完整清单（`validation/failed`、`{kind}/not_found` 的 **5** 个具体值、`state/conflict`、`config/invalid`、`data/invalid`、`io/failed`、`llm/*` 7 个、`crawler/*` **7** 个、`compliance/violation`、`prompt_set/empty_import`、`upstream/*` 13 个、`ipc/*` 4 个）
+  - `{kind}/not_found` 只有 5 个：`project` / `entity_card` / `prompt_set` / `prompt_item` / `competitor`。**不含 `asset`** —— `repo/asset.rs` 只有 add/list/delete，没有「读单条资产」的路径，全仓无 `not_found("asset")` 调用点；Plan C 若真加该路径，再连契约一起加。
+  - `crawler/*` 是 7 个不是 6 个：`CrawlerError` 的 6 个变体 + `crawler/empty`（壳内 `IpcError::new("crawler/empty", …)`，发射点 `apps/desktop/src-tauri/src/services/entity_card_service.rs:105`，已有集成测试断言）。它不是 `CrawlerError` 变体，因此没有 `upstream/crawler/empty`。
+- Produces: IPC 层**四个**码一次收全——`ipc/internal`（壳内错误，已有）、`ipc/invoke_failed`（Task 9 起由前端 `invoke` 失败时发射）、`ipc/unknown_command`（Task 11 起由 demo 后端运行时守卫发射）、`ipc/unknown`（`client.ts:92` 今天就有的空 `code` 兜底）。后三者本轮暂无 Rust 发射点，**这是预期的**，任何测试都不得因此失败；契约文件此后不再被后续 task 修改。
 
 - [ ] 用 `rg -o '"[a-z_]+/[a-z_]+"' -g '*.rs' apps crates | sort -u` 生成初稿，剔除 MIME 与路径字面量（`application/json`、`text/html`、`fixtures/http` 等），补上动态拼出的 `{kind}/not_found` 具体值（`project` / `entity_card` / `prompt_set` / `prompt_item` / `competitor` / `asset`）
 - [ ] 写失败测试（Rust）：解析 `ERROR_CATALOG`，断言 `IpcError::from(GeoError::not_found("project","x")).code` 等代表错误的 code 都在清单里
@@ -179,9 +181,12 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 **Interfaces:**
 - Consumes: Task 1 的 `contracts/error-codes.json`、Task 2 的 `IpcErrorPayload.params`、Task 6 的 `i18n`
 - Produces: `describeIpcError(error: unknown, t: TFunction): string`（命中词典 → `t('errors.<code>', params)`；未命中 → `console.warn` 后回退 `error.message`；非 `IpcRequestError` → `t('common.unknownError')`）
+- Produces: `upstream/*` 的渲染规则（**控制器裁定，实现者不必再选**）：词典**不为 13 条 `upstream/*` 各写一份复述**，改为 `describeIpcError` 剥掉 `upstream/` 前缀查里层 code（`upstream/llm/rate_limited` → `errors.llm/rate_limited`），命中后用共享包装键 `errors.upstream.wrapper`（zh「上游服务返回错误：{{message}}」/ en `Upstream service error: {{message}}`）套一层；里层也查不到才走 `console.warn` + `message` 回退。代价只有 2 条词典，而不是 26 条近似重复文案。
 - Produces: `fields.ts` 覆盖后端会返回的全部 `field` 值（`brand_name` `aliases` `domain` `intents` `items` `ids` `label` `set_id` `standard_name` `products.name` `text` `payload` `model.provider` `model.model` `model.base_url` …）
 
-- [ ] 写失败测试（`dictionary.test.ts`）：遍历 `catalog.codes`，断言 `zh-CN` 与 `en-US` 的 `errors.<code>` 都存在且非空；断言 zh/en 的 key 集合完全相等（双向差集为空）；断言没有值等于 key 本身（漏翻标志）；断言 `errors.*` 模板里出现的 `{{xxx}}` 占位符都在该 code 的 `params` 清单内
+- [ ] 写失败测试（`dictionary.test.ts`）：遍历 `catalog.codes`，断言 `zh-CN` 与 `en-US` 的 `errors.<code>` 都存在且非空——**`upstream/*` 例外**：改为断言「剥掉 `upstream/` 前缀后的里层 code 在两种语言里都存在」+「`errors.upstream.wrapper` 在两种语言里都存在」；断言 zh/en 的 key 集合完全相等（双向差集为空）；断言没有值等于 key 本身（漏翻标志）；断言 `errors.*` 模板里出现的 `{{xxx}}` 占位符都在该 code 的 `params` 清单内（`params` 为空数组的 code——`llm/missing_secret`、`llm/rate_limited`、`prompt_set/empty_import` 等——模板里不得出现任何 `{{…}}`）
+- [ ] 清单导入路径用 **5 层**（`../../../../../contracts/error-codes.json`，同 Task 1，别再按 3 层写红一次）
+- [ ] 写失败测试（`errors.test.ts`）：`{code:'upstream/llm/rate_limited'}` 在 zh 下渲染出带「上游服务」的包装文案且不等于 code 本身、en 下同理（验证剥前缀回退真的接通，而不是靠 26 条重复词典）
 - [ ] 写失败测试（`errors.test.ts`）：`{code:'validation/failed', params:{field:'brand_name',reason:'required'}}` 在 zh 下渲染为「品牌名不能为空」、en 下渲染为 `Brand name is required`；未命中 code 回退 `message`
 - [ ] 跑红：`mise exec -- pnpm --dir apps/desktop/ui run test src/i18n src/api/errors`
 - [ ] 实现 `errors.ts`（zh/en 覆盖清单里全部 code）+ `fields.ts` + reason key 词典（`errors.reasons.*`）+ `describeIpcError`
@@ -216,10 +221,11 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - Consumes: Task 6/7/8
 - Consumes: Task 6 已在 `src/test/setup.ts` 接好 `initI18n('zh-CN')`，本任务不再动该文件
 - Produces: `client.ts` 的 `unwrapIpcError(cmd, cause)` 不再拼中文，改为返回 `IpcRequestError{ code:'ipc/invoke_failed', params:{ cmd, reason } }`，展示交给 `describeIpcError`
+- Produces: `client.ts:92` 的 `payload.code || 'ipc/unknown'` **保持原样**（控制器裁定）：它兜的是「后端给了合法 payload 但 `code` 是空串」，与 `ipc/invoke_failed`（`invoke` 本身抛异常/在浏览器里根本没有 `invoke`）是两种不同故障，合并会把「契约破损」伪装成「通道不通」。两个码 Task 1 都已入契约，此处不新增。
 
 - [ ] 扩失败测试：扫描范围加 `pages/*.tsx` 与 `App.tsx`
 - [ ] 跑红 → 逐页抽取 → 跑绿
-- [ ] `unwrapIpcError` 改造：先写失败测试（`code==='ipc/invoke_failed'`、`params.cmd==='project_list'`、`message` 不含 CJK），跑红后实现；`contracts/error-codes.json` 补 `ipc/invoke_failed`
+- [ ] `unwrapIpcError` 改造：先写失败测试（`code==='ipc/invoke_failed'`、`params.cmd==='project_list'`、`message` 不含 CJK），跑红后实现。**不要再改 `contracts/error-codes.json`** —— `ipc/invoke_failed` 在 Task 1 已一次收全，契约自 Task 1 起冻结。
 - [ ] 全量跑绿：`mise exec -- pnpm --dir apps/desktop/ui run test`
 - [ ] Commit `refactor(ui): 页面与 IPC 兜底文案迁入词典，测试固定 zh-CN`
 
@@ -353,4 +359,4 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 
 **3. 类型一致性**：`IpcCommand` / `IPC_COMMANDS` / `demoBackend: Record<IpcCommand, DemoHandler>` / `demoInvoke` / `detectRuntime` / `Runtime` / `Locale` / `TranslationKey` / `describeIpcError` / `GeoError::params` / `LlmError::params` / `StoreError::params` / `CrawlerError::params` / `IpcError::with_params` 在各 task 间命名一致；reason key 目录只在 Task 3 定义一次，Task 4/5 显式 Consumes。
 
-**4. 已知风险**：① Task 8 的静态扫描测试用 `import.meta.glob(?raw)` 读源码，若 Vitest 配置不支持需退化为 `node:fs` 读文件（jsdom 环境下 `fs` 可用需 `environment: node` 或改用 `?raw`）——实现时二选一，两者都能守住"无硬编码中文"这条。② Task 5 是本计划最大的一块（~55 个站点 + ~39 处测试断言），若单 task 过大可按 crate/服务文件拆成两次提交，但必须在同一个 task 内跑绿门禁。③ 存量 UI 测试固定 zh-CN 的前提是 Task 6 的 `src/test/setup.ts` 接线到位（已按裁定从 Task 9 提前），否则 Task 8/9 会大面积红。④ `contracts/error-codes.json` 只被测试导入，运行时不导入；若将来要在应用代码里用它，需给 `vite.config.ts` 加 `server.fs.allow`（该文件在 UI 工程根之外，dev server 会 403）。
+**4. 已知风险**：① Task 8 的静态扫描测试用 `import.meta.glob(?raw)` 读源码，若 Vitest 配置不支持需退化为 `node:fs` 读文件（jsdom 环境下 `fs` 可用需 `environment: node` 或改用 `?raw`）——实现时二选一，两者都能守住"无硬编码中文"这条。② Task 5 是本计划最大的一块（~55 个站点 + ~39 处测试断言），若单 task 过大可按 crate/服务文件拆成两次提交，但必须在同一个 task 内跑绿门禁。③ 存量 UI 测试固定 zh-CN 的前提是 Task 6 的 `src/test/setup.ts` 接线到位（已按裁定从 Task 9 提前），否则 Task 8/9 会大面积红。④ `contracts/error-codes.json` 只被测试导入，运行时不导入。Task 1 已实测：测试侧 5 层相对路径导入**无需**改 `tsconfig.app.json`（`resolveJsonModule` 本来就开）也无需改 `vite.config.ts`（Vite 的 workspace root 由向上找 `.git` 推出即仓库根，`contracts/` 在允许范围内）；但若将来要在**应用运行时代码**里导入它，dev server 仍可能 403，届时需加 `server.fs.allow`。

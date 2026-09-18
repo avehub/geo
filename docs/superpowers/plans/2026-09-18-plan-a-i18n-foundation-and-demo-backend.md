@@ -35,7 +35,8 @@
 
 **Interfaces:**
 - Produces: `contracts/error-codes.json` 形状 `{ "codes": [ { "code": string, "params": [string], "note": string } ] }`；TS 侧 `import catalog from '../../../contracts/error-codes.json'` 后 `catalog.codes` 可用；Rust 侧 `const ERROR_CATALOG: &str = include_str!("../../../../contracts/error-codes.json");`
-- Produces: 现存全部 code 的完整清单（`validation/failed`、`{kind}/not_found` 的 5 个具体化、`state/conflict`、`config/invalid`、`data/invalid`、`io/failed`、`ipc/internal`、`llm/*` 7 个、`crawler/*` 6 个、`compliance/violation`、`prompt_set/empty_import`、`upstream/*`）
+- Produces: 现存全部 code 的完整清单（`validation/failed`、`{kind}/not_found` 的 6 个具体值、`state/conflict`、`config/invalid`、`data/invalid`、`io/failed`、`ipc/internal`、`llm/*` 7 个、`crawler/*` 6 个、`compliance/violation`、`prompt_set/empty_import`、`upstream/*`）
+- Produces: IPC 层三个码一次收全——`ipc/internal`（已有）、`ipc/invoke_failed`（Task 9 起由前端 `invoke` 失败时发射）、`ipc/unknown_command`（Task 11 起由 demo 后端运行时守卫发射）。后两者本轮暂无 Rust 发射点，**这是预期的**，任何测试都不得因此失败；契约文件此后不再被后续 task 修改。
 
 - [ ] 用 `rg -o '"[a-z_]+/[a-z_]+"' -g '*.rs' apps crates | sort -u` 生成初稿，剔除 MIME 与路径字面量（`application/json`、`text/html`、`fixtures/http` 等），补上动态拼出的 `{kind}/not_found` 具体值（`project` / `entity_card` / `prompt_set` / `prompt_item` / `competitor` / `asset`）
 - [ ] 写失败测试（Rust）：解析 `ERROR_CATALOG`，断言 `IpcError::from(GeoError::not_found("project","x")).code` 等代表错误的 code 都在清单里
@@ -150,6 +151,8 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - Create: `apps/desktop/ui/src/i18n/{index.ts,resources.ts,antd-locale.ts}`、`src/i18n/locales/{zh-CN,en-US}/{common,nav,errors,fields,project,prompt,entity,settings,demo}.ts`、`src/i18n/locales/{zh-CN,en-US}/index.ts`
 - Create: `apps/desktop/ui/src/store/preferences.ts`（zustand + localStorage `geo.preferences`）
 - Modify: `apps/desktop/ui/src/main.tsx`（挂载前 `initI18n`，`ConfigProvider locale` 跟随）
+- Modify: `apps/desktop/ui/src/test/setup.ts`（**必须在本任务接线** `initI18n('zh-CN')`，否则 Task 8 抽取文案后存量测试会渲染出 key 而不是中文，大面积红）
+- Modify: `apps/desktop/ui/src/test/render.tsx`（`ConfigProvider locale` 由参数决定，默认 `zh_CN`，为 Task 7 的英文渲染测试留口）
 - Test: `apps/desktop/ui/src/i18n/index.test.ts`、`src/store/preferences.test.ts`
 
 **Interfaces:**
@@ -207,12 +210,11 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 **Files:**
 - Modify: `src/pages/{ProjectListPage,ProjectWizardPage,EntityCardPage,PromptSetPage,SettingsPage}.tsx`、`src/App.tsx`、`src/main.tsx`、`src/api/client.ts`（`unwrapIpcError` 的拼接文案）、`src/api/types.ts`（注释除外）
 - Modify: `src/i18n/locales/{zh-CN,en-US}/*`
-- Modify: `src/test/setup.ts`（固定 `zh-CN`，并在每个测试文件间重置）
 - Test: `src/i18n/no-hardcoded-strings.test.ts`（扩到 `pages/`）
 
 **Interfaces:**
 - Consumes: Task 6/7/8
-- Produces: `src/test/setup.ts` 里 `initI18n('zh-CN')` 全局执行一次，保证测试环境语言确定
+- Consumes: Task 6 已在 `src/test/setup.ts` 接好 `initI18n('zh-CN')`，本任务不再动该文件
 - Produces: `client.ts` 的 `unwrapIpcError(cmd, cause)` 不再拼中文，改为返回 `IpcRequestError{ code:'ipc/invoke_failed', params:{ cmd, reason } }`，展示交给 `describeIpcError`
 
 - [ ] 扩失败测试：扫描范围加 `pages/*.tsx` 与 `App.tsx`
@@ -241,7 +243,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 ### Task 11: demo 假后端骨架
 
 **Files:**
-- Create: `apps/desktop/ui/src/demo/{types.ts,db.ts,backend.ts,latency.ts}`、`src/demo/seed/{projects.json,entity-cards.json,prompt-sets.json,settings.json,provider-profiles.json}`
+- Create: `apps/desktop/ui/src/demo/{types.ts,db.ts,backend.ts,latency.ts}`、`src/demo/seed/{projects.json,entity-cards.json,prompt-sets.json,settings.json}`（**不建 provider-profiles 种子**：档案制是 Plan B/C 的契约，现在造一份形状必然漂移；demo 的 `llm_providers` 按当前 `ProviderInfo[]` 形状从 `settings.json` 的内置预设返回）
 - Modify: `src/api/client.ts`（接 `demoInvoke`）
 - Test: `src/demo/backend.test.ts`
 
@@ -271,7 +273,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 
 - [ ] 写失败测试：建项目→列表出现→归档→按 `archived` 过滤；导出 JSON 再导入得到同名项目；改实体卡字段产生一条 revision 且 `field_status` 生效；自动建档对空域名 reject 出 `validation/failed`
 - [ ] 跑红 → 实现 → 跑绿
-- [ ] 用 demo 运行时跑一遍现有页面测试（把 `src/test/invoke-mock.ts` 的桩换成 `demoBackend` 的**可选**适配，验证页面在真 demo 后端下也能跑通；若成本过高则只在 `ProjectListPage.test.tsx` 加一条"走 demo 后端"的用例）
+- [ ] 在 `src/pages/ProjectListPage.test.tsx` 增加**一条**走 `demoBackend` 的用例（把 `@tauri-apps/api/core` 的 invoke 转发到 `demoInvoke`，断言种子项目渲染出来）；`src/test/invoke-mock.ts` 保持不动，存量测试继续用它
 - [ ] Commit `feat(demo): M1 项目与实体卡命令的内存实现`
 
 ### Task 13: demo 后端 · M2 题库命令
@@ -285,6 +287,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - Consumes: Task 11
 - Produces: 实现 `prompt_set_generate/list/get/rename/delete/dedupe/export_csv/import_csv`、`prompt_item_update/add/delete`
 - Produces: `prompt_set_generate` 在 demo 下延迟 1200ms 后**克隆种子里那份 62 条题库**（新 `id`、`label` 带时间戳），不跑模板展开与 LLM；返回的 `DedupeReport`/完整率等统计值取种子静态值
+- Produces: `prompt_set_dedupe` 在 demo 下**不做任何相似度计算**（AGENTS.md 规则 9：领域算法不在 demo 里实现），只返回种子预置的静态 `DedupeReport`（`merged=0`、`remaining=条目数`）
 - Produces: `prompt_set_import_csv` 做**表头校验**（与真实后端同一份表头常量，从 `src/api/constants.ts` 取），错误行报告形状与真实后端一致
 
 - [ ] 写失败测试：生成后 `prompt_set_list` 多出一条且条目数 62；`prompt_item_add` 后条目数 +N 且返回整份快照；`prompt_item_delete` 删空时 reject `validation/failed`（reason=`empty`）；CSV 导出→导入往返条目数一致；表头缺列时返回错误行报告
@@ -325,6 +328,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - [ ] 写失败测试：`SecretStatus` 在测试成功后渲染"模型/耗时/用量"三项且**不含**「成本」与 `¥`
 - [ ] 跑红 → 改 `SecretStatus`（文案经 `t()`）→ 跑绿
 - [ ] 改 README：`mise run web` 一节写明 demo 模式、静态数据、刷新重置、不代表真实算法结果；补 `mise run demo:preview` 用法
+- [ ] 改完 `SecretStatus` 后**重跑 Task 8 的 `no-hardcoded-strings` 扫描测试**，确认没把硬编码中文带回来
 - [ ] 残留扫描：`rg -n '[\u4e00-\u9fa5]' apps/desktop/ui/src --glob '!**/*.test.*' --glob '!**/locales/**'` 结果必须只剩注释；有则回到 Task 8/9 补
 - [ ] 全量门禁：`mise run check`（无 mise 激活时 `export PATH="/opt/homebrew/bin:$PATH"` 后执行），把完整输出存 `/tmp/plan_a_check.log`
 - [ ] 手动验收（需真人）：`mise run web` → 浏览器走完 建项目 → 自动建档 → 生成题库 → 导出 CSV；切 English 全站无中文残留；切回中文正常
@@ -349,4 +353,4 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 
 **3. 类型一致性**：`IpcCommand` / `IPC_COMMANDS` / `demoBackend: Record<IpcCommand, DemoHandler>` / `demoInvoke` / `detectRuntime` / `Runtime` / `Locale` / `TranslationKey` / `describeIpcError` / `GeoError::params` / `LlmError::params` / `StoreError::params` / `CrawlerError::params` / `IpcError::with_params` 在各 task 间命名一致；reason key 目录只在 Task 3 定义一次，Task 4/5 显式 Consumes。
 
-**4. 已知风险**：① Task 8 的静态扫描测试用 `import.meta.glob(?raw)` 读源码，若 Vitest 配置不支持需退化为 `node:fs` 读文件（jsdom 环境下 `fs` 可用需 `environment: node` 或改用 `?raw`）——实现时二选一，两者都能守住"无硬编码中文"这条。② Task 5 是本计划最大的一块（~55 个站点 + ~39 处测试断言），若单 task 过大可按 crate/服务文件拆成两次提交，但必须在同一个 task 内跑绿门禁。③ 存量 UI 测试固定 zh-CN 的前提是 Task 9 的 `src/test/setup.ts` 接线到位，否则 Task 8/9 会大面积红。
+**4. 已知风险**：① Task 8 的静态扫描测试用 `import.meta.glob(?raw)` 读源码，若 Vitest 配置不支持需退化为 `node:fs` 读文件（jsdom 环境下 `fs` 可用需 `environment: node` 或改用 `?raw`）——实现时二选一，两者都能守住"无硬编码中文"这条。② Task 5 是本计划最大的一块（~55 个站点 + ~39 处测试断言），若单 task 过大可按 crate/服务文件拆成两次提交，但必须在同一个 task 内跑绿门禁。③ 存量 UI 测试固定 zh-CN 的前提是 Task 6 的 `src/test/setup.ts` 接线到位（已按裁定从 Task 9 提前），否则 Task 8/9 会大面积红。④ `contracts/error-codes.json` 只被测试导入，运行时不导入；若将来要在应用代码里用它，需给 `vite.config.ts` 加 `server.fs.allow`（该文件在 UI 工程根之外，dev server 会 403）。

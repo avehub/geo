@@ -1,0 +1,27 @@
+[package]
+name = "geo-llm"
+description = "OpenAI 兼容 LLM 客户端：Provider 预设、重试、用量与成本记账、fixture 回放"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+geo-domain = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# fixture key = sha256(url + body) 前 16 位十六进制
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "test-util"] }
+wiremock = { workspace = true }

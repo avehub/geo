@@ -1,0 +1,26 @@
+[package]
+name = "geo-crawler"
+description = "站点抓取与正文提取：robots、编码探测、页面分类"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+geo-domain = { workspace = true }
+async-trait = { workspace = true }
+encoding_rs = { workspace = true }
+html2text = { workspace = true }
+reqwest = { workspace = true }
+rustls = { workspace = true }
+scraper = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+wiremock = { workspace = true }

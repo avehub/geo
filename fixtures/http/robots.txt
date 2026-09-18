@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /admin
+Crawl-delay: 1
+
+Sitemap: http://www.hongyu-pump.example/sitemap.xml

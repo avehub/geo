@@ -1,0 +1,52 @@
+# 一致性镜像编排（**非**日常开发主路径）。
+#
+# 日常开发请在宿主机直接用 mise：`mise run dev`（Tauri 需要原生窗口，容器里没有 GUI，
+# 跑不了 `tauri dev`）。这里的容器只用来复现 CI 门禁：
+#
+#   docker compose build                       # 构建镜像（约 5-10 分钟）
+#   docker compose run --rm dev                # 默认：mise run install && mise run check
+#   docker compose run --rm dev mise run test  # 只跑测试
+#   docker compose run --rm dev bash           # 进交互 shell
+#
+# 源码 bind mount，所有可再生产物放命名卷：
+#   - cargo-registry / cargo-target：避免 Linux 产物污染宿主机的 macOS `target/`
+#   - pnpm-store / node-modules：容器里的依赖是 linux-arm64/x64 二进制，必须与宿主机隔离
+# 首次进容器一定要跑 `mise run install`（node-modules 卷是空的）。
+#
+# 内存建议 ≥12 GB：链接 Tauri 的测试二进制时单个 ld 峰值很高。
+# 配额不足（如 8 GB）时链接器会被 OOM kill（`ld terminated with signal 9`），
+# 降并行即可绕过：
+#   docker compose run --rm dev bash -lc 'CARGO_BUILD_JOBS=2 mise run check'
+
+name: gdk-geo
+
+services:
+  dev:
+    build:
+      context: docker
+      dockerfile: dev.Dockerfile
+    image: gdk-geo-dev:local
+    working_dir: /work
+    environment:
+      # 仓库配置由 root 读取，而 bind mount 的文件属主是宿主机用户 → 显式信任 /work
+      MISE_TRUSTED_CONFIG_PATHS: /work
+      MISE_YES: "1"
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      RUST_BACKTRACE: "1"
+    volumes:
+      - .:/work
+      - cargo-registry:/root/.cargo/registry
+      - cargo-target:/work/target
+      - pnpm-store:/root/.local/share/pnpm/store
+      - node-modules:/work/apps/desktop/ui/node_modules
+    # 门禁不需要联网（fixtures + wiremock）；录制 fixture 时才临时放开：
+    # docker compose run --rm --network host dev bash
+    network_mode: bridge
+    stdin_open: true
+    tty: true
+
+volumes:
+  cargo-registry:
+  cargo-target:
+  pnpm-store:
+  node-modules:

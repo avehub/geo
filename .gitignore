@@ -5,6 +5,9 @@ Cargo.lock.bak
 
 # Node / frontend
 node_modules/
+# pnpm 在个别环境下会把内容寻址 store 建到仓库根（369MB 级缓存，绝不入库）
+.pnpm-store/
+*.tsbuildinfo
 dist/
 dist-ssr/
 .vite/

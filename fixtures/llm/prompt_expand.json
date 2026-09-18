@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-fixture-0001",
+  "object": "chat.completion",
+  "created": 1789000000,
+  "model": "deepseek-chat",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "[\n  {\n    \"text\": \"工业水泵一般分哪几种，各自用在什么地方\",\n    \"intent\": \"category_awareness\"\n  },\n  {\n    \"text\": \"离心泵和螺杆泵到底有什么区别，新手容易搞混吗\",\n    \"intent\": \"category_awareness\"\n  },\n  {\n    \"text\": \"多级泵和单级泵怎么区分，看外观能看出来吗\",\n    \"intent\": \"category_awareness\"\n  },\n  {\n    \"text\": \"消防泵和生活给水泵是同一类东西吗\",\n    \"intent\": \"category_awareness\"\n  },\n  {\n    \"text\": \"买工业水泵哪个牌子靠谱吗，求推荐几家\",\n    \"intent\": \"purchase_recommendation\"\n  },\n  {\n    \"text\": \"小区二次供水设备选什么牌子好，宏宇泵业值得考虑吗\",\n    \"intent\": \"purchase_recommendation\"\n  },\n  {\n    \"text\": \"污水厂改造要采购潜污泵，国产哪家做得比较好\",\n    \"intent\": \"purchase_recommendation\"\n  },\n  {\n    \"text\": \"化工园区用耐腐蚀泵，选哪家不容易踩坑\",\n    \"intent\": \"purchase_recommendation\"\n  },\n  {\n    \"text\": \"宏宇泵业和南方泵业哪个好，做市政项目的更看重什么\",\n    \"intent\": \"brand_comparison\"\n  },\n  {\n    \"text\": \"凯泉泵业和宏宇泵业比，交期和售后差多少\",\n    \"intent\": \"brand_comparison\"\n  },\n  {\n    \"text\": \"格兰富和宏宇泵业差距大吗，预算有限怎么选\",\n    \"intent\": \"brand_comparison\"\n  },\n  {\n    \"text\": \"南方泵业、凯泉泵业、格兰富这三家放一起怎么排\",\n    \"intent\": \"brand_comparison\"\n  },\n  {\n    \"text\": \"进口泵和国产泵差价那么大，到底差在哪\",\n    \"intent\": \"brand_comparison\"\n  },\n  {\n    \"text\": \"一台多级离心泵大概多少钱，报价里都含什么\",\n    \"intent\": \"pricing_plan\"\n  },\n  {\n    \"text\": \"潜污泵价格和哪些参数有关，扬程越高越贵吗\",\n    \"intent\": \"pricing_plan\"\n  },\n  {\n    \"text\": \"无负压供水设备一套下来要多少钱，安装费另算吗\",\n    \"intent\": \"pricing_plan\"\n  },\n  {\n    \"text\": \"买泵的时候运费和调试费一般是厂家出还是我们出\",\n    \"intent\": \"pricing_plan\"\n  },\n  {\n    \"text\": \"消防泵组成套报价和单买泵差价大吗\",\n    \"intent\": \"pricing_plan\"\n  },\n  {\n    \"text\": \"杭州本地有做水泵维修的厂家吗，能上门看现场的那种\",\n    \"intent\": \"local_service\"\n  },\n  {\n    \"text\": \"华东地区买泵，厂家多久能到现场做安装指导\",\n    \"intent\": \"local_service\"\n  },\n  {\n    \"text\": \"西北项目用泵，售后网点能覆盖到吗\",\n    \"intent\": \"local_service\"\n  },\n  {\n    \"text\": \"广东这边有泵的备件仓库吗，坏了等配件要多久\",\n    \"intent\": \"local_service\"\n  },\n  {\n    \"text\": \"宏宇泵业售后怎么样，用过的来说说口碑靠谱吗\",\n    \"intent\": \"after_sales_reputation\"\n  },\n  {\n    \"text\": \"国产泵常见毛病有哪些，是不是智商税\",\n    \"intent\": \"after_sales_reputation\"\n  },\n  {\n    \"text\": \"水泵质保一般几年，机封坏了算不算保修范围\",\n    \"intent\": \"after_sales_reputation\"\n  },\n  {\n    \"text\": \"买泵最怕维修找不到人，哪些厂家响应比较快\",\n    \"intent\": \"after_sales_reputation\"\n  },\n  {\n    \"text\": \"扬程 210 米流量 100 方的工况，用哪种泵更省电\",\n    \"intent\": \"professional_long_tail\"\n  },\n  {\n    \"text\": \"输送含固颗粒 30% 的矿浆，该选什么材质的泵\",\n    \"intent\": \"professional_long_tail\"\n  },\n  {\n    \"text\": \"介质温度 95 度、含氯离子，机封选什么形式合适\",\n    \"intent\": \"professional_long_tail\"\n  },\n  {\n    \"text\": \"二次供水改造噪音要求 55 分贝以下，设备怎么选\",\n    \"intent\": \"professional_long_tail\"\n  },\n  {\n    \"text\": \"灌区提水项目怎么算配套电机功率，有没有公式\",\n    \"intent\": \"professional_long_tail\"\n  }\n]"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 2100,
+    "completion_tokens": 2600,
+    "total_tokens": 4700
+  }
+}

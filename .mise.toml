@@ -25,7 +25,12 @@ run = "pnpm --dir apps/desktop/ui install --frozen-lockfile=false"
 
 [tasks.dev]
 description = "启动 Tauri 开发窗口（原生 macOS 窗口）"
-run = "pnpm --dir apps/desktop/ui run tauri dev"
+# tauri CLI 只在「当前目录及其子目录」里找 tauri.conf.json。配置在
+# apps/desktop/src-tauri/、前端在 apps/desktop/ui/，两者是兄弟目录，
+# 所以必须以 apps/desktop 为工作目录；在 ui/ 里跑会直接 panic
+# （"Couldn't recognize the current folder as a Tauri project"）。
+dir = "apps/desktop"
+run = "./ui/node_modules/.bin/tauri dev"
 
 [tasks.web]
 description = "只启动前端 Vite（浏览器调试用）"

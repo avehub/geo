@@ -1204,8 +1204,8 @@ mod tests {
             // 它进 EXEMPT 的真实原因只是「四张变体清单里没有它的实例」（壳内发射点在
             // `services/prompt_service.rs`，属 Task 5）。放在这一组是因为发射点同类。
             "prompt_set/empty_import",
-            // ② 壳内**有**发射点、但今天不带清单登记的参数：`ipc/internal` 由
-            //    `IpcError::internal`（本文件 `:109`）发出，契约给它登记了 `["reason"]`
+            // ② 壳内**有**发射点、但今天不带清单登记的参数：`ipc/internal` 由本文件的
+            //    `IpcError::internal` 发出，契约给它登记了 `["reason"]`
             //    却从来没人填 —— 一处既存的契约/实现漂移。**owner = Task 5**：
             //    `IpcError::internal` 在本文件而不在 `services/**`，不在 Task 5「服务层站点
             //    key 化」的字面范围内，容易两头都不认领，所以在这里点名。

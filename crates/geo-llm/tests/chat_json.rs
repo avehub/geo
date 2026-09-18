@@ -147,10 +147,16 @@ async fn validator_detail_reaches_the_model_but_never_the_params() {
     assert!(last.contains("标准名称不能为空"), "{last}");
 }
 
-/// A-3 / G-3.2：`parse_failed` 的 `value` 装 serde 库原文（英文、限长 200 字符），
-/// 而追问文案里带的是**完整**原文——两边用途不同，限长只约束进 params 的那一份。
+/// A-3：追问文案里带的是**完整** serde 原文（模型要看得懂才改得对），不受 params 那侧
+/// 200 字符限长的约束——限长只作用于进 params 的那一份。
+///
+/// 本用例只钉「追问文案带完整原文」这半句。另半句「`value` 按**字符**截断到 200」由
+/// `crates/geo-llm/src/error.rs` 的 `library_reason_truncates_to_200_chars_not_bytes`
+/// 覆盖：它直接测 `library_reason`，ASCII 与多字节两种输入都测到上限 + 50，因此比在这里
+/// 隔着一次成功的追问去数 `params()["value"]` 的字符数更实（那样只会得到一条永远为真的
+/// 断言——本用例的 serde 原文远短于 200）。
 #[tokio::test]
-async fn serde_detail_is_truncated_in_params_but_full_in_the_repair_prompt() {
+async fn repair_prompt_carries_the_full_serde_detail() {
     let transport = ScriptedTransport::new(vec![
         openai_response(r#"{"standard_name":123}"#),
         openai_response(VALID),

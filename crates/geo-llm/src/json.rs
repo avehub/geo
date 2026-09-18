@@ -117,7 +117,7 @@ pub async fn chat_json<T: DeserializeOwned>(
             reason = failure.reason_key,
             "结构化输出失败，带错误说明追问一次"
         );
-        tracing::debug!(attempt, hint = %failure.repair_hint, "追问文案与底层原文");
+        tracing::warn!(attempt, hint = %failure.repair_hint, "追问文案与底层原文");
         request = request
             .clone()
             .with_message(ChatMessage::user(repair_prompt(&failure.repair_hint)));
@@ -128,6 +128,21 @@ pub async fn chat_json<T: DeserializeOwned>(
             Err(next) => failure = next,
         }
     }
+    // 终态失败也必须记一条。「校验器原文只进日志、不进 params」这条裁定，只有日志真的
+    // 记了才成立：上面那条 warn 描述的是**追问前**那次失败，循环走完仍失败时手里这个
+    // `failure` 是追问后新一轮的原文，不记就两头落空（params 里没有、日志里也没有），
+    // 排障时只剩一个裸 `validation_failed`。
+    //
+    // 级别用 `warn` 而不是 `debug`：壳侧默认过滤器是 `info`
+    // （`apps/desktop/src-tauri/src/lib.rs` 的 `filter_from`），debug 在生产默认看不见。
+    // `attempts` 用循环上界常量（不是「第几次」，终态没有下一次），日志因此自解释：
+    // 花了几轮修复、最后一轮为什么失败。不限长——日志不是用户可见面。
+    tracing::warn!(
+        attempts = REPAIR_ATTEMPTS,
+        reason = failure.reason_key,
+        hint = %failure.repair_hint,
+        "结构化输出追问后仍失败，放弃修复"
+    );
     Err(failure.into_deserialize())
 }
 

@@ -134,8 +134,16 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - Produces（**控制器裁定，补 Task 2 留下的接缝**）：`apps/desktop/src-tauri/src/error.rs` 的 `From<StoreError|LlmError|CrawlerError> for IpcError` 三个 impl 改为委托各自的 `params()`，删掉 Task 2 的临时映射；Task 1 的守卫与 Task 2 的 params 断言继续绿。
 - Produces: `LlmError::Config(reason_key)`；`missing_base_url` / `missing_model` / `unknown_provider` 三个 key 由 `client.rs` 与 `state.rs` 共用
 - Produces（**控制器裁定**）：`StoreError` 的 `Validation` / `Conflict` / `Config` 加上与 `GeoError` 同形的 `extra: BTreeMap<String,String>`，把 Task 3 留下的 `GeoError → StoreError` 有损往返补成无损。
-- Produces（**控制器裁定**）：契约 params 对齐——复审已核实当前只发子集的 **5** 个码：`crawler/network`（缺 `url`、`status`）、`crawler/too_large`（缺 `limit`）、`crawler/invalid_url`（缺 `url`）、`llm/bad_response`（缺 `upstream`）、`llm/deserialize`（缺 `upstream`）。默认方向是**把清单 params 收缩到变体实际能带的键**（params-only 编辑、codes 不动、与 `params()` 实现同一 commit）；例外：给 `TooLarge` 补 `limit` 字段如果便宜就做。
+- Produces（**控制器裁定**）：契约 params 对齐——复审已核实当前只发子集的 **5** 个码：`crawler/network`（缺 `url`、`status`）、`crawler/too_large`（缺 `limit`）、`crawler/invalid_url`（缺 `url`）、`llm/bad_response`（缺 `upstream`）、`llm/deserialize`（缺 `upstream`）。默认方向是**把清单 params 收缩到变体实际能带的键**（params-only 编辑、codes 不动、与 `params()` 实现同一 commit）。**这五个码的富化/收缩方向已由下一条裁定（Task 3 复审后补）逐码定死**——`TooLarge` 补 `limit` 已核实为便宜，走富化；实现者不必再选。
 - Produces（**控制器裁定**）：新增漂移守卫——每个 code 的「清单声明 params」必须等于「守卫清单里所有构造实例发出的键的**并集**」（按 code 聚合取并集，不是逐实例相等）。
+- Produces（**控制器裁定，Task 3 复审后补**）：上一条的「如果便宜就做」已核实为**便宜**，方向定为——`crawler/too_large` 保留 `["url","limit"]` 并给变体补 `limit`（`fetch.rs:143/156` 两处 `self.limits.max_bytes` 都在作用域内）；`crawler/network` 保留 `["url","status","reason"]`，把 `Network(String)` 富化成 `Network{url:Option<String>,status:Option<u16>,reason}`（`fetch.rs:126` 两者都有、`:204` 只有 url、`:85` 都没有）；`crawler/invalid_url` 保留 `["url","reason"]`，把 `InvalidUrl(String)` 富化成 `InvalidUrl{url,reason}`（`fetch.rs:77` 代理地址、`extract.rs:144` 都拿得到 url）。**只有** `llm/bad_response` 与 `llm/deserialize` 走收缩：`["reason","upstream"]` → `["reason"]`——站点从来没有上游原文（`client.rs:322/325`、`json.rs:38/66` 都只有一段说明），且把响应体塞进错误违反「错误里不得出现完整回答正文」（`crates/geo-llm/src/error.rs` 模块注释自己写着）。
+- Produces（**控制器裁定，Task 3 复审后补**）：`config/invalid` 的 params → `["reason","value"]`，reason key 目录新增 **1** 个 key `secret_unavailable`（18 → **19**）。`crates/geo-store/src/secret.rs` 已把 `keyring::Error::NoEntry` 在 `get`/`delete` 里当 `Ok(None)`/`Ok(())` 吞掉（没存过不是错误），因此**不存在** `secret_not_found` 这种情形，别加第二个 key。`StoreError::Secret(String)` 形状不变（那个 String 就是已 `redact` 的底层原文），`params()` = `{reason:"secret_unavailable", value:<该原文>}`。
+- Produces（**控制器裁定，Task 3 复审后补**）：`From<StoreError> for GeoError` 里两处 raw passthrough 泄漏必须收——`StoreError::Sqlx` 命中唯一约束今天是 `GeoError::conflict(sqlx_error.to_string())`（reason 装 SQL 原文，违反「`state/conflict` 的 reason 是稳定 key」），改 `GeoError::conflict("duplicate").with_param("value", …)`；`StoreError::Secret(reason)` 今天是 `GeoError::config(reason)`（reason 装 keyring 原文），改 `GeoError::config("secret_unavailable").with_param("value", reason)`。
+- Produces（**控制器裁定**）：`llm/config` 的 params → `["reason","value"]`。`client.rs:212` 不得把 `Provider::label_zh()`（中文）塞进 params，改用 `Provider::as_str()` 的稳定 id 装 `value`、reason = `missing_base_url`；`client.rs:218` → `missing_model`（无 extra）；`client.rs:239` 请求体序列化失败 → `parse_failed` + `value`=serde 原文。一次声明省得 Task 5 的 `unknown_provider`（`value`=合法取值列表）再改契约。
+- Produces（**控制器裁定**）：`llm/transport` 的 `reason` 必须是 `network`/`timeout`/`other` 三个 key（契约 note 早就这么写），但今天 `From<LlmError>` 塞的是 `transport_error.to_string()`（中文散文）——给 `TransportError` 加 `reason_key()`，`Display` 一并转紧凑格式。
+- Produces（**控制器裁定**）：目录注释补三条判据。① `parse_failed` = **解析器/序列化器库**返回的 `Error`（csv / serde / url / html2text），`value` 装库原文；`invalid_format` = **我们自己写的形状/类型判据**（下标非法、父节点不是数组、协议不是 http/https），`value` 装出错的值——目录里 `parse_failed` 的语义相应从「解析上游响应/文件内容失败」放宽为「序列化/反序列化失败（上游响应、文件内容、请求体）」。② `expected` 语法 = `a~b` / `<=n` / `<n` 三种纯 ASCII 形态，**不带单位**（单位属于文案，只能由词典模板给）。③ 目录首行写清适用范围：`unknown_provider`/`missing_base_url`/`missing_model` 经 `LlmError::Config`（`llm/config`）发出而非 `GeoError::Config`；`row_invalid`/`missing_header` 经 CSV 路径发出。
+- Produces（**控制器裁定**）：手写三个 crate 的 `Display`（`code()` 对 `{kind}/not_found`、`upstream/{code}` 是动态前缀，thiserror 的 `#[error("…")]` 表达不了，与 Task 3 同因），并手写对应的 `std::error::Error` / `From` 保住现有 `#[from]` 语义。之后**逐 crate** 确认 thiserror 真的没有引用了，再从**该 crate 自己的** `[dependencies]` 删掉（含 Task 3 留下的 `crates/geo-domain/Cargo.toml`——已核实 geo-domain 只剩一处文档注释提及它）；**根 `[workspace.dependencies]` 表不许动**（壳还在用）。
+- Produces（**控制器裁定**）：`state/conflict` **不得**加 `stage` 参数。CSV 三段写失败（表头/行/结束）合并成 `write_failed` 后丢掉的阶段信息**接受丢失**——`value` 里的 OS/驱动原文已能区分磁盘满与权限拒绝，为一个阶段标签去扩冻结契约是拿稳定性换零用户价值。
 - Consumes: `a8eb95d` 给 `crates/geo-crawler/src/fetch.rs` 与 `crates/geo-llm/src/transport.rs` 加的 `no_proxy()` 分支不得回退（未配代理时绝不走系统/环境代理，否则本机 wiremock 用例会被劫持成 502）。
 
 - [ ] 写失败测试：`LlmError::MissingSecret.params()` 为空 map 且 `code()=="llm/missing_secret"`；`LlmError::Server{status:500}.params()=={status:"500"}`；`CrawlerError::Timeout{url}.params()=={url}`；`StoreError::not_found("prompt_set","x").params()=={kind,id}`
@@ -143,6 +151,8 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - [ ] 实现 `params()`；把三个 crate 里 `#[error("中文…")]` 的 Display 改为紧凑格式（保留 code 不变）
 - [ ] 写失败测试（漂移守卫）：逐个 code 断言「清单声明的 params 集合 == 守卫清单里该 code 所有实例发出键的并集」，两端都用集合比较，避免顺序造成假红
 - [ ] 修既有测试断言；跑绿（含 `crates/geo-llm/tests/`）
+- [ ] **控制器裁定**：`crawler/invalid_url` 富化成 `{url,reason}` 后，Task 2 fix round 1 钉死的那条断言（`apps/desktop/src-tauri/src/error.rs` 的 `llm_and_crawler_params_follow_the_contract`：键集恰为 `{reason}`、`contains_key("url")==false`、`len()==1`）**必须同步改成 `{url,reason}`**，否则它与本任务新加的漂移守卫互相矛盾。
+- [ ] **控制器裁定（复审 M-2）**：往壳侧 `geo_cases()` 里塞一个**带 extra 的 `Config`** 实例。今天 `config/invalid` 只登记 `["reason"]` 且 `geo_cases()` 里的 `config("missing_base_url")` extra 为空，Task 5 一旦写 `GeoError::config("x").with_param("value", …)` 就会发出清单外的键而**没有任何测试变红**。
 - [ ] Commit `refactor(crates): 三个基础 crate 的错误统一输出 code+params`
 
 ### Task 5: desktop 服务层错误站点 key 化
@@ -156,6 +166,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - Consumes: Task 1 落在 `apps/desktop/src-tauri/src/error.rs:22`-`33` 的 `pub(crate) mod err_codes`（5 个壳内 code 常量）与 4 个无兜底 `match` 穷举守卫（`llm_code` / `crawler_code` / `geo_code` / `store_code`）。**站点改造一律走常量，不要把字面量重新写回去**；守卫与清单用例必须继续绿（它们红了说明你改的是 code 本身，而 code 已冻结）。
 - Produces: `state.rs` 的 `config_from_settings` 错误码固定为 `llm/config`，params 带 `reason=missing_base_url|missing_model|unknown_provider`（前端据此渲染"设置 → 模型服务商 → 接口地址"这类可操作指引）
 - Produces: 约 40 处 `GeoError::validation(...)`、~15 处 `conflict/config` 全部使用目录内 key
+- Produces（**控制器裁定，认领 Task 3 复审 I-2**）：`CsvRowError` 从 `{row, reason:String}` 升级为 `{row, reason:<目录 key>, params:BTreeMap<String,String>}`（`crates/geo-domain/src/csv_io.rs`）。理由：`csv_io.rs:149` 今天把 `user_message()`（Task 3 之后是紧凑日志串）塞进 `reason`，而 `apps/desktop/ui/src/components/CsvToolbar.tsx:49` 是 `第 {error.row} 行：{error.reason}` **逐字渲染**、`src/api/types.ts:348` 声明为 `{reason:string;row:number}`——这是 Task 3 留下的**当前就可见**的退化（日志串与未改的中文散文混排），不是「将来才修」。`parse_prompt_row` 自己那批中文字面量一并收：csv 物理行读不出来 → `row_invalid`+`value`=csv 原文；`text` 空 → `required`；超长 → `too_long`+`limit`；`intent` 非法 → `invalid_format`+`value`；`weight`/`repeat_count` 非数字 → `invalid_format`+`value`、越界 → `out_of_range`+`expected`+`value`；compliance → `not_allowed`+`value`=命中词（命中词是**数据**不是文案）。**本任务仍不碰 `apps/desktop/ui/**`**：TS 结构类型对多出来的 `params` 字段宽容，`reason` 显示成 key 的窗口期到 Task 8 抽 `CsvToolbar` 时关闭（用户走查在 Task 15 之后）。收完之后 `csv_io.rs` 里 `user_message()` 的生产用法归零。
 
 - [ ] 写失败测试（service 层，直调不走 WebView）：空品牌名建档 → `code=="validation/failed"` 且 `params=={field:"brand_name",reason:"required"}`；custom 缺 base_url → `code=="llm/config"` 且 `params.reason=="missing_base_url"`
 - [ ] 跑红：`mise exec -- cargo test -p geo-desktop`
@@ -213,7 +224,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - [ ] 写失败测试（`errors.test.ts`）：`{code:'validation/failed', params:{field:'brand_name',reason:'required'}}` 在 zh 下渲染为「品牌名不能为空」、en 下渲染为 `Brand name is required`；未命中 code 回退 `message`
 - [ ] 跑红：`mise exec -- pnpm --dir apps/desktop/ui run test src/i18n src/api/errors`
 - [ ] 实现 `errors.ts`（zh/en 覆盖清单里全部 code）+ `fields.ts` + reason key 词典（`errors.reasons.*`）+ `describeIpcError`
-- [ ] 词典完整性断言同时覆盖 `errors.reasons.*`：Task 3 目录里的 **18** 个 key 在 zh/en 两侧都存在且非空，且 zh/en 的 key 集合相等
+- [ ] 词典完整性断言同时覆盖 `errors.reasons.*`：Task 3 目录里的 **19** 个 key（Task 4 补 `secret_unavailable`；**清单以 `crates/geo-domain/src/error.rs` 的模块注释为准**，逐字抄进 TS 并在测试里注明出处，别按计划正文的旧数字硬编码）在 zh/en 两侧都存在且非空，且 zh/en 的 key 集合相等；`expected` 参数**整串插入不解析**（zh「需在 {{expected}} 范围内」/ en「expected {{expected}}」，不写正则、不拆区间）
 - [ ] 把 5 个页面的本地 `describeError` 换成 `describeIpcError(error, t)`；跑绿：`mise exec -- pnpm --dir apps/desktop/ui run test`
 - [ ] Commit `feat(ui): 错误文案按语言渲染，词典完整性由错误码清单守住`
 
@@ -227,6 +238,8 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 **Interfaces:**
 - Consumes: Task 6 的 `useTranslation`、Task 7 的 `fields` 词典
 - Produces: 组件内不再出现自然语言字面量；`entity-fields.ts` / `wizard-steps.ts` 的 `label` 字段由中文串改为 **i18n key**（消费方用 `t(label)` 渲染）
+- Produces（**控制器裁定，计划原本没覆盖的 i18n 泄漏**）：`ProviderSelect.tsx:43` 今天直接渲染后端给的 `{provider.label_zh}`（`ProviderInfo.label_zh`，`apps/desktop/src-tauri/src/services/settings_service.rs:62/74` 来自 `LlmProvider::label_zh()`）——英文 locale 下仍是中文，这是**后端产出自然语言**的泄漏，而本任务的组件扫描只查 CJK **字面量**，抓不到它。改成 `t('settings.providers.' + provider.provider)`，为 7 个稳定 id 建词条（`deep_seek` `moonshot` `volcengine_ark` `ali_bailian` `baidu_qianfan` `tencent_hunyuan` `custom`），查不到时回退 **provider id 本身**，**绝不回退 `label_zh`**。测试用哨兵钉住：fixture 的 `label_zh` 设成独特串（如 `ZH-SENTINEL`），断言渲染结果里不含它。`ProviderInfo.label_zh` 字段本身本轮**不删**（删它要连带改 demo 种子、`src/test/fixtures.ts`、Task 11/14），但 UI 侧任何代码都不得再读它；字段删除 Park 到 Plan B/C（设置页改版本来就要重做 provider 档案）。
+- Produces（**控制器裁定，接 Task 5 的 `CsvRowError` 升级**）：`CsvToolbar.tsx:49` 的 `第 {error.row} 行：{error.reason}` 改为走词典渲染 `reason` key + `params`（复用 Task 7 的 `errors.reasons.*` 与 raw passthrough 回退），`src/api/types.ts:348` 的行错误类型补 `params`。这是 Task 5 留下的 key 显示窗口期的关闭点。
 
 - [ ] 写失败测试：新增 `src/i18n/no-hardcoded-strings.test.ts`，用 `rg` 不可行→改为**静态扫描**：`import.meta.glob('../components/*.tsx', { query: '?raw', import: 'default' })` 读源码，剔除注释与 `className`/`id` 后断言不含 CJK 字符（正则 `[\u4e00-\u9fa5]`）
 - [ ] 跑红（当前 16 个组件都含中文）

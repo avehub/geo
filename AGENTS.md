@@ -22,6 +22,16 @@ mise run dev      # 启动原生桌面窗口
 
 无 mise 激活时可用 `mise exec -- cargo test --workspace`。
 
+### Tauri 的两套工作目录（改构建配置前必读）
+
+- `tauri` CLI 只在**当前目录及其子目录**里找 `tauri.conf.json`。配置在 `apps/desktop/src-tauri/`、
+  前端在 `apps/desktop/ui/`，两者是兄弟目录，所以 CLI 必须在 `apps/desktop` 下跑；
+  在 `ui/` 里跑会直接 panic（`Couldn't recognize the current folder as a Tauri project`）。
+  `mise run dev` 用 `dir = "apps/desktop"` 固定了这一点。
+- Tauri 2 的 `beforeDevCommand` / `beforeBuildCommand` 在**前端目录**里跑（由 `frontendDist`
+  的上一级推出，即 `apps/desktop/ui`），所以钩子写 `pnpm run dev` / `pnpm run build`，
+  加了 `--dir ui` 反而会报 `canonicalizing the --dir argument: ui`。
+
 ## 硬性规则
 
 1. **TDD**：先写失败测试，跑红，再写最小实现。没有失败测试就不写生产代码。

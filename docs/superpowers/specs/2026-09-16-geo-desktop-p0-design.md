@@ -18,7 +18,7 @@
 
 P0-A 交付闭环的前两环入口与全部工程基座：
 
-- 原生 macOS 桌面窗口（Tauri 2），`pnpm tauri dev` 可启动；
+- 原生 macOS 桌面窗口（Tauri 2），`mise run dev` 可启动（CLI 工作目录 `apps/desktop`，dev/build 钩子在 `apps/desktop/ui` 下跑，见 `AGENTS.md`）；
 - M1 项目与品牌档案：5 步建项向导、域名自动建档生成实体卡、字段级修订留痕、多项目管理与导入导出；
 - M2 Prompt 智能题库：7 类意图 + 行业模板生成 ≥60 条、口语化改写、竞品同框、去重、加权分组、CSV 导入导出、版本化快照；
 - 工程基座：Cargo workspace + pnpm、sqlx 迁移、钥匙串密钥、settings、统一错误、日志、mise 任务、Docker CI 一致性镜像、GitHub Actions。

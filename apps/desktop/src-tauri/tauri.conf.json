@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.gaodekuai.geo",
   "build": {
-    "beforeDevCommand": "pnpm --dir ui run dev",
+    "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm --dir ui run build",
+    "beforeBuildCommand": "pnpm run build",
     "frontendDist": "../ui/dist"
   },
   "app": {

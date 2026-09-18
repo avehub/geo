@@ -181,11 +181,16 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 **Interfaces:**
 - Consumes: Task 1 的 `contracts/error-codes.json`、Task 2 的 `IpcErrorPayload.params`、Task 6 的 `i18n`
 - Produces: `describeIpcError(error: unknown, t: TFunction): string`（命中词典 → `t('errors.<code>', params)`；未命中 → `console.warn` 后回退 `error.message`；非 `IpcRequestError` → `t('common.unknownError')`）
-- Produces: `upstream/*` 的渲染规则（**控制器裁定，实现者不必再选**）：词典**不为 13 条 `upstream/*` 各写一份复述**，改为 `describeIpcError` 剥掉 `upstream/` 前缀查里层 code（`upstream/llm/rate_limited` → `errors.llm/rate_limited`），命中后用共享包装键 `errors.upstream.wrapper`（zh「上游服务返回错误：{{message}}」/ en `Upstream service error: {{message}}`）套一层；里层也查不到才走 `console.warn` + `message` 回退。代价只有 2 条词典，而不是 26 条近似重复文案。
+- Produces: `upstream/*` 的渲染规则（**控制器裁定，实现者不必再选**）：词典**不为 13 条 `upstream/*` 各写一份复述**，只用一条共享包装键 `errors.upstream.wrapper`（zh「上游服务返回错误：{{upstream}}」/ en `Upstream service error: {{upstream}}`）。
+  - **不要拿里层 code 的模板去渲染 upstream 错误**：两族 params 不相交 —— `upstream/*` 是 `["upstream_code","upstream"]`，里层如 `llm/server` 是 `["status"]`（`contracts/error-codes.json:114` vs `:204`），套里层模板会留下空占位符。
+  - 渲染取值顺序：`params.upstream` → 缺则 `params.upstream_code` → 再缺则 `error.message`；三者都空才走 `console.warn` 回退。
+  - 「剥 `upstream/` 前缀」只用于**词典完整性断言**（断言里层 code 在双语词典里存在，防止这族的语义源漂移），不用于渲染。
+  - 代价：2 条词典（wrapper 的 zh/en），而不是 26 条近似重复文案。
 - Produces: `fields.ts` 覆盖后端会返回的全部 `field` 值（`brand_name` `aliases` `domain` `intents` `items` `ids` `label` `set_id` `standard_name` `products.name` `text` `payload` `model.provider` `model.model` `model.base_url` …）
 
 - [ ] 写失败测试（`dictionary.test.ts`）：遍历 `catalog.codes`，断言 `zh-CN` 与 `en-US` 的 `errors.<code>` 都存在且非空——**`upstream/*` 例外**：改为断言「剥掉 `upstream/` 前缀后的里层 code 在两种语言里都存在」+「`errors.upstream.wrapper` 在两种语言里都存在」；断言 zh/en 的 key 集合完全相等（双向差集为空）；断言没有值等于 key 本身（漏翻标志）；断言 `errors.*` 模板里出现的 `{{xxx}}` 占位符都在该 code 的 `params` 清单内（`params` 为空数组的 code——`llm/missing_secret`、`llm/rate_limited`、`prompt_set/empty_import` 等——模板里不得出现任何 `{{…}}`）
 - [ ] 清单导入路径用 **5 层**（`../../../../../contracts/error-codes.json`，同 Task 1，别再按 3 层写红一次）
+- [ ] 写失败测试（`errors.test.ts`）：`{code:'upstream/llm/server', params:{upstream_code:'llm/server', upstream:'503 from provider'}}` 在 zh 下渲染出含「上游服务」与 `503 from provider` 的文案、en 下同理；`params` 只有 `upstream_code` 时回退到 `upstream_code`；断言渲染结果里**不残留** `{{` 或 `status` 这类未填充占位符
 - [ ] 写失败测试（`errors.test.ts`）：`{code:'upstream/llm/rate_limited'}` 在 zh 下渲染出带「上游服务」的包装文案且不等于 code 本身、en 下同理（验证剥前缀回退真的接通，而不是靠 26 条重复词典）
 - [ ] 写失败测试（`errors.test.ts`）：`{code:'validation/failed', params:{field:'brand_name',reason:'required'}}` 在 zh 下渲染为「品牌名不能为空」、en 下渲染为 `Brand name is required`；未命中 code 回退 `message`
 - [ ] 跑红：`mise exec -- pnpm --dir apps/desktop/ui run test src/i18n src/api/errors`

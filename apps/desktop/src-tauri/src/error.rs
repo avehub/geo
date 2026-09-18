@@ -63,20 +63,34 @@ impl IpcError {
     ///
     /// `message` 用紧凑日志格式 `"{code} {k}={v} …"` 兜底：它不含任何自然语言，
     /// 因此前端切语言时不会露出另一种语言的散文；词典命中时前端根本不用它。
+    /// 该格式与 Task 3 要给 `GeoError::Display` 定的格式一致，届时下面四个
+    /// `From` 可以直接换成 `Self::with_params(error.code(), error.params())`。
     pub fn with_params(
         code: impl Into<String>,
         params: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
     ) -> Self {
         let code = code.into();
+        // 先收成 BTreeMap：兜底文案的键序因此稳定，日志与快照可比对
         let params: BTreeMap<String, String> = params
             .into_iter()
             .map(|(key, value)| (key.into(), value.into()))
             .collect();
-        let message = fallback_message(&code, &params);
-        Self::new(code, message).with_redacted_params(params)
+        let mut message = code.clone();
+        for (key, value) in &params {
+            message.push(' ');
+            message.push_str(key);
+            message.push('=');
+            message.push_str(value);
+        }
+        params
+            .into_iter()
+            .fold(Self::new(code, message), |error, (key, value)| {
+                error.with_param(key, value)
+            })
     }
 
-    /// 在既有错误上追加一个参数（[`IpcError::with_params`] 的单个版本）。
+    /// 追加一个参数。**这是 `params` 唯一的写入口**，值一律过 [`redact`]：
+    /// params 是新增的出口，密钥不能从这里绕开最后一关直达 WebView（AGENTS 规则 3）。
     pub fn with_param(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.params.insert(key.into(), redact(&value.into()));
         self
@@ -94,15 +108,6 @@ impl IpcError {
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new(err_codes::IPC_INTERNAL, message)
     }
-
-    /// 批量补参数。params 是新增的出口，值同样要过 [`redact`]，
-    /// 否则密钥能绕开 `message` 那道关直达 WebView（AGENTS 规则 3）。
-    fn with_redacted_params(mut self, params: BTreeMap<String, String>) -> Self {
-        for (key, value) in params {
-            self.params.insert(key, redact(&value));
-        }
-        self
-    }
 }
 
 impl std::fmt::Display for IpcError {
@@ -113,35 +118,95 @@ impl std::fmt::Display for IpcError {
 
 impl std::error::Error for IpcError {}
 
+// 下面四个 `From` 各自就地拼 params：键名一律逐字取自冻结的
+// `contracts/error-codes.json`（测试 `params_keys_stay_inside_the_shared_catalog`
+// 穷举核对），值原样透传，`match` 都不写 `_` 兜底——下游加变体这里立刻编译失败，
+// 逼实现者当场决定新变体带哪些键（与本文件测试模块的穷举守卫同一思路）。
+// 部分值今天仍是中文散文（`validation` 的 reason、`CrawlerError::Network` 那段
+// 合并文本）：换 reason key 是 Task 3/5 的活、拆变体是 Task 4 的活，
+// 本层只负责把管道接通。
+//
+// **这四份映射是临时的**（控制器裁定）：Task 2 不为「将来好改」提前抽共享 helper，
+// Task 3 收 `GeoError` 那份、Task 4 收另外三份，各自换成委托 `params()` 并删掉
+// 整个 match——同一映射存在两份必然漂移。
+
 impl From<GeoError> for IpcError {
     fn from(error: GeoError) -> Self {
-        let code = error.code();
-        let message = error.user_message();
-        Self::new(code, message).with_redacted_params(geo_params(error))
+        let ipc = Self::new(error.code(), error.user_message());
+        // Task 3 删除点：改成 `Self::with_params(error.code(), error.params())`
+        match error {
+            GeoError::Validation { field, reason } => {
+                ipc.with_param("field", field).with_param("reason", reason)
+            }
+            GeoError::NotFound { kind, id } => ipc.with_param("kind", kind).with_param("id", id),
+            GeoError::Conflict { reason } => ipc.with_param("reason", reason),
+            GeoError::Config { reason } => ipc.with_param("reason", reason),
+            // 上游原文按契约走包装族的两个键：upstream_code 是里层稳定码，
+            // upstream 是原文（不进词典，UI 以次要文本展示，spec §4.2）
+            GeoError::Upstream { code, message } => ipc
+                .with_param("upstream_code", code)
+                .with_param("upstream", message),
+            GeoError::Io(io_error) => ipc.with_param("reason", io_error.to_string()),
+            GeoError::Serde(serde_error) => ipc.with_param("reason", serde_error.to_string()),
+        }
     }
 }
 
 impl From<StoreError> for IpcError {
     fn from(error: StoreError) -> Self {
-        let code = error.code();
-        let message = error.to_string();
-        Self::new(code, message).with_redacted_params(store_params(error))
+        let ipc = Self::new(error.code(), error.to_string());
+        // Task 4 删除点：改成 `Self::with_params(error.code(), error.params())`
+        // `Sqlx` 按 code() 落到 state/conflict 或 io/failed，两者登记的都是 reason，
+        // 因此这里不必重复 geo-store 私有的唯一约束判定。
+        match error {
+            StoreError::NotFound { kind, id } => ipc.with_param("kind", kind).with_param("id", id),
+            StoreError::Validation { field, reason } => {
+                ipc.with_param("field", field).with_param("reason", reason)
+            }
+            StoreError::Conflict(reason) => ipc.with_param("reason", reason),
+            StoreError::Sqlx(sqlx_error) => ipc.with_param("reason", sqlx_error.to_string()),
+            StoreError::Serde(serde_error) => ipc.with_param("reason", serde_error.to_string()),
+            StoreError::Secret(reason) => ipc.with_param("reason", reason),
+            StoreError::Io(io_error) => ipc.with_param("reason", io_error.to_string()),
+        }
     }
 }
 
 impl From<LlmError> for IpcError {
     fn from(error: LlmError) -> Self {
-        let code = error.code();
-        let message = error.user_message();
-        Self::new(code, message).with_redacted_params(llm_params(error))
+        let ipc = Self::new(error.code(), error.user_message());
+        // Task 4 删除点：改成 `Self::with_params(error.code(), error.params())`
+        // rate_limited / missing_secret 在清单里 params 是空数组，一个键都不塞；
+        // bad_response / deserialize 登记的 upstream 要等 Task 4 拆变体才填得上。
+        match error {
+            LlmError::Config(reason) => ipc.with_param("reason", reason),
+            LlmError::Transport(transport_error) => {
+                ipc.with_param("reason", transport_error.to_string())
+            }
+            LlmError::RateLimited | LlmError::MissingSecret => ipc,
+            LlmError::Server { status } => ipc.with_param("status", status.to_string()),
+            LlmError::BadResponse(reason) => ipc.with_param("reason", reason),
+            LlmError::Deserialize(reason) => ipc.with_param("reason", reason),
+        }
     }
 }
 
 impl From<CrawlerError> for IpcError {
     fn from(error: CrawlerError) -> Self {
-        let code = error.code();
-        let message = error.user_message();
-        Self::new(code, message).with_redacted_params(crawler_params(error))
+        let ipc = Self::new(error.code(), error.user_message());
+        // Task 4 删除点：改成 `Self::with_params(error.code(), error.params())`
+        // network 在清单里登记 url / status / reason 三个键，但变体只带一段合并
+        // 文本，因此只填 reason（清单里唯一恒在的键）；too_large 的 limit 同理。
+        match error {
+            CrawlerError::Blocked { url, reason } => {
+                ipc.with_param("url", url).with_param("reason", reason)
+            }
+            CrawlerError::Timeout { url } => ipc.with_param("url", url),
+            CrawlerError::Network(reason) => ipc.with_param("reason", reason),
+            CrawlerError::TooLarge { url } => ipc.with_param("url", url),
+            CrawlerError::InvalidUrl(url) => ipc.with_param("url", url),
+            CrawlerError::Decode(reason) => ipc.with_param("reason", reason),
+        }
     }
 }
 
@@ -167,110 +232,6 @@ impl From<std::io::Error> for IpcError {
     fn from(error: std::io::Error) -> Self {
         Self::from(GeoError::from(error))
     }
-}
-
-// ---------------------------------------------------------------------
-// params 派生。
-//
-// 契约（spec §4.2）要求每个 code 带一组语言中立参数，参数名由冻结的
-// `contracts/error-codes.json` 登记，因此键名必须逐字取自清单、不得在这里
-// 发明新键（测试 `params_keys_stay_inside_the_shared_catalog` 会红）。
-//
-// 下游 crate 今天只暴露 `code()` 与中文 `Display`，还没有自己的 `params()`，
-// 所以先在这一层按变体就地取值：Plan A Task 3/4 会把同样的映射下推成
-// `GeoError::params()` / `StoreError::params()` / `LlmError::params()` /
-// `CrawlerError::params()`，届时下面四个函数各自塌成一行转发。
-//
-// 四个 `match` 都**不写 `_` 兜底**：给下游错误加变体，这里立刻编译失败，
-// 逼实现者顺手决定新变体带哪些 params（与本文件测试模块的穷举守卫同一思路）。
-//
-// 值一律原样透传。部分值今天仍是中文散文（`validation` 的 reason、
-// `CrawlerError::Network` 那段合并文本），那是 Task 3/5 换 reason key、
-// Task 4 拆变体的活；本任务只负责把管道接通。
-// ---------------------------------------------------------------------
-
-/// `GeoError` → params。`Upstream` 按契约换成包装族的两个键：
-/// `upstream_code` 是里层稳定码，`upstream` 是上游原文（不进词典，
-/// UI 以次要文本展示）。
-fn geo_params(error: GeoError) -> BTreeMap<String, String> {
-    match error {
-        GeoError::Validation { field, reason } => param_map([("field", field), ("reason", reason)]),
-        GeoError::NotFound { kind, id } => param_map([("kind", kind), ("id", id)]),
-        GeoError::Conflict { reason } => param_map([("reason", reason)]),
-        GeoError::Config { reason } => param_map([("reason", reason)]),
-        GeoError::Upstream { code, message } => {
-            param_map([("upstream_code", code), ("upstream", message)])
-        }
-        GeoError::Io(io_error) => param_map([("reason", io_error.to_string())]),
-        GeoError::Serde(serde_error) => param_map([("reason", serde_error.to_string())]),
-    }
-}
-
-/// `StoreError` → params。`Sqlx` 按 `code()` 落到 `state/conflict` 或
-/// `io/failed`，两者登记的都是 `reason`，因此不必在这里重复唯一约束判定。
-fn store_params(error: StoreError) -> BTreeMap<String, String> {
-    match error {
-        StoreError::NotFound { kind, id } => param_map([("kind", kind), ("id", id)]),
-        StoreError::Validation { field, reason } => {
-            param_map([("field", field), ("reason", reason)])
-        }
-        StoreError::Conflict(reason) => param_map([("reason", reason)]),
-        StoreError::Sqlx(sqlx_error) => param_map([("reason", sqlx_error.to_string())]),
-        StoreError::Serde(serde_error) => param_map([("reason", serde_error.to_string())]),
-        StoreError::Secret(reason) => param_map([("reason", reason)]),
-        StoreError::Io(io_error) => param_map([("reason", io_error.to_string())]),
-    }
-}
-
-/// `LlmError` → params。`RateLimited` / `MissingSecret` 在清单里 params 为空，
-/// 不能凭空塞键；`BadResponse` / `Deserialize` 变体只带一段诊断文本，
-/// 清单里的 `upstream`（上游原文）要等 Task 4 拆变体才填得上。
-fn llm_params(error: LlmError) -> BTreeMap<String, String> {
-    match error {
-        LlmError::Config(reason) => param_map([("reason", reason)]),
-        LlmError::Transport(transport_error) => {
-            param_map([("reason", transport_error.to_string())])
-        }
-        LlmError::RateLimited | LlmError::MissingSecret => BTreeMap::new(),
-        LlmError::Server { status } => param_map([("status", status.to_string())]),
-        LlmError::BadResponse(reason) => param_map([("reason", reason)]),
-        LlmError::Deserialize(reason) => param_map([("reason", reason)]),
-    }
-}
-
-/// `CrawlerError` → params。清单给 `crawler/network` 登记了 url / status / reason
-/// 三个键，但变体只带一段合并文本，因此现在只填 `reason`（清单里唯一恒在的键）；
-/// `crawler/too_large` 的 `limit` 同理要等 Task 4。
-fn crawler_params(error: CrawlerError) -> BTreeMap<String, String> {
-    match error {
-        CrawlerError::Blocked { url, reason } => param_map([("url", url), ("reason", reason)]),
-        CrawlerError::Timeout { url } => param_map([("url", url)]),
-        CrawlerError::Network(reason) => param_map([("reason", reason)]),
-        CrawlerError::TooLarge { url } => param_map([("url", url)]),
-        CrawlerError::InvalidUrl(url) => param_map([("url", url)]),
-        CrawlerError::Decode(reason) => param_map([("reason", reason)]),
-    }
-}
-
-/// 收若干 `(键, 值)` 成有序 map。键限定 `&'static str`：参数名是契约的一部分，
-/// 必须写死在代码里，不允许运行期拼出来。
-fn param_map(pairs: impl IntoIterator<Item = (&'static str, String)>) -> BTreeMap<String, String> {
-    pairs
-        .into_iter()
-        .map(|(key, value)| (key.to_string(), value))
-        .collect()
-}
-
-/// `with_params` 的兜底文案：`"{code} {k}={v} …"`，键按字典序（`BTreeMap`）。
-fn fallback_message(code: &str, params: &BTreeMap<String, String>) -> String {
-    let mut message = String::from(code);
-    for (key, value) in params {
-        message.push(' ');
-        message.push_str(key);
-        message.push('=');
-        message.push_str(value);
-    }
-    message
 }
 
 /// 递归抹掉 JSON 里所有字符串中的密钥样式片段。

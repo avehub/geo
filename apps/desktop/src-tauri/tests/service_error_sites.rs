@@ -1,6 +1,6 @@
 //! 服务层错误站点的**结构性守卫**（Plan A Task 5 · 裁定 R-H 第三档）。
 //!
-//! 逐站点用例（`tests/*.rs` 的 params 级断言与各文件的表驱动用例）钉的是「今天这 41 处
+//! 逐站点用例（`tests/*.rs` 的 params 级断言与各文件的表驱动用例）钉的是「今天这 42 处
 //! 映射对不对」；本文件钉的是一件更耐时间的事：**以后谁在服务层新写一个中文 reason 站点，
 //! 立刻红**。Task 3 复审 I-1 的教训是「映射写错了没人知道」，Task 5 把服务层站点里那批
 //! 中文字面量 reason 全换成目录 key 之后（42 → 41 处，账见
@@ -10,7 +10,8 @@
 //! ## 判据
 //!
 //! 含 `GeoError::validation(` / `GeoError::conflict(` / `GeoError::config(` /
-//! `IpcError::new(` / `IpcError::with_params(` 的行，连同**它所属的那条语句**
+//! `IpcError::new(` / `IpcError::with_params(` / `IpcError::internal(` 的行，
+//! 连同**它所属的那条语句**
 //! （按括号配平切出，见 [`statement_span`]），不得含 CJK 字符（`[\u{4e00}-\u{9fa5}]`）。
 //!
 //! 两条边界，都是刻意的：
@@ -36,9 +37,16 @@
 //!
 //! ## 覆盖范围
 //!
-//! `src/state.rs` + `src/services/` 整棵树。`src/ipc/**` 与 `src/error.rs` **不在**
-//! 覆盖内：前者今天没有这 5 类站点（`ipc/export.rs` 走的是 `IpcError::internal`，
-//! 属另一条待收口的链路，见 task-5-report），后者的站点全在 `#[cfg(test)]` 夹具里。
+//! `src/state.rs` + `src/services/` 整棵树 + `src/ipc/` 整棵树 + 壳的两个入口
+//! （`src/lib.rs` / `src/main.rs`）。`src/error.rs` **不在**覆盖内：它的站点全在
+//! `#[cfg(test)]` 夹具里。
+//!
+//! `ipc/**` 与两个入口是 Task 5b 补进来的（复审 Minor 1 / Minor 4a）。
+//! `ipc/export.rs` 那三处 `IpcError::internal("中文…")` 能活到 Task 5 收尾，正是因为
+//! 这里有两个缺口：`FILES` 没有 `ipc/**`、`SITE_PATTERNS` 没有 `internal(`——
+//! **缺一不可**，只补任何一边守卫仍然扫不到它。`lib.rs` / `main.rs` 今天的生产站点数
+//! 是 **0**，以「期望 0」写进逐文件计数表，是为了把「将来谁在壳入口直接
+//! `IpcError::new(...)` 拼中文」变成一件会红的事。
 
 /// 被扫描的生产文件。写死清单而不是 glob：`include_str!` 不支持 glob，
 /// 而写死清单还有一个好处——新增服务文件时忘记加进来，
@@ -75,18 +83,37 @@ const FILES: &[(&str, &str)] = &[
         "services/templates/catalog.rs",
         include_str!("../src/services/templates/catalog.rs"),
     ),
+    // ---- Task 5b（裁定 A-4）：`ipc/` 整棵树 ----
+    ("ipc/mod.rs", include_str!("../src/ipc/mod.rs")),
+    ("ipc/export.rs", include_str!("../src/ipc/export.rs")),
+    ("ipc/project.rs", include_str!("../src/ipc/project.rs")),
+    ("ipc/prompt.rs", include_str!("../src/ipc/prompt.rs")),
+    ("ipc/settings.rs", include_str!("../src/ipc/settings.rs")),
+    ("ipc/secret.rs", include_str!("../src/ipc/secret.rs")),
+    (
+        "ipc/entity_card.rs",
+        include_str!("../src/ipc/entity_card.rs"),
+    ),
+    // ---- Task 5b（裁定 A-4b，复审 Minor 4a）：壳的两个入口，期望站点数 0 ----
+    ("lib.rs", include_str!("../src/lib.rs")),
+    ("main.rs", include_str!("../src/main.rs")),
 ];
 
-/// 站点判据：这 5 个构造子是服务层能发出 `code + params` 的全部入口。
+/// 站点判据：这 6 个构造子是壳侧能发出 `code + params`（或 `code + message`）的全部入口。
 ///
 /// `GeoError::not_found(kind, id)` 不在列——它的两个参数都是数据（资源类别 + ID），
-/// 没有 reason 可写散文；`IpcError::internal` 也不在列（裁定 §I 另行收口）。
+/// 没有 reason 可写散文。
+///
+/// `IpcError::internal(` 是 Task 5b 补进来的：裁定 §I 当初把它记为「另行收口」，
+/// 那次收口就是本任务（A-2 之后它只剩一个合法用法——语言中立的紧凑兜底串）。
+/// 不列进来，`FILES` 里加了 `ipc/**` 也扫不到 `ipc/export.rs`。
 const SITE_PATTERNS: &[&str] = &[
     "GeoError::validation(",
     "GeoError::conflict(",
     "GeoError::config(",
     "IpcError::new(",
     "IpcError::with_params(",
+    "IpcError::internal(",
 ];
 
 fn is_cjk(character: char) -> bool {
@@ -220,6 +247,24 @@ fn service_error_sites_carry_no_chinese_prose() {
 /// `llm_ipc_error()` 里新增一处 `IpcError::new`（+1）。
 ///
 /// 站点数变少是**收敛**，不是漏改——逐处 before → after 都在报告里对得上号。
+///
+/// ## 41 → 42：Task 5b 把 `ipc/**` 与壳入口纳入覆盖（裁定 A-4 / A-4b）
+///
+/// [`FILES`] 从 9 个文件涨到 18 个（`ipc/` 7 个 + `lib.rs` + `main.rs`），但站点数只有
+/// `ipc/export.rs` 一处从 0 → **1**：
+///
+/// - 它原有 **3** 处 `IpcError::internal(`，其中 2 处按裁定 A-1 改走
+///   `IpcError::from(GeoError::Io(..))`（code `io/failed`，OS / 库原文进 `reason`），
+///   改完就**不再命中** [`SITE_PATTERNS`] 里的任何一项 —— 3 − 2 = 1；
+/// - 剩下那 1 处是 oneshot 回调通道被 drop（裁定 A-2：code 仍为 `ipc/internal`，
+///   message 换成语言中立紧凑串 `ipc/internal reason=dialog_channel_closed`）；
+/// - 其余 8 个新文件都是 **0**：`ipc/` 另外 6 个文件只做参数搬运与 `?` 上抛，
+///   `lib.rs` / `main.rs` 是装配入口（复审 Minor 4a 已核）。
+///
+/// ⇒ 41 + 1 = **42**。同一次改动里 `.set_title("导出")` 与 `tracing::info!("导出文件已写入")`
+/// 两处 CJK **仍然留在** `ipc/export.rs`（裁定 A-5 授权保留：前者是原生对话框标题，
+/// 正确修法要改 IPC 命令签名，属 Plan B；后者是日志，不是用户可见面）。它们不命中
+/// [`SITE_PATTERNS`]，因此把该文件加进 [`FILES`] 之后守卫不会为它们红——这是预期的。
 #[test]
 fn the_guard_sees_every_production_site() {
     let expected: &[(&str, usize)] = &[
@@ -232,6 +277,18 @@ fn the_guard_sees_every_production_site() {
         ("services/settings_service.rs", 10),
         ("services/templates/mod.rs", 0),
         ("services/templates/catalog.rs", 0),
+        // Task 5b 新增（A-4）：`ipc/` 整棵树。只有 `export.rs` 有站点。
+        ("ipc/mod.rs", 0),
+        ("ipc/export.rs", 1),
+        ("ipc/project.rs", 0),
+        ("ipc/prompt.rs", 0),
+        ("ipc/settings.rs", 0),
+        ("ipc/secret.rs", 0),
+        ("ipc/entity_card.rs", 0),
+        // Task 5b 新增（A-4b，复审 Minor 4a）：壳入口，以「期望 0」入表，
+        // 将来谁在这里直接拼中文 message 就会红。
+        ("lib.rs", 0),
+        ("main.rs", 0),
     ];
     let mut total = 0;
     for (name, want) in expected {
@@ -248,6 +305,6 @@ fn the_guard_sees_every_production_site() {
         assert_eq!(actual, *want, "{name} 的生产站点数变了，守卫清单要同步");
         total += actual;
     }
-    assert_eq!(total, 41, "服务层生产站点总数");
+    assert_eq!(total, 42, "壳侧生产站点总数");
     assert_eq!(FILES.len(), expected.len(), "FILES 与期望表要一一对应");
 }

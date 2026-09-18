@@ -354,11 +354,32 @@ mod tests {
         assert_eq!(error.message, "config/invalid reason=missing_base_url");
     }
 
+    /// `internal` 的 message 只在「前端词典 miss」时作为兜底渲染出口，而 Plan A 的前提
+    /// 就是后端不再产出自然语言 ⇒ 它必须是 Task 3 那种紧凑日志串（`{code} {k}={v}`），
+    /// 不是中文句子。原名 `internal_helper_produces_actionable_chinese_message` 钉的正是
+    /// 被 Plan A 废掉的那个意图（裁定 A-3）；这里的取值逐字取自 `ipc/export.rs` 那个
+    /// 唯一的生产调用点（裁定 A-2）。
     #[test]
-    fn internal_helper_produces_actionable_chinese_message() {
-        let error = IpcError::internal("解析导入文件失败");
+    fn internal_helper_produces_a_language_neutral_message() {
+        let error = IpcError::internal("ipc/internal reason=dialog_channel_closed");
         assert_eq!(error.code, "ipc/internal");
-        assert!(error.message.contains("解析导入文件失败"));
+        assert_eq!(error.message, "ipc/internal reason=dialog_channel_closed");
+        assert!(
+            !error
+                .message
+                .chars()
+                .any(|character| ('\u{4e00}'..='\u{9fa5}').contains(&character)),
+            "兜底 message 不得含 CJK：{}",
+            error.message
+        );
+        // 契约把 `ipc/internal` 的 params 冻结成 `[]`：`internal` 不得偷偷带参数，
+        // 因此那个 `reason=` 只活在兜底文案里，不进 params。
+        assert!(error.params.is_empty(), "{:?}", error.params);
+        // `Display` 认得「message 已以 code 打头」这种形状，不再套第二层前缀
+        assert_eq!(
+            error.to_string(),
+            "ipc/internal reason=dialog_channel_closed"
+        );
     }
 
     // -----------------------------------------------------------------

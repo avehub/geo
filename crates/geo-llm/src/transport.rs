@@ -141,6 +141,10 @@ pub struct ReqwestTransport {
 
 impl ReqwestTransport {
     /// 构造客户端。`timeout` 同时作为连接与整体读取超时。
+    ///
+    /// `proxy` 为 `None` 或空白时不走**任何**代理：必须显式 `no_proxy()`，否则
+    /// reqwest 会自动探测环境变量与宿主机系统代理（workspace 开了 `system-proxy`
+    /// feature），连回环流量也会被送进代理，语义就成了「没配代理反而走代理」。
     pub fn new(timeout: Duration, proxy: Option<String>) -> Result<Self, TransportError> {
         // workspace 里 reqwest 用的是 rustls-no-provider：进程内安装一次 ring provider，
         // 已安装时返回 Err，此处按约定忽略，保证多次构造不 panic。
@@ -156,6 +160,8 @@ impl ReqwestTransport {
             let parsed = reqwest::Proxy::all(&proxy)
                 .map_err(|err| TransportError::Other(format!("代理地址无效：{err}")))?;
             builder = builder.proxy(parsed);
+        } else {
+            builder = builder.no_proxy();
         }
         let client = builder
             .build()

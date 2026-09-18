@@ -50,7 +50,11 @@ pub struct SiteFetcher {
 }
 
 impl SiteFetcher {
-    /// 构造抓取器。`proxy` 为 `None` 或空白时不走代理。
+    /// 构造抓取器。`proxy` 为 `None` 或空白时不走**任何**代理。
+    ///
+    /// 没配代理时必须显式 `no_proxy()`：reqwest 默认会自动探测环境变量与宿主机
+    /// 系统代理（workspace 开了 `system-proxy` feature），连 `127.0.0.1` 的回环
+    /// 流量也会被送进代理，语义就成了「没配代理反而走代理」。
     ///
     /// 本仓的 reqwest 用 `rustls-no-provider`（避免 aws-lc-sys 依赖 cmake），
     /// 因此建客户端前必须安装 crypto provider；重复安装返回 `Err`，忽略即可
@@ -73,6 +77,8 @@ impl SiteFetcher {
                 CrawlerError::InvalidUrl(format!("代理地址无效：{proxy_url}（{error}）"))
             })?;
             builder = builder.proxy(proxy);
+        } else {
+            builder = builder.no_proxy();
         }
         let http = builder
             .build()
@@ -227,6 +233,56 @@ mod tests {
         Url::parse(&format!("{}{path}", server.uri())).expect("夹具 URL 应可解析")
     }
 
+    /// 代理环境变量的串行锁。
+    ///
+    /// 环境变量是**进程级全局状态**：同一测试二进制里的用例并行跑，谁在「设变量 →
+    /// 构造 client → 发请求 → 恢复变量」这段窗口里构造 client，就会读到别人设的代理。
+    /// 用这把锁把整段窗口串行化，避免互踩。
+    ///
+    /// 用 `tokio::sync::Mutex` 而不是 `std::sync::Mutex`：锁必须跨 `await` 持有
+    /// （请求本身就在这个窗口里），持有 `std` 的 guard 跨 await 会触发
+    /// `clippy::await_holding_lock`，而门禁是 `-D warnings`。
+    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    /// reqwest 自动探测时会读的代理变量（三者都读，只设一个不足以复现劫持）。
+    const PROXY_ENV_VARS: [&str; 3] = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"];
+
+    /// 把代理变量指向一个不可达地址，`Drop` 时恢复原值。
+    ///
+    /// 用 RAII 而不是在测试尾部手动 `remove_var`：断言 panic 时也必须恢复，
+    /// 否则会把污染留给同一二进制里后续的用例。
+    struct BogusProxyEnv {
+        saved: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl BogusProxyEnv {
+        /// 调用方必须已持有 [`ENV_LOCK`]。
+        fn install(unreachable_proxy: &str) -> Self {
+            let saved = PROXY_ENV_VARS
+                .iter()
+                .map(|name| (*name, std::env::var(name).ok()))
+                .collect();
+            for name in PROXY_ENV_VARS {
+                // SAFETY: 调用方持有 `ENV_LOCK`，本 crate 只有这一处改环境变量；
+                // 且未配置代理的 client 一律 `no_proxy()`，并行用例不会读这三个变量。
+                unsafe { std::env::set_var(name, unreachable_proxy) };
+            }
+            Self { saved }
+        }
+    }
+
+    impl Drop for BogusProxyEnv {
+        fn drop(&mut self) {
+            for (name, value) in self.saved.drain(..) {
+                // SAFETY: 与 `install` 同处一把 `ENV_LOCK` 的保护窗口内。
+                match value {
+                    Some(value) => unsafe { std::env::set_var(name, value) },
+                    None => unsafe { std::env::remove_var(name) },
+                }
+            }
+        }
+    }
+
     #[test]
     fn default_limits_match_the_plan() {
         let limits = FetchLimits::default();
@@ -261,6 +317,38 @@ mod tests {
         assert!(matches!(error, CrawlerError::InvalidUrl(_)), "{error}");
         assert_eq!(error.code(), "crawler/invalid_url");
         assert!(error.user_message().contains("代理"));
+    }
+
+    /// 回归：reqwest 默认自动探测环境变量与宿主机系统代理（workspace 开了 `system-proxy`
+    /// feature），连回环流量也会被送进代理。没配 proxy 就必须显式 `no_proxy()`，
+    /// 否则在开了系统代理的机器上，所有本地 wiremock 用例都会被劫持成 502。
+    ///
+    /// 断言的是**行为**（请求成功拿到 body），不去断言 reqwest 内部的代理配置。
+    #[tokio::test]
+    async fn unset_proxy_ignores_proxy_env_and_reaches_the_local_server() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/direct"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("<html><body>直连成功</body></html>"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let _serialized = ENV_LOCK.lock().await;
+        // 端口 1 上没有服务：只要请求被送去这个代理就一定失败，直连才能成功。
+        let _proxy_env = BogusProxyEnv::install("http://127.0.0.1:1");
+
+        let fetcher =
+            SiteFetcher::new(FetchLimits::default(), BOT_UA, None).expect("构造抓取器失败");
+        let raw = fetcher
+            .fetch(&url_of(&server, "/direct"))
+            .await
+            .expect("未配置代理时应直连本地服务，不得被环境/系统代理劫持");
+
+        assert_eq!(raw.status, 200);
+        assert!(String::from_utf8_lossy(&raw.bytes).contains("直连成功"));
     }
 
     #[tokio::test]

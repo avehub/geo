@@ -84,6 +84,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - Consumes: Task 1 的 `ERROR_CATALOG`
 - Produces: `IpcError { code: String, params: BTreeMap<String,String>, message: String, detail: Option<Value> }`；构造子 `IpcError::new(code, message)`（params 空）、`IpcError::with_params(code, params)`、`.with_param(k, v)`、`.with_detail(v)`；序列化字段名 `code` / `params` / `message` / `detail`
 - Produces: TS `IpcErrorPayload.params?: Record<string, string>`
+- Produces（**顺序约束，控制器裁定**）：本 task 早于 `GeoError::params()`（Task 3）与 `StoreError/LlmError/CrawlerError::params()`（Task 4），所以四个 `From<…> for IpcError` 里的 params 只能**就地按变体字段拼**（如 `GeoError::NotFound{kind,id}` → `{kind,id}`）。这份临时映射由 Task 3 / Task 4 各自负责改成委托 `.params()` 并删除；本 task 不要为了「将来好改」而提前抽象出共享 helper。params 的键名一律照 `contracts/error-codes.json` 里该 code 的 `params` 数组。
 
 - [ ] 写失败测试：`not_found` 错误的 `params` 含 `kind=project` 与 `id=abc`；`validation` 含 `field` 与 `reason`；序列化后 JSON 有 `params` 对象；`redact` 仍对 `params` 的值生效（塞 `sk-xxx` 必须变 `***`）
 - [ ] 跑红：`mise exec -- cargo test -p geo-desktop error::tests`
@@ -101,6 +102,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 
 **Interfaces:**
 - Produces: `GeoError::params(&self) -> BTreeMap<String,String>`（映射见 spec §4.2）；`Display` 输出紧凑日志格式 `"{code} {k}={v} …"`
+- Produces（**控制器裁定，补 Task 2 留下的接缝**）：`apps/desktop/src-tauri/src/error.rs` 的 `From<GeoError> for IpcError` 改为委托 `GeoError::params()`，并删掉 Task 2 就地拼 params 的那份临时映射 —— 否则同一个映射存在两份，必然漂移。改完 Task 1 的穷举守卫与清单用例必须继续绿，Task 2 的 params 断言必须继续绿（键名不变，只是来源换成 `params()`）。
 - Produces: **reason key 目录**（写进 `error.rs` 文档注释，Task 4/5/6 复用）：`required` `empty` `too_long` `too_short` `invalid_url` `invalid_id` `invalid_format` `duplicate` `out_of_range` `not_allowed` `missing_header` `row_invalid` `unknown_provider` `missing_base_url` `missing_model` `parse_failed`
 - Produces: `GeoError::user_message()` 语义变更为"日志/兜底文案"，不再承诺中文散文
 
@@ -121,6 +123,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 **Interfaces:**
 - Consumes: Task 3 的 reason key 目录
 - Produces: `StoreError::params()`、`LlmError::params()`、`CrawlerError::params()`（均为 `BTreeMap<String,String>`），以及与 `GeoError` 的 `From` 保持 code 语义不变
+- Produces（**控制器裁定，补 Task 2 留下的接缝**）：`apps/desktop/src-tauri/src/error.rs` 的 `From<StoreError|LlmError|CrawlerError> for IpcError` 三个 impl 改为委托各自的 `params()`，删掉 Task 2 的临时映射；Task 1 的守卫与 Task 2 的 params 断言继续绿。
 - Produces: `LlmError::Config(reason_key)`；`missing_base_url` / `missing_model` / `unknown_provider` 三个 key 由 `client.rs` 与 `state.rs` 共用
 
 - [ ] 写失败测试：`LlmError::MissingSecret.params()` 为空 map 且 `code()=="llm/missing_secret"`；`LlmError::Server{status:500}.params()=={status:"500"}`；`CrawlerError::Timeout{url}.params()=={url}`；`StoreError::not_found("prompt_set","x").params()=={kind,id}`

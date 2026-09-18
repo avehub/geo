@@ -8,6 +8,7 @@ use std::collections::HashSet;
 
 use geo_domain::{
     AssetKind, CompetitorDraft, CompetitorId, Industry, Language, ProjectDraft, ProjectId,
+    MAX_BRAND_NAME_CHARS, MAX_COMPETITORS,
 };
 use geo_store::ProjectFilter;
 use support::{now, sample_draft, seeded_project, test_state, OfflineTransport};
@@ -159,6 +160,11 @@ async fn update_rejects_a_blank_brand_name() {
 
     let error = svc.update(&project, now()).await.expect_err("必须校验");
     assert_eq!(error.code, "validation/failed");
+    // `validate_project` 的 7 处站点由 `project_service.rs` 的表驱动用例逐处钉住
+    // （裁定 R-H 第一档）；这里只钉「集成路径确实走到了它」这一条。
+    assert_eq!(error.params["field"], "brand_name");
+    assert_eq!(error.params["reason"], "required");
+    assert_eq!(error.params.len(), 2, "{:?}", error.params);
 }
 
 #[tokio::test]
@@ -285,6 +291,92 @@ async fn import_rejects_a_payload_that_is_not_a_project_export() {
         .await
         .expect_err("结构不符必须报错");
     assert_eq!(error.code, "validation/failed");
+    assert_eq!(error.params["field"], "payload");
+    // serde 库原文当 `value`（目录语义规则 3：`parse_failed` 装解析器库的 Error）。
+    // `ProjectExport` 是 `deny_unknown_fields`，`{"brand_name":"x"}` 触发的是
+    // 「unknown field」而不是「missing field」——断言钉「原文来自解析器」这件事，
+    // 不是钉某一句英文措辞，所以同时要求把出错的输入键名带出来。
+    assert_eq!(error.params["reason"], "parse_failed");
+    assert!(
+        error.params["value"].contains("unknown field"),
+        "value 应装 serde 原文：{}",
+        error.params["value"]
+    );
+    assert!(
+        error.params["value"].contains("brand_name"),
+        "value 应带出解析器指认的字段：{}",
+        error.params["value"]
+    );
+}
+
+/// 版本不兼容是**我们自己写的形状判据** → `invalid_format` + `value` = 文件里的版本串。
+/// 当前支持的版本号属文案，不进 params（`expected` 只用于 `a~b` / `<=n` / `<n` 三种
+/// 数值区间表达式，装版本串会说谎，见 `error.rs` 目录注释语义规则 2）。
+#[tokio::test]
+async fn import_rejects_an_incompatible_format_version() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let svc = service(&state);
+    let project = seeded_project(&state).await;
+
+    let exported = svc.export_json(project.id, now()).await.unwrap();
+    let mut payload = serde_json::to_value(&exported).expect("可序列化");
+    payload["format_version"] = serde_json::json!("geo-project-export-v0");
+
+    let error = svc
+        .import_json(&payload.to_string(), now())
+        .await
+        .expect_err("版本不符必须拒绝");
+    assert_eq!(error.code, "validation/failed");
+    assert_eq!(error.params["field"], "format_version");
+    assert_eq!(error.params["reason"], "invalid_format");
+    assert_eq!(error.params["value"], "geo-project-export-v0");
+    assert_eq!(error.params.len(), 3, "{:?}", error.params);
+}
+
+/// 竞品名的两处站点：空 → `required`（无配套参数）、超长 → `too_long` + `limit`（字符数）。
+#[tokio::test]
+async fn upsert_competitor_rejects_a_blank_or_overlong_name() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let svc = service(&state);
+    let project = seeded_project(&state).await;
+
+    let blank = svc
+        .upsert_competitor(
+            project.id,
+            &CompetitorDraft {
+                name: "   ".to_string(),
+                ..Default::default()
+            },
+            None,
+            now(),
+        )
+        .await
+        .expect_err("空竞品名必须拒绝");
+    assert_eq!(blank.code, "validation/failed");
+    assert_eq!(blank.params["field"], "competitor.name");
+    assert_eq!(blank.params["reason"], "required");
+    assert_eq!(blank.params.len(), 2, "{:?}", blank.params);
+
+    let overlong = svc
+        .upsert_competitor(
+            project.id,
+            &CompetitorDraft {
+                name: "长".repeat(MAX_BRAND_NAME_CHARS + 1),
+                ..Default::default()
+            },
+            None,
+            now(),
+        )
+        .await
+        .expect_err("超长竞品名必须拒绝");
+    assert_eq!(overlong.params["field"], "competitor.name");
+    assert_eq!(overlong.params["reason"], "too_long");
+    assert_eq!(
+        overlong.params["limit"],
+        MAX_BRAND_NAME_CHARS.to_string(),
+        "{:?}",
+        overlong.params
+    );
 }
 
 #[tokio::test]
@@ -340,7 +432,17 @@ async fn competitor_upsert_updates_in_place_and_caps_at_five() {
         .await
         .expect_err("竞品上限 5 家");
     assert_eq!(error.code, "validation/failed");
-    assert!(error.message.contains("competitors"));
+    assert_eq!(error.params["field"], "competitors");
+    // 数量越界一律 `out_of_range` + `expected`（`<=n` 形态，**不带「家」**——单位属文案）
+    assert_eq!(error.params["reason"], "out_of_range");
+    assert_eq!(
+        error.params["expected"],
+        format!("<={MAX_COMPETITORS}"),
+        "{:?}",
+        error.params
+    );
+    // 裁定 §F-3：`out_of_range` 的 `value` 是可选的，别为了模板好看硬塞
+    assert_eq!(error.params.len(), 3, "{:?}", error.params);
 }
 
 #[tokio::test]

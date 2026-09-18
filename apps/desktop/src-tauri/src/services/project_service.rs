@@ -178,14 +178,12 @@ impl ProjectService {
 
         let name = draft.name.trim();
         if name.is_empty() {
-            return Err(GeoError::validation("competitor.name", "竞品名称不能为空").into());
+            return Err(GeoError::validation("competitor.name", "required").into());
         }
         if name.chars().count() > MAX_BRAND_NAME_CHARS {
-            return Err(GeoError::validation(
-                "competitor.name",
-                format!("长度不能超过 {MAX_BRAND_NAME_CHARS} 字"),
-            )
-            .into());
+            return Err(GeoError::validation("competitor.name", "too_long")
+                .with_param("limit", MAX_BRAND_NAME_CHARS)
+                .into());
         }
         let website = draft
             .website
@@ -204,11 +202,9 @@ impl ProjectService {
             }
             None => {
                 if current.len() >= MAX_COMPETITORS {
-                    return Err(GeoError::validation(
-                        "competitors",
-                        format!("竞品不能超过 {MAX_COMPETITORS} 家，请先删除不再跟踪的对手"),
-                    )
-                    .into());
+                    return Err(GeoError::validation("competitors", "out_of_range")
+                        .with_param("expected", format!("<={MAX_COMPETITORS}"))
+                        .into());
                 }
                 let position = current
                     .iter()
@@ -281,39 +277,189 @@ impl ProjectService {
     }
 }
 
-/// 项目自身字段校验（与 `ProjectDraft::validate` 同口径，用于「更新」与「导入」路径）。
+/// 项目自身字段校验，用于「更新」与「导入」路径。
+///
+/// **与 `ProjectDraft::validate`（`crates/geo-domain/src/project.rs`）不是同一套口径，
+/// 而是互有强弱的两套**（裁定 R-A，实测结论）：本函数校验 `name` / `region` 非空，
+/// 但**不**逐条校验 alias、也**不**校验 `competitors`；`ProjectDraft::validate` 反过来。
+/// 委托给任一方都是行为变更（会同时丢校验与加校验），超出 Plan A 范围，
+/// 因此这里只做「就地 key 化」，口径分裂与各自缺口记在 `task-5-report.md`，
+/// 控制器已 Park 到末尾全分支评审 / Plan C。
+///
+/// `reason` 一律取 `crates/geo-domain/src/error.rs` 目录里的 key，配套参数按目录登记的
+/// 语义规则 2 给：字符数用 `limit`、数量/数值区间用 `out_of_range` + `expected`
+/// （纯 ASCII 的 `<=n` / `a~b`，**不带单位**——「60 字」这种单位属文案，只能由词典模板给）。
 pub(crate) fn validate_project(project: &Project) -> Result<(), IpcError> {
     let brand = project.brand_name.trim();
     if brand.is_empty() {
-        return Err(GeoError::validation("brand_name", "不能为空").into());
+        return Err(GeoError::validation("brand_name", "required").into());
     }
     if brand.chars().count() > MAX_BRAND_NAME_CHARS {
-        return Err(GeoError::validation(
-            "brand_name",
-            format!("长度不能超过 {MAX_BRAND_NAME_CHARS} 字"),
-        )
-        .into());
+        return Err(GeoError::validation("brand_name", "too_long")
+            .with_param("limit", MAX_BRAND_NAME_CHARS)
+            .into());
     }
     if project.name.trim().is_empty() {
-        return Err(GeoError::validation("name", "项目名不能为空").into());
+        return Err(GeoError::validation("name", "required").into());
     }
     if project.name.trim().chars().count() > MAX_PROJECT_NAME_CHARS {
-        return Err(GeoError::validation(
-            "name",
-            format!("长度不能超过 {MAX_PROJECT_NAME_CHARS} 字"),
-        )
-        .into());
+        return Err(GeoError::validation("name", "too_long")
+            .with_param("limit", MAX_PROJECT_NAME_CHARS)
+            .into());
     }
     if project.aliases.len() > MAX_ALIASES {
-        return Err(
-            GeoError::validation("aliases", format!("别名不能超过 {MAX_ALIASES} 个")).into(),
-        );
+        return Err(GeoError::validation("aliases", "out_of_range")
+            .with_param("expected", format!("<={MAX_ALIASES}"))
+            .into());
     }
     if project.tags.len() > MAX_TAGS {
-        return Err(GeoError::validation("tags", format!("标签不能超过 {MAX_TAGS} 个")).into());
+        return Err(GeoError::validation("tags", "out_of_range")
+            .with_param("expected", format!("<={MAX_TAGS}"))
+            .into());
     }
     if project.region.trim().is_empty() {
-        return Err(GeoError::validation("region", "服务地域不能为空").into());
+        return Err(GeoError::validation("region", "required").into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use geo_domain::{Industry, Language, ProjectStatus};
+
+    fn now() -> DateTime<Utc> {
+        DateTime::from_timestamp(1_789_000_000, 0).expect("固定时间戳")
+    }
+
+    /// 一个各项都合法的项目：表驱动用例只改其中一项。
+    fn valid_project() -> Project {
+        Project {
+            id: ProjectId::new(),
+            name: "宏宇泵业".to_string(),
+            brand_name: "宏宇".to_string(),
+            aliases: vec!["HY".to_string()],
+            website: Some("https://hongyu-pump.example".to_string()),
+            region: "浙江杭州".to_string(),
+            language: Language::ZhCn,
+            industry: Industry::B2bManufacturing,
+            industry_label: None,
+            tags: vec!["水泵".to_string()],
+            status: ProjectStatus::Active,
+            archived_at: None,
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    /// `validate_project` 的 7 处站点逐处钉住 `(code, field, reason, params)`。
+    ///
+    /// **必须经生产函数触发**（裁定 R-H 第一档）：`validate_project` 是 `pub(crate)`，
+    /// 集成测试（`tests/*.rs`）拿不到，因此表驱动用例只能落在本文件的 `#[cfg(test)]` 里；
+    /// 也正因为如此，这里**不许**拿 `GeoError::validation(...)` 合成实例充数——
+    /// 合成实例证明不了站点写对了（Task 3 复审 I-1 的原始盲区）。
+    #[test]
+    fn validate_project_reports_directory_keys_with_language_neutral_params() {
+        struct Case {
+            /// 用例名，失败时打印用。
+            name: &'static str,
+            break_field: fn(&mut Project),
+            field: &'static str,
+            reason: &'static str,
+            /// 除 `field` / `reason` 之外必须**恰好**出现的配套参数。
+            extra: &'static [(&'static str, &'static str)],
+        }
+
+        let cases = [
+            Case {
+                name: "brand_name 为空",
+                break_field: |project| project.brand_name = "   ".to_string(),
+                field: "brand_name",
+                reason: "required",
+                extra: &[],
+            },
+            Case {
+                name: "brand_name 超长",
+                break_field: |project| project.brand_name = "长".repeat(MAX_BRAND_NAME_CHARS + 1),
+                field: "brand_name",
+                reason: "too_long",
+                extra: &[("limit", "50")],
+            },
+            Case {
+                name: "name 为空",
+                break_field: |project| project.name = " ".to_string(),
+                field: "name",
+                reason: "required",
+                extra: &[],
+            },
+            Case {
+                name: "name 超长",
+                break_field: |project| project.name = "长".repeat(MAX_PROJECT_NAME_CHARS + 1),
+                field: "name",
+                reason: "too_long",
+                extra: &[("limit", "80")],
+            },
+            Case {
+                name: "aliases 超个数",
+                break_field: |project| {
+                    project.aliases = (0..MAX_ALIASES + 1)
+                        .map(|index| format!("a{index}"))
+                        .collect()
+                },
+                field: "aliases",
+                reason: "out_of_range",
+                extra: &[("expected", "<=20")],
+            },
+            Case {
+                name: "tags 超个数",
+                break_field: |project| {
+                    project.tags = (0..MAX_TAGS + 1).map(|index| format!("t{index}")).collect()
+                },
+                field: "tags",
+                reason: "out_of_range",
+                extra: &[("expected", "<=20")],
+            },
+            Case {
+                name: "region 为空",
+                break_field: |project| project.region = "\t".to_string(),
+                field: "region",
+                reason: "required",
+                extra: &[],
+            },
+        ];
+
+        for case in cases {
+            let mut project = valid_project();
+            (case.break_field)(&mut project);
+            let error = validate_project(&project).expect_err(case.name);
+            assert_eq!(error.code, "validation/failed", "{}", case.name);
+            assert_eq!(error.params["field"], case.field, "{}", case.name);
+            assert_eq!(error.params["reason"], case.reason, "{}", case.name);
+
+            let mut expected: std::collections::BTreeMap<String, String> = case
+                .extra
+                .iter()
+                .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+                .collect();
+            expected.insert("field".to_string(), case.field.to_string());
+            expected.insert("reason".to_string(), case.reason.to_string());
+            assert_eq!(
+                error.params, expected,
+                "{}：params 必须恰好是 field + reason + 目录给该 key 登记的配套参数\
+                 （`limit` 只配字符数、`expected` 只配区间，见 error.rs 目录注释语义规则 2）",
+                case.name
+            );
+        }
+
+        validate_project(&valid_project()).expect("合法项目不该被拦");
+    }
+
+    /// 上限常量与用例里钉死的字面量必须同源：改了常量而没改词典模板，这条会红。
+    #[test]
+    fn the_documented_limits_match_the_constants() {
+        assert_eq!(MAX_BRAND_NAME_CHARS, 50);
+        assert_eq!(MAX_PROJECT_NAME_CHARS, 80);
+        assert_eq!(MAX_ALIASES, 20);
+        assert_eq!(MAX_TAGS, 20);
+    }
 }

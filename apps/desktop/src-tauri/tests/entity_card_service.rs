@@ -165,7 +165,7 @@ async fn autobuild_degrades_when_no_api_key_is_configured() {
 }
 
 #[tokio::test]
-async fn autobuild_reports_an_empty_site_as_a_readable_error() {
+async fn autobuild_reports_an_empty_site_as_code_plus_params() {
     let (state, server, _secrets) = support::empty_site_state().await;
     let project = seeded_project(&state).await;
 
@@ -174,7 +174,28 @@ async fn autobuild_reports_an_empty_site_as_a_readable_error() {
         .await
         .expect_err("抓不到页面必须报错");
     assert_eq!(error.code, "crawler/empty");
-    assert!(error.message.contains("未能抓到任何页面"));
+    // 契约给 `crawler/empty` 登记 `["domain","skipped"]`，两个键**永远都发**。
+    // 「请确认域名可访问、robots.txt 未禁止抓取」是文案，由 Task 7 的词典模板给。
+    assert_eq!(error.params.len(), 2, "{:?}", error.params);
+    assert_eq!(error.params["domain"], format!("{}/", server.uri()));
+    // `skipped` 是至多 3 条 `"{url} {reason}"` 的 ASCII 数据行；`SkippedPage.reason`
+    // 已统一成稳定记号（裁定 §G-5 / R-C4），中文说明只留在 `site.rs` 的日志里。
+    let skipped = &error.params["skipped"];
+    assert!(skipped.is_ascii(), "skipped 必须纯 ASCII：{skipped:?}");
+    assert!(
+        skipped.is_empty()
+            || skipped.split("; ").all(|entry| {
+                let reason = entry.rsplit(' ').next().unwrap_or_default();
+                ["total_timeout", "robots_disallowed", "fetch_failed"].contains(&reason)
+            }),
+        "每条都必须是 `{{url}} {{稳定记号}}`：{skipped:?}"
+    );
+    // 壳侧 `guard_instance_params_stay_ascii` 没有白名单，这里再钉一次真实链路
+    assert!(
+        error.message.is_ascii(),
+        "兜底文案含非 ASCII：{}",
+        error.message
+    );
 }
 
 #[tokio::test]
@@ -187,7 +208,9 @@ async fn autobuild_rejects_a_domain_that_is_not_a_url() {
         .await
         .expect_err("非法域名必须被拒绝");
     assert_eq!(error.code, "validation/failed");
-    assert!(error.message.contains("domain"));
+    assert_eq!(error.params["field"], "domain");
+    assert_eq!(error.params["reason"], "invalid_url");
+    assert_eq!(error.params["value"], "这不是域名");
 }
 
 #[tokio::test]

@@ -13,7 +13,7 @@ use geo_domain::{
     normalize_url, EntityCard, EntityCardRevision, EntityCardSource, EntityFields, FieldStatus,
     GeoError, Project, ProjectId, ALL_FIELDS,
 };
-use geo_llm::{chat_json, ChatMessage, ChatRequest, LlmConfig};
+use geo_llm::{chat_json, ChatMessage, ChatRequest, LlmConfig, LlmError};
 use geo_store::{AppSettings, EntityCardRepo, ProjectRepo, SecretStore, SettingsRepo};
 use serde_json::Value;
 use sqlx::SqlitePool;
@@ -24,6 +24,11 @@ use crate::state::LlmFactory;
 
 /// 喂给模型的官网正文上限：够覆盖首页+关于+产品+FAQ+联系，又不会顶爆上下文。
 pub const MAX_SITE_TEXT_CHARS: usize = 12_000;
+
+/// `crawler/empty` 的 `skipped` 参数最多报几条被跳过的页面（契约 note 里写的「至多 3 条」）。
+const MAX_REPORTED_SKIPPED: usize = 3;
+/// `skipped` 里各条之间的分隔符。纯 ASCII：params 的取值只能是语言中立数据。
+const SKIPPED_SEPARATOR: &str = "; ";
 
 /// 抽取用的系统提示词。强调「只输出 JSON 本体」与「查不到就留空」，
 /// 后者是防幻觉的关键：宁可字段空缺（待确认），也不要模型编资质与案例。
@@ -95,22 +100,25 @@ impl EntityCardService {
         )
         .await;
         if crawled.pages.is_empty() {
-            let reasons: Vec<String> = crawled
+            // `crawler/empty` 契约登记 `["domain","skipped"]`，两个键**永远都发**
+            // （与 `crawler/blocked` 的 `value` 同一口径：前端不必条件渲染），
+            // 一页都没跳过时 `skipped` 是空串。
+            // `skipped` 是至多 3 条 `"{url} {reason}"` 用 `"; "` 连接的**ASCII** 数据行：
+            // `SkippedPage.reason` 已统一成稳定记号（裁定 §G-5 / R-C4），
+            // 中文说明只留在 `site.rs` 的日志里，绝不进 params
+            // （壳侧 `guard_instance_params_stay_ascii` 没有白名单）。
+            let skipped: Vec<String> = crawled
                 .skipped
                 .iter()
-                .take(3)
-                .map(|page| format!("{}（{}）", page.url, page.reason))
+                .take(MAX_REPORTED_SKIPPED)
+                .map(|page| format!("{} {}", page.url, page.reason))
                 .collect();
-            return Err(IpcError::new(
+            return Err(IpcError::with_params(
                 err_codes::CRAWLER_EMPTY,
-                format!(
-                    "未能抓到任何页面：{origin}。请确认域名可访问、robots.txt 未禁止抓取。{}",
-                    if reasons.is_empty() {
-                        String::new()
-                    } else {
-                        format!("已跳过：{}", reasons.join("；"))
-                    }
-                ),
+                [
+                    ("domain", origin.as_str()),
+                    ("skipped", skipped.join(SKIPPED_SEPARATOR).as_str()),
+                ],
             ));
         }
 
@@ -236,7 +244,12 @@ impl EntityCardService {
         Ok(seeds)
     }
 
-    /// 调模型抽取实体卡。任何一步不可用都返回中文原因，由调用方决定降级。
+    /// 调模型抽取实体卡。任何一步不可用都返回**原因串**，由调用方决定降级。
+    ///
+    /// 这个 `Err(String)` 只进 `tracing::warn!`，**不落库、不到 UI**，因此不是文案出口：
+    /// 内容是各错误的紧凑日志串（`{code} k=v …`）或 `llm/missing_secret` 这类稳定记号。
+    /// 校验器原文（`fields.validate()`）另有一条路：它进 `chat_json` 的修复追问 prompt
+    /// 与 `geo-llm` 的日志，同样不到 UI（裁定 R-I / §K）。
     async fn extract(
         &self,
         project: &Project,
@@ -251,7 +264,9 @@ impl EntityCardService {
             .await
             .map_err(|error| error.to_string())?
             .filter(|key| !key.trim().is_empty())
-            .ok_or_else(|| "未配置 API Key".to_string())?;
+            // 稳定记号而不是中文散文：这条串只进日志，与 `config_from_settings`
+            // 失败时拿到的 `error.message`（同样是 `{code} k=v …` 紧凑串）保持同一形态。
+            .ok_or_else(|| LlmError::MissingSecret.code().to_string())?;
 
         let client = self.llm.client(config.clone(), &api_key);
         let request = ChatRequest::new(vec![
@@ -277,8 +292,11 @@ impl EntityCardService {
 /// 就把 origin 当成子目录、导致同域判定失效。
 fn origin_from_domain(domain: &str) -> Result<Url, IpcError> {
     let normalized = normalize_url("domain", domain)?;
+    // 防御性分支：`normalize_url` 返回的正是它自己 `Url::parse` 成功过的串，
+    // 公开 API 走不到这里，因此由 `the_unreachable_parse_fallback_still_uses_a_directory_key`
+    // 用源码字面量钉住映射。
     let mut origin = Url::parse(&normalized)
-        .map_err(|_| GeoError::validation("domain", format!("不是合法网址：{domain}")))?;
+        .map_err(|_| GeoError::validation("domain", "invalid_url").with_param("value", domain))?;
     origin.set_path("/");
     origin.set_query(None);
     origin.set_fragment(None);
@@ -390,4 +408,84 @@ fn extraction_prompt(project: &Project, site_text: &str) -> String {
         industry = project.industry.label_zh(),
         text = site_text,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 域名规范化（裁定 R-H 第一档）：深层链接收敛成站点根，同域判定才不会失效。
+    #[test]
+    fn origin_from_domain_collapses_deep_links_to_the_site_root() {
+        let origin = origin_from_domain("https://hongyu-pump.example/products/1.html?a=1#top")
+            .expect("合法深层链接");
+        assert_eq!(origin.as_str(), "https://hongyu-pump.example/");
+
+        let bare = origin_from_domain("  hongyu-pump.example  ").expect("裸域名补 https");
+        assert_eq!(bare.as_str(), "https://hongyu-pump.example/");
+    }
+
+    /// 非法输入一律由 `geo_domain::normalize_url` 判定，本层不重写判据；
+    /// 断言到 params 的键与值，`field` 恒为 `domain`（裁定 R-F：`field` 是前端词典键）。
+    #[test]
+    fn origin_from_domain_reports_directory_keys_for_bad_input() {
+        struct Case {
+            name: &'static str,
+            input: &'static str,
+            reason: &'static str,
+            extra: &'static [(&'static str, &'static str)],
+        }
+
+        for case in [
+            Case {
+                name: "留空",
+                input: "   ",
+                reason: "required",
+                extra: &[],
+            },
+            Case {
+                name: "不是域名",
+                input: "这不是域名",
+                reason: "invalid_url",
+                extra: &[("value", "这不是域名")],
+            },
+            Case {
+                name: "协议不允许",
+                input: "ftp://hongyu-pump.example",
+                reason: "not_allowed",
+                extra: &[("value", "ftp")],
+            },
+        ] {
+            let error = origin_from_domain(case.input).expect_err(case.name);
+            assert_eq!(error.code, "validation/failed", "{}", case.name);
+            assert_eq!(error.params["field"], "domain", "{}", case.name);
+            assert_eq!(error.params["reason"], case.reason, "{}", case.name);
+
+            let mut expected: std::collections::BTreeMap<String, String> = case
+                .extra
+                .iter()
+                .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+                .collect();
+            expected.insert("field".to_string(), "domain".to_string());
+            expected.insert("reason".to_string(), case.reason.to_string());
+            assert_eq!(error.params, expected, "{}：{:?}", case.name, error.params);
+        }
+    }
+
+    /// `origin_from_domain` 里 `Url::parse(&normalized)` 那一支**从公开 API 不可达**：
+    /// `normalize_url` 返回的正是它自己 `Url::parse` 成功过的 `candidate`，
+    /// 再解析一次不可能失败。它是防御性分支，因此改用源码字面量钉住映射
+    /// （与 `crates/geo-domain/tests/reason_key_sites.rs` 的 `UNREACHABLE` 同一手法）。
+    #[test]
+    fn the_unreachable_parse_fallback_still_uses_a_directory_key() {
+        let source = include_str!("entity_card_service.rs");
+        assert!(
+            source.contains("\"invalid_url\""),
+            "防御性分支的 reason 必须是目录 key `invalid_url`"
+        );
+        assert!(
+            source.contains(".with_param(\"value\", domain)"),
+            "`invalid_url` 必须配套 `value`（目录登记的配套参数），装用户填的原始串"
+        );
+    }
 }

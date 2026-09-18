@@ -11,7 +11,7 @@
 //! 纪律：合规红线优先于样本量（命中绝对化用语的内容直接拦截）；
 //! 样本量或意图覆盖不足时给补齐建议，绝不静默通过。
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -20,7 +20,7 @@ use geo_domain::{
     DedupeReport, GeoError, Industry, IntentCategory, Project, ProjectId, PromptId, PromptItem,
     PromptSet, PromptSetId, PromptSource, MAX_PROMPT_CHARS, MAX_REPEAT_COUNT,
 };
-use geo_llm::{chat_json, ChatMessage, ChatRequest, LlmClient};
+use geo_llm::{chat_json, ChatMessage, ChatRequest, LlmClient, LlmError};
 use geo_store::{
     CompetitorRepo, EntityCardRepo, ProjectRepo, PromptSetRepo, PromptSetSummary, SecretStore,
     SettingsRepo,
@@ -48,6 +48,12 @@ pub const CO_MENTION_SHARE: f64 = 0.2;
 const CO_MENTION_MARGIN: usize = 4;
 /// 配额补足最多重试几轮（每轮换一批模板与槽位取值）。
 const MAX_QUOTA_ROUNDS: usize = 3;
+/// 降级机器行的固定前缀（裁定 §H-1）。前端按它分流：命中的行 `JSON.parse` 后走词典。
+const DEGRADED_PREFIX: &str = "degraded ";
+/// `prompt_set/empty_import` 的英文兜底短句（裁定 R-J：`message` 只留英文兜底，
+/// 中文文案由前端词典按 locale 渲染）。契约给该 code 登记的 params 是 `[]`，
+/// 逐行错误明细走 `detail`。
+const EMPTY_IMPORT_FALLBACK: &str = "no valid rows to import; the prompt set is unchanged";
 /// 单次向模型索取的扩写条数上限。
 const MAX_MODEL_ITEMS: usize = 40;
 /// 送去模型口语化改写的条目上限（控制提示词长度与成本）。
@@ -150,37 +156,30 @@ impl Default for GenerateOptions {
 }
 
 impl GenerateOptions {
-    /// 参数体检：非法参数在写库之前就被挡下（`validation/failed`）。
+    /// 参数体检：非法参数在写库之前就被挡下（`validation/failed` + 目录 key）。
+    ///
+    /// `expected` 是语言中立的区间表达式（`a~b`），`value` 是用户填的实际值；
+    /// 「目标条数需在 20~200 之间」这句话由前端词典按 locale 渲染。
     pub fn validate(&self) -> Result<(), IpcError> {
         if !(MIN_TARGET_COUNT..=MAX_TARGET_COUNT).contains(&self.target_count) {
-            return Err(GeoError::validation(
-                "target_count",
-                format!(
-                    "目标条数需在 {MIN_TARGET_COUNT}~{MAX_TARGET_COUNT} 之间，当前 {}",
-                    self.target_count
-                ),
-            )
-            .into());
+            return Err(GeoError::validation("target_count", "out_of_range")
+                .with_param("expected", format!("{MIN_TARGET_COUNT}~{MAX_TARGET_COUNT}"))
+                .with_param("value", self.target_count)
+                .into());
         }
         if !(1..=MAX_REPEAT_COUNT).contains(&self.repeat_count) {
-            return Err(GeoError::validation(
-                "repeat_count",
-                format!(
-                    "重复采样次数需在 1~{MAX_REPEAT_COUNT} 之间，当前 {}",
-                    self.repeat_count
-                ),
-            )
-            .into());
+            return Err(GeoError::validation("repeat_count", "out_of_range")
+                .with_param("expected", format!("1~{MAX_REPEAT_COUNT}"))
+                .with_param("value", self.repeat_count)
+                .into());
         }
         if let Some(intents) = &self.intents {
             if intents.is_empty() {
-                return Err(
-                    GeoError::validation("intents", "至少要选择一类意图，或留空表示全部").into(),
-                );
+                return Err(GeoError::validation("intents", "empty").into());
             }
             let unique: HashSet<IntentCategory> = intents.iter().copied().collect();
             if unique.len() != intents.len() {
-                return Err(GeoError::validation("intents", "意图不能重复选择").into());
+                return Err(GeoError::validation("intents", "duplicate").into());
             }
         }
         Ok(())
@@ -280,7 +279,7 @@ impl PromptService {
                 tracing::info!(project_id = %project_id, added = items.len(), "模型扩写完成");
                 candidates.extend(items);
             }
-            Err(reason) => notes.push(degradation_note("模型意图扩写", &reason)),
+            Err(error) => notes.push(degradation_note("expansion", &error)),
         }
 
         // 第 3 步：口语化改写。本地规则始终跑，模型改写只是补充。
@@ -288,7 +287,7 @@ impl PromptService {
         candidates.extend(colloquial);
         match self.rewrite_with_model(&context, &candidates).await {
             Ok(items) => candidates.extend(items),
-            Err(reason) => notes.push(degradation_note("模型口语化改写", &reason)),
+            Err(error) => notes.push(degradation_note("rewrite", &error)),
         }
 
         // 第 4 步：竞品同框补足
@@ -337,10 +336,11 @@ impl PromptService {
             set_id = %set.id,
             version,
             items = set.items.len(),
+            // 降级行是 `degraded ` 前缀的机器行（裁定 §H-1），散文行不再表示降级
             degraded = set
                 .notes
                 .as_deref()
-                .is_some_and(|notes| notes.contains("降级")),
+                .is_some_and(|notes| notes.contains(DEGRADED_PREFIX)),
             "题库生成完成"
         );
         Ok(set)
@@ -381,20 +381,16 @@ impl PromptService {
     // 模型调用（全部可降级）
     // -----------------------------------------------------------------------
 
-    /// 装配一次性的 LLM 客户端。任何一步不可用都返回中文原因，由调用方降级。
-    async fn client(&self) -> Result<LlmClient, String> {
-        let settings = SettingsRepo::new(self.pool.clone())
-            .get()
-            .await
-            .map_err(|error| error.to_string())?;
-        let config = LlmFactory::config_from_settings(&settings).map_err(|error| error.message)?;
+    /// 装配一次性的 LLM 客户端。任何一步不可用都返回 `code + params`，由调用方降级。
+    async fn client(&self) -> Result<LlmClient, IpcError> {
+        let settings = SettingsRepo::new(self.pool.clone()).get().await?;
+        let config = LlmFactory::config_from_settings(&settings)?;
         let api_key = self
             .secrets
             .get(&config.secret_ref)
-            .await
-            .map_err(|error| error.to_string())?
+            .await?
             .filter(|key| !key.trim().is_empty())
-            .ok_or_else(|| "未配置 API Key".to_string())?;
+            .ok_or(IpcError::from(LlmError::MissingSecret))?;
         Ok(self.llm.client(config, &api_key))
     }
 
@@ -404,7 +400,7 @@ impl PromptService {
         context: &PromptContext,
         intents: &[IntentCategory],
         existing: &[PromptItem],
-    ) -> Result<Vec<PromptItem>, String> {
+    ) -> Result<Vec<PromptItem>, IpcError> {
         let client = self.client().await?;
         let request = ChatRequest::new(vec![
             ChatMessage::system(EXPANSION_SYSTEM),
@@ -419,7 +415,7 @@ impl PromptService {
                 Ok(())
             })
             .await
-            .map_err(|error| redact(&error.user_message()))?;
+            .map_err(llm_ipc_error)?;
 
         let allowed: HashSet<IntentCategory> = intents.iter().copied().collect();
         let items = parsed
@@ -444,7 +440,7 @@ impl PromptService {
         &self,
         context: &PromptContext,
         candidates: &[PromptItem],
-    ) -> Result<Vec<PromptItem>, String> {
+    ) -> Result<Vec<PromptItem>, IpcError> {
         let inputs: Vec<&PromptItem> = candidates
             .iter()
             .filter(|item| item.source == PromptSource::Template)
@@ -466,7 +462,7 @@ impl PromptService {
             Ok(())
         })
         .await
-        .map_err(|error| redact(&error.user_message()))?;
+        .map_err(llm_ipc_error)?;
 
         // 只对得上号的改写才收：模型抄错原文时，宁可丢掉也不要来路不明的条目。
         let mut items = Vec::new();
@@ -515,7 +511,7 @@ impl PromptService {
     pub async fn rename(&self, id: PromptSetId, label: &str) -> Result<PromptSetSummary, IpcError> {
         let label = label.trim();
         if label.is_empty() {
-            return Err(GeoError::validation("label", "题库名称不能为空").into());
+            return Err(GeoError::validation("label", "required").into());
         }
         Ok(self.sets().rename(id, label).await?)
     }
@@ -535,7 +531,7 @@ impl PromptService {
     /// 批量编辑：一次事务写完，只重算一次指纹。
     pub async fn update_items_bulk(&self, edits: Vec<PromptItem>) -> Result<PromptSet, IpcError> {
         let Some(first) = edits.first() else {
-            return Err(GeoError::validation("items", "没有要更新的条目").into());
+            return Err(GeoError::validation("items", "empty").into());
         };
         let set_id = first.set_id;
         self.apply_edits(set_id, &edits).await?;
@@ -555,13 +551,12 @@ impl PromptService {
         for edit in edits {
             edit.validate()?;
             if !compliance::is_clean(&edit.text) {
-                return Err(IpcError::new(
-                    err_codes::COMPLIANCE_VIOLATION,
-                    format!("内容命中广告法红线词：{}", violation_terms(&edit.text)),
-                ));
+                return Err(compliance_violation(&edit.text));
             }
             if edit.set_id != set_id {
-                return Err(GeoError::validation("set_id", "不能把条目改到别的题库快照里").into());
+                return Err(GeoError::validation("set_id", "not_allowed")
+                    .with_param("value", edit.set_id)
+                    .into());
             }
             let Some(position) = items.iter().position(|existing| existing.id == edit.id) else {
                 return Err(GeoError::not_found("prompt_item", edit.id).into());
@@ -579,7 +574,7 @@ impl PromptService {
         self.sets()
             .replace_items(set_id, items, set.created_at)
             .await?;
-        last.ok_or_else(|| GeoError::validation("items", "没有要更新的条目").into())
+        last.ok_or_else(|| GeoError::validation("items", "empty").into())
     }
 
     /// 人工新增条目（spec FR-M2-6「增」）。
@@ -593,7 +588,7 @@ impl PromptService {
         now: DateTime<Utc>,
     ) -> Result<PromptSet, IpcError> {
         if drafts.is_empty() {
-            return Err(GeoError::validation("items", "没有要新增的条目").into());
+            return Err(GeoError::validation("items", "empty").into());
         }
         let set = self.get(set_id).await?;
         let mut items = set.items.clone();
@@ -601,10 +596,7 @@ impl PromptService {
             let item = draft.into_item(set_id);
             item.validate()?;
             if !compliance::is_clean(&item.text) {
-                return Err(IpcError::new(
-                    err_codes::COMPLIANCE_VIOLATION,
-                    format!("内容命中广告法红线词：{}", violation_terms(&item.text)),
-                ));
+                return Err(compliance_violation(&item.text));
             }
             items.push(item);
         }
@@ -623,7 +615,7 @@ impl PromptService {
         now: DateTime<Utc>,
     ) -> Result<PromptSet, IpcError> {
         if ids.is_empty() {
-            return Err(GeoError::validation("ids", "没有要删除的条目").into());
+            return Err(GeoError::validation("ids", "empty").into());
         }
         let set = self.get(set_id).await?;
         for id in ids {
@@ -632,9 +624,12 @@ impl PromptService {
             }
         }
         if ids.len() >= set.items.len() {
-            return Err(
-                GeoError::validation("ids", "不能把题库删空：要清空请删除整个题库快照").into(),
-            );
+            // 「不许删空」表达成数量区间：一次最多删 `条目总数 - 1` 条。
+            // 「要清空请删除整个题库快照」是**建议**，属文案，由词典模板给（AGENTS 规则 7）。
+            return Err(GeoError::validation("ids", "out_of_range")
+                .with_param("expected", format!("<{}", set.items.len()))
+                .with_param("value", ids.len())
+                .into());
         }
         let mut items: Vec<PromptItem> = set
             .items
@@ -693,11 +688,12 @@ impl PromptService {
         let result = prompts_from_csv(payload, id)?;
         if result.items.is_empty() && !set.items.is_empty() {
             tracing::warn!(set_id = %id, errors = result.error_count(), "CSV 导入没有有效条目，已保留原题库");
-            return Err(IpcError::new(
-                err_codes::PROMPT_SET_EMPTY_IMPORT,
-                "导入内容里没有任何有效条目，原题库保持不变（要清空请直接删除题库）",
-            )
-            .with_detail(serde_json::to_value(&result.errors).unwrap_or(serde_json::Value::Null)));
+            return Err(
+                IpcError::new(err_codes::PROMPT_SET_EMPTY_IMPORT, EMPTY_IMPORT_FALLBACK)
+                    .with_detail(
+                        serde_json::to_value(&result.errors).unwrap_or(serde_json::Value::Null),
+                    ),
+            );
         }
         let mut items = result.items.clone();
         reindex(&mut items, id);
@@ -795,6 +791,16 @@ fn reindex(items: &mut [PromptItem], set_id: PromptSetId) {
     }
 }
 
+/// `compliance/violation` 的 params 形态：契约给它登记的键只有 `terms`，
+/// 装命中的红线词（**数据**，不是文案）。词典文案不得复述红线词本身（AGENTS 规则 6），
+/// 渲不渲染由 Task 7 的 code 级模板决定（裁定 §J）。
+fn compliance_violation(text: &str) -> IpcError {
+    IpcError::with_params(
+        err_codes::COMPLIANCE_VIOLATION,
+        [("terms", violation_terms(text).as_str())],
+    )
+}
+
 fn violation_terms(text: &str) -> String {
     let mut terms: Vec<String> = compliance::scan(text)
         .into_iter()
@@ -805,9 +811,69 @@ fn violation_terms(text: &str) -> String {
     terms.join("、")
 }
 
-/// 降级说明：一定要出现「降级」二字，前端据此提示用户当前题库不含模型贡献。
-fn degradation_note(step: &str, reason: &str) -> String {
-    format!("{step}已降级（原因：{reason}）：本轮题目改由行业模板与本地口语化改写补足。")
+/// `LlmError` → `IpcError`：`params` 由下游单点产出，`message` 用**已脱敏**的紧凑串兜底。
+///
+/// 裁定 §G-6 要求 `redact(&error.user_message())` 一律保留：它在 llm 路径上今天已经空转
+/// （Task 4 之后上游原文不再进 params），但它是「将来谁把原文塞回 `Display`」时的第二道
+/// 保险，而 `redact` 只在壳侧可用。与 `IpcError::from(LlmError)` 今天逐字等价
+/// （两者的兜底文案都是 `{code} k=v …`），差别只在这道保险是显式的。
+fn llm_ipc_error(error: LlmError) -> IpcError {
+    let message = redact(&error.user_message());
+    error.params().into_iter().fold(
+        IpcError::new(error.code(), message),
+        |error, (key, value)| error.with_param(key, value),
+    )
+}
+
+/// 降级说明：**单行 ASCII 机器行**，格式固定为 `degraded ` + 紧凑 JSON（裁定 §H-1）。
+///
+/// 为什么不再写散文：`notes` 会落库并在 UI 原样渲染，把不可本地化的日志记号焊进一句
+/// 中文散文，等于让同一个字段里混着两种形态（老行散文、新行记号）。现在数据归数据
+/// （`stage` / `code` / `params`），文案归词典——「本轮题目改由行业模板与本地口语化
+/// 改写补足」由 Task 8/9 的模板给。前端契约：按 `\n` 切行，`degraded ` 前缀的行
+/// `JSON.parse` 后走词典，其余行原样渲染（兼容既有散文行与老数据）。
+///
+/// 用 JSON 而不是 `k=v` 空格分隔：`value` 可能含空格与任意字符（serde 原文限长 200），
+/// 空格分隔会解析歧义。
+///
+/// **只有降级这一类行是机器行**：`report_quota_shortfall` / `shortfall_advice` /
+/// 合规拦截那几行仍是中文散文——那是既存状态、不是本轮回归，结构化 notes + 迁移
+/// 已记 backlog（裁定 §H-2，不许顺手改：那会同时动 `crates/geo-domain`）。
+fn degradation_note(stage: &str, error: &IpcError) -> String {
+    // 裁定 §H-3：notes 是**持久化**的，泄漏面比一次性消息长，因此逐值再过一次 `redact`
+    // （`IpcError::with_param` 已经 redact 过，这里是独立的第二道保险）。
+    let params: BTreeMap<String, String> = error
+        .params
+        .iter()
+        .map(|(key, value)| (key.clone(), redact(value)))
+        .collect();
+    let record = serde_json::json!({
+        "stage": stage,
+        "code": error.code,
+        "params": params,
+    });
+    format!("{DEGRADED_PREFIX}{}", ascii_json(&record))
+}
+
+/// 紧凑 JSON，且非 ASCII 一律转成 `\uXXXX`。
+///
+/// `serde_json` 默认原样输出 UTF-8，而机器行承诺纯 ASCII，所以在**序列化之后**转义：
+/// JSON 里非 ASCII 字符只可能出现在字符串字面量内部，逐字符转义不破坏结构，
+/// `JSON.parse` 还原后与原值逐字相等。
+fn ascii_json(value: &serde_json::Value) -> String {
+    let compact = value.to_string();
+    let mut out = String::with_capacity(compact.len());
+    let mut buffer = [0u16; 2];
+    for character in compact.chars() {
+        if character.is_ascii() {
+            out.push(character);
+            continue;
+        }
+        for unit in character.encode_utf16(&mut buffer) {
+            out.push_str(&format!(r"\u{unit:04x}"));
+        }
+    }
+    out
 }
 
 const EXPANSION_SYSTEM: &str =
@@ -934,40 +1000,106 @@ mod tests {
         assert_eq!(one.effective_target(), MIN_EFFECTIVE_TARGET);
     }
 
+    /// `GenerateOptions::validate` 的 4 处站点逐处钉住 `(code, field, reason, params)`
+    /// （裁定 R-H 第一档：经生产函数触发，断言到 params 的键**与值**）。
     #[test]
     fn options_outside_the_documented_range_are_rejected() {
-        for options in [
-            GenerateOptions {
-                target_count: 19,
-                ..Default::default()
-            },
-            GenerateOptions {
-                target_count: 201,
-                ..Default::default()
-            },
-            GenerateOptions {
-                repeat_count: 0,
-                ..Default::default()
-            },
-            GenerateOptions {
-                repeat_count: 4,
-                ..Default::default()
-            },
-            GenerateOptions {
-                intents: Some(vec![]),
-                ..Default::default()
-            },
-            GenerateOptions {
-                intents: Some(vec![
-                    IntentCategory::LocalService,
-                    IntentCategory::LocalService,
-                ]),
-                ..Default::default()
-            },
-        ] {
-            let error = options.validate().expect_err("应被拒绝");
-            assert_eq!(error.code, "validation/failed");
+        struct Case {
+            name: &'static str,
+            options: GenerateOptions,
+            field: &'static str,
+            reason: &'static str,
+            extra: &'static [(&'static str, &'static str)],
         }
+
+        let cases = [
+            Case {
+                name: "目标条数越下界",
+                options: GenerateOptions {
+                    target_count: 19,
+                    ..Default::default()
+                },
+                field: "target_count",
+                reason: "out_of_range",
+                extra: &[("expected", "20~200"), ("value", "19")],
+            },
+            Case {
+                name: "目标条数越上界",
+                options: GenerateOptions {
+                    target_count: 201,
+                    ..Default::default()
+                },
+                field: "target_count",
+                reason: "out_of_range",
+                extra: &[("expected", "20~200"), ("value", "201")],
+            },
+            Case {
+                name: "采样次数越下界",
+                options: GenerateOptions {
+                    repeat_count: 0,
+                    ..Default::default()
+                },
+                field: "repeat_count",
+                reason: "out_of_range",
+                extra: &[("expected", "1~3"), ("value", "0")],
+            },
+            Case {
+                name: "采样次数越上界",
+                options: GenerateOptions {
+                    repeat_count: 4,
+                    ..Default::default()
+                },
+                field: "repeat_count",
+                reason: "out_of_range",
+                extra: &[("expected", "1~3"), ("value", "4")],
+            },
+            Case {
+                name: "意图清单为空",
+                options: GenerateOptions {
+                    intents: Some(vec![]),
+                    ..Default::default()
+                },
+                field: "intents",
+                reason: "empty",
+                extra: &[],
+            },
+            Case {
+                name: "意图重复选择",
+                options: GenerateOptions {
+                    intents: Some(vec![
+                        IntentCategory::LocalService,
+                        IntentCategory::LocalService,
+                    ]),
+                    ..Default::default()
+                },
+                field: "intents",
+                reason: "duplicate",
+                extra: &[],
+            },
+        ];
+
+        for case in cases {
+            let error = case.options.validate().expect_err(case.name);
+            assert_eq!(error.code, "validation/failed", "{}", case.name);
+            assert_eq!(error.params["field"], case.field, "{}", case.name);
+            assert_eq!(error.params["reason"], case.reason, "{}", case.name);
+
+            let mut expected: std::collections::BTreeMap<String, String> = case
+                .extra
+                .iter()
+                .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+                .collect();
+            expected.insert("field".to_string(), case.field.to_string());
+            expected.insert("reason".to_string(), case.reason.to_string());
+            assert_eq!(error.params, expected, "{}：{:?}", case.name, error.params);
+        }
+    }
+
+    /// 常量与用例里钉死的字面量同源（`expected` 的三种纯 ASCII 形态见目录注释语义规则 2）。
+    #[test]
+    fn the_documented_option_ranges_match_the_constants() {
+        assert_eq!((MIN_TARGET_COUNT, MAX_TARGET_COUNT), (20, 200));
+        assert_eq!(MAX_REPEAT_COUNT, 3);
     }
 
     #[test]
@@ -1000,11 +1132,77 @@ mod tests {
         assert_eq!(count, 2);
     }
 
+    /// 裁定 §H-1：降级说明是 `degraded ` + **紧凑 JSON** 的单行 ASCII 机器行。
+    /// 用 JSON 而不是 `k=v` 空格分隔，因为 `value` 可能含空格与任意字符。
     #[test]
-    fn degradation_note_states_the_degradation_and_the_reason() {
-        let note = degradation_note("模型意图扩写", "未配置 API Key");
-        assert!(note.contains("降级"));
-        assert!(note.contains("未配置 API Key"));
+    fn degradation_note_is_a_single_line_ascii_machine_record() {
+        let error = IpcError::with_params("llm/transport", [("reason", "other")]);
+        let note = degradation_note("expansion", &error);
+
+        assert!(note.starts_with("degraded "), "{note}");
+        assert!(!note.contains('\n'), "机器行必须是单行：{note:?}");
+        assert!(note.is_ascii(), "机器行必须纯 ASCII：{note}");
+
+        let payload: serde_json::Value =
+            serde_json::from_str(note.strip_prefix("degraded ").expect("前缀")).expect("紧凑 JSON");
+        assert_eq!(payload["stage"], "expansion");
+        assert_eq!(payload["code"], "llm/transport");
+        assert_eq!(payload["params"], serde_json::json!({ "reason": "other" }));
+    }
+
+    /// `stage` 只有两个记号（裁定 §H-1），且都进得了 JSON。
+    #[test]
+    fn degradation_note_covers_both_pipeline_stages() {
+        let error = IpcError::from(LlmError::MissingSecret);
+        for stage in ["expansion", "rewrite"] {
+            let note = degradation_note(stage, &error);
+            let payload: serde_json::Value =
+                serde_json::from_str(note.strip_prefix("degraded ").expect("前缀")).expect("JSON");
+            assert_eq!(payload["stage"], stage);
+            // `llm/missing_secret` 的 params 是空集（契约登记 `[]`）
+            assert_eq!(payload["code"], "llm/missing_secret");
+            assert_eq!(payload["params"], serde_json::json!({}));
+        }
+    }
+
+    /// 生产环境的 `value` 可能合法地带中文（上游回显的模型输出片段）。机器行仍然
+    /// 必须纯 ASCII——非 ASCII 一律转成 `\uXXXX`，`JSON.parse` 后原样还原。
+    #[test]
+    fn degradation_note_escapes_non_ascii_values_and_round_trips_them() {
+        let error = IpcError::with_params(
+            "llm/bad_response",
+            [
+                ("reason", "parse_failed"),
+                ("value", "上游返回了「不是 JSON」"),
+            ],
+        );
+        let note = degradation_note("rewrite", &error);
+
+        assert!(note.is_ascii(), "机器行必须纯 ASCII：{note}");
+        let payload: serde_json::Value =
+            serde_json::from_str(note.strip_prefix("degraded ").expect("前缀")).expect("紧凑 JSON");
+        assert_eq!(payload["params"]["value"], "上游返回了「不是 JSON」");
+    }
+
+    /// 裁定 §H-3：notes 是**落库**的，泄漏面比一次性消息长，因此机器行里的 `params`
+    /// 逐值过 `redact`。`IpcError::with_params` 自己已经 redact 过，这里用结构体字面量
+    /// 绕过它，证明 `degradation_note` 这一道**独立**生效（第二道保险不能靠上一道）。
+    #[test]
+    fn degradation_note_redacts_a_secret_shaped_param_value() {
+        const LEAKED: &str = "sk-echoed-by-the-gateway-0123456789";
+        let error = IpcError {
+            code: "llm/transport".to_string(),
+            params: std::collections::BTreeMap::from([
+                ("reason".to_string(), "other".to_string()),
+                ("value".to_string(), LEAKED.to_string()),
+            ]),
+            message: "llm/transport".to_string(),
+            detail: None,
+        };
+
+        let note = degradation_note("expansion", &error);
+        assert!(!note.contains(LEAKED), "机器行泄漏了 Key：{note}");
+        assert!(note.contains("***"), "脱敏后要留下占位符：{note}");
     }
 
     #[test]

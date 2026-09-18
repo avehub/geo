@@ -22,6 +22,28 @@ fn service(state: &geo_desktop_lib::state::AppState) -> PromptService {
     PromptService::from_state(state)
 }
 
+/// 从 `notes` 里取出降级**机器行**的载荷（裁定 §H-1：`degraded ` + 紧凑 JSON）。
+///
+/// 前端契约（Task 8/9 实现）：按 `\n` 切行，`degraded ` 前缀的行 `JSON.parse` 后走词典，
+/// 其余行原样渲染（兼容既有的中文散文行与老数据）。这里就是那份契约的可执行版本。
+fn degraded_records(notes: &str) -> Vec<serde_json::Value> {
+    notes
+        .lines()
+        .filter_map(|line| line.strip_prefix("degraded "))
+        .map(|payload| serde_json::from_str(payload).expect("机器行必须是合法紧凑 JSON"))
+        .collect()
+}
+
+/// 机器行必须纯 ASCII（notes 是落库数据，「这一行是数据不是文案」要在任何 locale 下成立）。
+fn assert_degradation_lines_are_machine_lines(notes: &str) {
+    for line in notes.lines() {
+        if line.starts_with("degraded ") {
+            assert!(line.is_ascii(), "降级行必须纯 ASCII：{line}");
+            assert!(!line.contains('\n'));
+        }
+    }
+}
+
 #[tokio::test]
 async fn generate_hits_the_p0a_acceptance_bar() {
     let (state, _server, _secrets) = prompt_state().await;
@@ -122,7 +144,32 @@ async fn offline_generation_still_reaches_sixty_and_records_the_degradation() {
     assert_eq!(set.intent_coverage().len(), 7);
     assert_eq!(dedupe(set.items.clone()).duplicate_pairs, 0);
     let notes = set.notes.clone().expect("降级必须写进 notes");
-    assert!(notes.contains("降级"), "notes 要说明降级：{notes}");
+    assert_degradation_lines_are_machine_lines(&notes);
+    // `offline_state()` 预置了 Key，但 transport 每次都失败（`TransportError::Other`），
+    // 所以扩写与口语化改写两步各降级一行机器行，`code` 是 `llm/transport`。
+    // 「没配 Key」那条走 `state_without_secret()`，由
+    // `generation_without_an_api_key_degrades_instead_of_failing` 钉 `llm/missing_secret`。
+    let records = degraded_records(&notes);
+    assert_eq!(records.len(), 2, "两步各一行机器行：{notes}");
+    let stages: Vec<&str> = records
+        .iter()
+        .map(|record| record["stage"].as_str().expect("stage"))
+        .collect();
+    assert_eq!(stages, ["expansion", "rewrite"], "{stages:?}");
+    for record in &records {
+        assert_eq!(record["code"], "llm/transport", "{record}");
+        assert_eq!(
+            record["params"],
+            serde_json::json!({ "reason": "other" }),
+            "{record}"
+        );
+    }
+    // 文案（「本轮题目改由行业模板与本地口语化改写补足」）不再进数据行，
+    // 由 Task 8/9 的词典模板给；老散文行（配额/合规）照旧保留（裁定 §H-2）。
+    assert!(
+        !notes.contains("已降级"),
+        "降级说明不得再是中文散文：{notes}"
+    );
     assert!(
         set.items
             .iter()
@@ -150,15 +197,23 @@ async fn degradation_notes_redact_a_key_echoed_by_the_gateway() {
         .expect("上游失败时降级为纯模板");
 
     let notes = set.notes.clone().expect("降级要写原因");
-    assert!(notes.contains("降级"), "{notes}");
+    assert_degradation_lines_are_machine_lines(&notes);
     assert!(!notes.contains(TEST_API_KEY), "notes 泄漏了 Key：{notes}");
-    // Task 4 之后 `LlmError::user_message()` 是紧凑日志格式，上游回显的原文不再进
-    // 错误载荷，`redact` 因此没有可抹的东西（泄漏面被结构性关闭，`redact` 仍在
-    // `prompt_service.rs` 里兜着）。钉住紧凑文案：谁把原文塞回去这条会红。
-    assert!(
-        notes.contains("llm/transport reason=other"),
-        "降级原因应是紧凑日志格式：{notes}"
-    );
+
+    // 裁定 §H-1：机器行的 `code` + `params` 直接取自错误本身，不再把
+    // `user_message()` 的紧凑串拼进文案。Task 4 之后 `llm/transport` 只发
+    // `reason=other`，上游回显的原文根本不进 params（泄漏面被结构性关闭），
+    // `redact` 仍在 `degradation_note` 里逐值兜着（裁定 §H-3）。
+    let records = degraded_records(&notes);
+    assert!(!records.is_empty(), "至少要有一行降级机器行：{notes}");
+    for record in &records {
+        assert_eq!(record["code"], "llm/transport", "{record}");
+        assert_eq!(
+            record["params"],
+            serde_json::json!({ "reason": "other" }),
+            "{record}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -172,7 +227,16 @@ async fn generation_without_an_api_key_degrades_instead_of_failing() {
         .await
         .expect("没配 Key 也要出题");
     assert!(set.items.len() >= SUFFICIENT_SAMPLE_SIZE);
-    assert!(set.notes.unwrap_or_default().contains("未配置 API Key"));
+    let notes = set.notes.unwrap_or_default();
+    assert_degradation_lines_are_machine_lines(&notes);
+    // 「未配置 API Key」是文案，改由词典按 `llm/missing_secret` 渲染；数据行只发记号
+    assert!(
+        degraded_records(&notes)
+            .iter()
+            .all(|record| record["code"] == "llm/missing_secret"),
+        "降级原因应是稳定记号：{notes}"
+    );
+    assert!(!notes.contains("未配置 API Key"), "{notes}");
 }
 
 #[tokio::test]
@@ -376,8 +440,12 @@ async fn csv_import_reports_bad_rows_and_keeps_the_good_ones() {
     assert_eq!(result.imported_count(), 1);
     assert_eq!(result.error_count(), 2);
     assert_eq!(result.errors[0].row, 3);
-    assert!(result.errors[0].reason.contains("intent"));
+    // `CsvRowError` 已升级为 `{row, reason:<目录 key>, params}`（裁定 R-B / R-D）
+    assert_eq!(result.errors[0].reason, "invalid_format");
+    assert_eq!(result.errors[0].params["value"], "not_an_intent");
     assert_eq!(result.errors[1].row, 4);
+    assert_eq!(result.errors[1].reason, "required");
+    assert!(result.errors[1].params.is_empty(), "{:?}", result.errors[1]);
 
     let reloaded = svc.get(set.id).await.unwrap();
     assert_eq!(reloaded.items.len(), 1, "部分成功：只落库合法行");
@@ -406,6 +474,12 @@ async fn csv_import_with_only_a_header_refuses_to_wipe_the_set() {
         .await
         .expect_err("只有表头的导入必须被拒绝");
     assert_eq!(error.code, "prompt_set/empty_import");
+    // 契约给该 code 登记的 params 是 `[]`：逐行错误明细走 `detail`，不进 params。
+    // `message` 只留英文兜底短句（裁定 R-J），中文文案由词典渲染。
+    assert!(error.params.is_empty(), "{:?}", error.params);
+    assert!(error.message.is_ascii(), "{}", error.message);
+    let detail = error.detail.expect("逐行明细走 detail");
+    assert_eq!(detail.as_array().expect("数组").len(), 0);
 
     let reloaded = svc.get(set.id).await.unwrap();
     assert_eq!(reloaded.items.len(), set.items.len(), "原题库必须原样保留");
@@ -632,6 +706,11 @@ async fn add_items_rejects_adlaw_violations_without_touching_the_set() {
         .expect_err("命中红线词的新增必须被拒");
 
     assert_eq!(error.code, "compliance/violation");
+    // 契约给该 code 登记的键只有 `terms`，装命中的红线词（**数据**，不是文案）。
+    // 词典文案不得复述红线词本身（AGENTS 规则 6 / 裁定 §J：渲不渲染是词典的决定）。
+    assert_eq!(error.params.len(), 1, "{:?}", error.params);
+    let terms = &error.params["terms"];
+    assert!(terms.contains("保证排名"), "terms 应是命中词本身：{terms}");
     let stored = svc.get(set.id).await.unwrap();
     assert_eq!(
         stored.items.len(),
@@ -689,11 +768,17 @@ async fn delete_items_rejects_unknown_ids_and_refuses_to_empty_the_set() {
         .await
         .expect_err("删光条目应当被拒");
     assert_eq!(emptied.code, "validation/failed");
-    assert!(
-        emptied.message.contains("删除整个题库快照"),
-        "要告诉用户改用删除整个快照：{}",
-        emptied.message
+    // 「不许删空」表达成数量区间：一次最多删 `条目总数 - 1` 条。
+    // 「要清空请删除整个题库快照」是**建议**，属文案，由词典模板给（AGENTS 规则 7）。
+    assert_eq!(emptied.params["field"], "ids");
+    assert_eq!(emptied.params["reason"], "out_of_range");
+    assert_eq!(
+        emptied.params["expected"],
+        format!("<{}", set.items.len()),
+        "{:?}",
+        emptied.params
     );
+    assert_eq!(emptied.params["value"], set.items.len().to_string());
 
     let stored = svc.get(set.id).await.unwrap();
     assert_eq!(
@@ -701,6 +786,69 @@ async fn delete_items_rejects_unknown_ids_and_refuses_to_empty_the_set() {
         set.items.len(),
         "两次拒绝都不得改动数据"
     );
+}
+
+/// 编辑路径的 `(field, reason)` 组合（裁定 R-H 第二档：存量没覆盖的每个组合补一条）。
+/// 纯函数那批（`GenerateOptions::validate`）由 `prompt_service.rs` 的表驱动用例覆盖。
+#[tokio::test]
+async fn edits_reject_blank_labels_empty_batches_and_foreign_items() {
+    let (state, _server, _secrets) = offline_state().await;
+    let project = seeded_project(&state).await;
+    let svc = service(&state);
+    let set = svc
+        .generate(project.id, GenerateOptions::default(), now())
+        .await
+        .unwrap();
+
+    let label = svc.rename(set.id, "   ").await.expect_err("空名称必须拒绝");
+    assert_eq!(label.code, "validation/failed");
+    assert_eq!(label.params["field"], "label");
+    assert_eq!(label.params["reason"], "required");
+    assert_eq!(label.params.len(), 2, "{:?}", label.params);
+
+    // 空批次：集合整体为空 → `empty`（不是表单字段缺失的 `required`，目录语义规则 1）
+    let bulk = svc
+        .update_items_bulk(Vec::new())
+        .await
+        .expect_err("空批次必须拒绝");
+    assert_eq!(bulk.params["field"], "items");
+    assert_eq!(bulk.params["reason"], "empty");
+    assert_eq!(bulk.params.len(), 2, "{:?}", bulk.params);
+
+    let added = svc
+        .add_items(set.id, Vec::new(), now())
+        .await
+        .expect_err("空新增必须拒绝");
+    assert_eq!(added.params["field"], "items");
+    assert_eq!(added.params["reason"], "empty");
+
+    let deleted = svc
+        .delete_items(set.id, &[], now())
+        .await
+        .expect_err("空删除必须拒绝");
+    assert_eq!(deleted.params["field"], "ids");
+    assert_eq!(deleted.params["reason"], "empty");
+
+    // 跨快照搬条目：`update_items_bulk` 以第一条的 `set_id` 为目标，
+    // 后面混进别的快照的条目就发 `not_allowed` + `value`=那个外来快照的 id。
+    let foreign_set = svc
+        .generate(project.id, GenerateOptions::default(), now())
+        .await
+        .unwrap();
+    assert_ne!(foreign_set.id, set.id);
+    let error = svc
+        .update_items_bulk(vec![set.items[0].clone(), foreign_set.items[0].clone()])
+        .await
+        .expect_err("跨快照必须拒绝");
+    assert_eq!(error.code, "validation/failed");
+    assert_eq!(error.params["field"], "set_id");
+    assert_eq!(error.params["reason"], "not_allowed");
+    assert_eq!(error.params["value"], foreign_set.id.to_string());
+
+    // 被拒后不得留下半截数据
+    let stored = svc.get(set.id).await.unwrap();
+    assert_eq!(stored.items, set.items);
+    assert_eq!(stored.content_hash, set.content_hash);
 }
 
 #[tokio::test]

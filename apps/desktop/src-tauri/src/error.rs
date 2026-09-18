@@ -483,6 +483,59 @@ mod tests {
         ]
     }
 
+    /// 壳内字面量站点（`err_codes::` 那 5 个码）的**夹具**。
+    ///
+    /// 与上面四张变体清单不同，这些 code 不来自任何下游 crate 的 `code()`，只有壳自己发，
+    /// 因此编译器强制不了穷举，只能在这里逐个列出。取值形态逐条对齐生产发射点
+    /// （Task 5 已把它们全部 key 化，逐处清单见
+    /// `.superpowers/sdd/2026-09-18-plan-a-i18n-foundation-and-demo-backend/task-5-report.md`
+    /// 的 R-G 表）：
+    ///
+    /// - `compliance/violation` ← `services/prompt_service.rs` 的 `compliance_violation()`，
+    ///   `terms` 装命中的红线词。**夹具必须挑 ASCII 词**（`100%`，
+    ///   `crates/geo-domain/data/adlaw_terms.txt` 里就有）：`guard_instance_params_stay_ascii`
+    ///   没有白名单，而它守的是「我们自己的夹具与常量」；生产环境 `terms` 装中文红线词
+    ///   是**用户数据**、明确不在那条哨兵范围内，那条链路由 `tests/prompt_service.rs`
+    ///   的真实用例钉（裁定 §J）。
+    /// - `crawler/empty` ← `services/entity_card_service.rs`：两个键**永远都发**；
+    ///   `skipped` 是至多 3 条 `"{url} {稳定记号}"` 用 `"; "` 连接的 ASCII 数据行，
+    ///   记号由 `crates/geo-crawler/src/site.rs` 的 `SKIP_*` 常量给出（裁定 §G-5 / R-C4）。
+    /// - `prompt_set/empty_import` ← `services/prompt_service.rs`：契约登记 `[]`，
+    ///   逐行错误明细走 `detail` 不走 params，所以夹具是**无参数**实例。
+    /// - `llm/config` ← `state.rs` 的 `config_from_settings` 与
+    ///   `services/settings_service.rs` 的 `parse_provider`：三个 reason 各一条，
+    ///   `value` 装**出错的那个值**（裁定 R-E：不是合法取值列表）。
+    /// - `ipc/internal` ← `IpcError::internal`：**无参数码**。裁定 §I 给了两条路，
+    ///   这里选的是「删掉契约里的 `reason` 声明」那一支——三个调用点全在
+    ///   `ipc/export.rs`（不在 Task 5 的写入集里），且「对话框被中断」这类失败在
+    ///   23 键目录里没有对应记号，而目录文件 `crates/geo-domain/src/error.rs` 同样禁改。
+    fn shell_literal_cases() -> Vec<IpcError> {
+        vec![
+            IpcError::with_params(err_codes::COMPLIANCE_VIOLATION, [("terms", "100%")]),
+            IpcError::with_params(
+                err_codes::CRAWLER_EMPTY,
+                [
+                    ("domain", "https://a.example/"),
+                    ("skipped", "https://a.example/admin robots_disallowed"),
+                ],
+            ),
+            IpcError::new(err_codes::PROMPT_SET_EMPTY_IMPORT, "no valid rows imported"),
+            IpcError::with_params(
+                err_codes::LLM_CONFIG,
+                [("reason", "unknown_provider"), ("value", "deep_seek")],
+            ),
+            IpcError::with_params(
+                err_codes::LLM_CONFIG,
+                [("reason", "missing_base_url"), ("value", "custom")],
+            ),
+            IpcError::with_params(
+                err_codes::LLM_CONFIG,
+                [("reason", "missing_model"), ("value", "custom")],
+            ),
+            IpcError::internal("export dialog dismissed"),
+        ]
+    }
+
     // -----------------------------------------------------------------
     // 编译器强制的穷举守卫。
     //
@@ -1060,10 +1113,10 @@ mod tests {
     /// 参数名」挡在编译期之后第一道测试里——前端词典按 params 名插值，
     /// 多一个没登记的键就是渲染出一个空占位符。
     ///
-    /// 变体清单由上面四个无兜底 `match` 强制（加变体即编译失败）；
-    /// 这里只断言「子集」，因为它连壳内字面量站点一起管（`compliance/violation` 等），
-    /// 而那些站点今天还不发 params（Task 5 才逐个补）。「清单声明 == 实际发出键的并集」
-    /// 那条**相等**断言在 [`catalog_params_equal_the_emitted_union`] 里。
+    /// 变体清单由上面四个无兜底 `match` 强制（加变体即编译失败）；壳内字面量站点
+    /// 编译器管不到，由 [`shell_literal_cases`] 显式列出。这里只断言「子集」；
+    /// 「清单声明 == 实际发出键的并集」那条**相等**断言在
+    /// [`catalog_params_equal_the_emitted_union`] 里。
     #[test]
     fn params_keys_stay_inside_the_shared_catalog() {
         let allowed = catalog_params();
@@ -1088,18 +1141,10 @@ mod tests {
             emitted.push(IpcError::from(GeoError::not_found(kind, "x")));
             emitted.push(IpcError::from(StoreError::not_found(kind, "x")));
         }
-        // 壳内字面量站点：Task 5 才会逐个补 params，这里先保证 code 认得、键不越界
-        emitted.push(IpcError::internal("boom"));
-        emitted.extend(
-            [
-                err_codes::COMPLIANCE_VIOLATION,
-                err_codes::PROMPT_SET_EMPTY_IMPORT,
-                err_codes::CRAWLER_EMPTY,
-                err_codes::LLM_CONFIG,
-            ]
-            .into_iter()
-            .map(|code| IpcError::new(code, "x")),
-        );
+        // 壳内字面量站点：Task 5 已逐个补上 params，因此这里用**带真实取值**的夹具，
+        // 而不是 `IpcError::new(code, "x")` 那种空 params 占位——空占位对「键不越界」
+        // 这条断言毫无贡献（没有键可查）。
+        emitted.extend(shell_literal_cases());
 
         assert!(!emitted.is_empty());
         // 防空跑：真有 params 被填出来，下面的「键不越界」才有意义
@@ -1138,10 +1183,10 @@ mod tests {
     /// 兜住；本守卫负责**多发**方向（发出清单外的键，`params_keys_stay_inside_the_shared_catalog`
     /// 也管这个方向但只到「子集」为止）与「整个 code 谁都没发」。
     ///
-    /// 覆盖范围 = 四张变体清单 + `NOT_FOUND_KINDS` + 跨 crate 的 `upstream/*` 包装形态。
-    /// 壳内字面量站点与前端专属码今天发不出（或根本不由 Rust 发出）清单登记的键，
-    /// 因此显式列在 `EXEMPT` 里豁免；豁免清单本身也被断言，免得某个 code 因为
-    /// 「谁都没发它」而悄悄逃出上面的相等断言。
+    /// 覆盖范围 = 四张变体清单、`NOT_FOUND_KINDS`、跨 crate 的 `upstream/*` 包装形态，
+    /// 外加 [`shell_literal_cases`]（壳内那 5 个 `err_codes::` 码，编译器穷举不到）。
+    /// 只剩**前端专属**的码根本不由 Rust 发出，因此显式列在 `EXEMPT` 里豁免；
+    /// 豁免清单本身也被断言，免得某个 code 因为「谁都没发它」而悄悄逃出上面的相等断言。
     #[test]
     fn catalog_params_equal_the_emitted_union() {
         let declared = catalog_params();
@@ -1167,6 +1212,7 @@ mod tests {
             cases.push(IpcError::from(GeoError::not_found(kind, "x")));
             cases.push(IpcError::from(StoreError::not_found(kind, "x")));
         }
+        cases.extend(shell_literal_cases());
         assert!(!cases.is_empty());
 
         // 按 code 聚合取并集
@@ -1192,30 +1238,17 @@ mod tests {
         }
 
         /// 本守卫**不覆盖**的 code，以及为什么。改动这里必须同时说明理由。
-        /// 三类情况分开写（复审 M-5：此前混成一句，其中两处不准确）。
-        const EXEMPT: [&str; 7] = [
-            // ① 壳内**有**字面量站点、清单也登记了 params，但今天一个都不发：
-            //    `services/prompt_service.rs:558` 与 `services/entity_card_service.rs:104`
-            //    都是 `IpcError::new(code, 中文散文)`。逐个补 params 是 **Task 5** 的活
-            //    （`crawler/empty` 的 `skipped` 还要等 `SkippedPage.reason` 统一成稳定 key）。
-            "compliance/violation",
-            "crawler/empty",
-            // 注：`prompt_set/empty_import` 的清单声明本来就是 `[]`，**没有 params 可补**；
-            // 它进 EXEMPT 的真实原因只是「四张变体清单里没有它的实例」（壳内发射点在
-            // `services/prompt_service.rs`，属 Task 5）。放在这一组是因为发射点同类。
-            "prompt_set/empty_import",
-            // ② 壳内**有**发射点、但今天不带清单登记的参数：`ipc/internal` 由本文件的
-            //    `IpcError::internal` 发出，契约给它登记了 `["reason"]`
-            //    却从来没人填 —— 一处既存的契约/实现漂移。**owner = Task 5**：
-            //    `IpcError::internal` 在本文件而不在 `services/**`，不在 Task 5「服务层站点
-            //    key 化」的字面范围内，容易两头都不认领，所以在这里点名。
-            "ipc/internal",
-            // ③ 前端专属：Rust 侧没有发射点（清单里先收着，见
-            //    `catalog_reserves_the_frontend_only_ipc_codes`）
-            "ipc/invoke_failed",
-            "ipc/unknown",
-            "ipc/unknown_command",
-        ];
+        ///
+        /// Task 5 之前这里是 7 个：壳内那 4 个码（`compliance/violation`、`crawler/empty`、
+        /// `prompt_set/empty_import`、`ipc/internal`）当时都发不出清单登记的键，只能豁免。
+        /// 现在它们全部由 [`shell_literal_cases`] 提供实例、进入上面的相等断言，
+        /// 只剩**前端专属**这一类：Rust 侧没有发射点，清单里先收着
+        /// （见 `catalog_reserves_the_frontend_only_ipc_codes`）。
+        ///
+        /// 注：`ipc/internal` 走的是裁定 §I 的第二条路——契约里那个从来没人填的
+        /// `reason` 声明已删（params-only 编辑，同一 commit），它因此是**无参数码**，
+        /// 以「空集 == 空集」通过相等断言，不再需要豁免。
+        const EXEMPT: [&str; 3] = ["ipc/invoke_failed", "ipc/unknown", "ipc/unknown_command"];
         let uncovered: BTreeSet<String> = declared
             .keys()
             .filter(|code| !union.contains_key(*code))
@@ -1238,8 +1271,8 @@ mod tests {
     /// 键名一个都没错，值却是中文散文，en-US 下直接露馅（AGENTS 规则 7：面向用户的文案
     /// 只能由前端词典按 locale 渲染）。有了这条，将来任何人往 params 里写中文当场红。
     ///
-    /// **边界（别让它看起来比实际更强）**：它只覆盖**本文件四张守卫清单里的夹具**，
-    /// 不是全量证明。生产环境的 `value` 完全可能合法地带非 ASCII —— 那是**用户数据**
+    /// **边界（别让它看起来比实际更强）**：它只覆盖**本文件五张守卫清单里的夹具**
+    /// （四张变体清单 + [`shell_literal_cases`]），不是全量证明。生产环境的 `value` 完全可能合法地带非 ASCII —— 那是**用户数据**
     /// （中文品牌名、中文别名、用户填的网址），由输入决定，本守卫不覆盖、也不该覆盖。
     /// 它证明的是一件更窄但更硬的事：**我们自己的夹具与常量里没有中文散文**，
     /// 因此「params 的取值只能是语言中立的数据或目录里的 reason key」在常量层面成立。
@@ -1268,6 +1301,7 @@ mod tests {
             cases.push(IpcError::from(GeoError::not_found(kind, "x")));
             cases.push(IpcError::from(StoreError::not_found(kind, "x")));
         }
+        cases.extend(shell_literal_cases());
         assert!(!cases.is_empty());
 
         for case in &cases {

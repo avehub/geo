@@ -63,11 +63,20 @@ impl LlmFactory {
     }
 
     /// 由 `AppSettings` 推出 provider 配置；`model` 为空则用 provider 默认模型。
+    ///
+    /// 三处失败一律发 `llm/config` + 稳定 `reason`（裁定 R-E）：
+    /// `unknown_provider`（`value` = 用户填的非法串）/ `missing_base_url` /
+    /// `missing_model`（`value` = `Provider::as_str()` 的稳定 id）。
+    /// 「设置 → 模型服务商 → 接口地址」这类可操作指引由前端词典按 locale 渲染，
+    /// 后端不拼句子（AGENTS 规则 7）。
     pub fn config_from_settings(settings: &AppSettings) -> Result<LlmConfig, IpcError> {
         let provider = LlmProvider::parse(&settings.model.provider).ok_or_else(|| {
-            IpcError::new(
+            IpcError::with_params(
                 err_codes::LLM_CONFIG,
-                format!("未知的模型服务商：{}", settings.model.provider),
+                [
+                    ("reason", "unknown_provider"),
+                    ("value", settings.model.provider.as_str()),
+                ],
             )
         })?;
         let mut config =
@@ -94,16 +103,16 @@ impl LlmFactory {
         }
         if provider == LlmProvider::Custom {
             if config.base_url.trim().is_empty() {
-                return Err(IpcError::new(
+                return Err(IpcError::with_params(
                     err_codes::LLM_CONFIG,
-                    "自定义服务商必须填写接口地址：设置 → 模型 → 接口地址（形如 https://api.example.com/v1）",
+                    [("reason", "missing_base_url"), ("value", provider.as_str())],
                 ));
             }
             // `Custom` 没有默认模型名，不填就会在发请求时才报「模型名为空」
             if config.model.trim().is_empty() {
-                return Err(IpcError::new(
+                return Err(IpcError::with_params(
                     err_codes::LLM_CONFIG,
-                    "自定义服务商必须填写模型名：设置 → 模型 → 模型名",
+                    [("reason", "missing_model"), ("value", provider.as_str())],
                 ));
             }
         }
@@ -208,21 +217,43 @@ mod tests {
         assert_eq!(config.secret_ref, geo_store::secret_ref("llm", "custom"));
     }
 
-    /// 配置不全时要在**发请求之前**给出能照着做的中文提示，
-    /// 而不是让用户在连通性测试里看到一句空地址报错。
+    /// 配置不全时要在**发请求之前**拦下，并发出稳定 `reason` + provider id。
+    ///
+    /// 「设置 → 模型服务商 → 接口地址」这类可操作指引由前端词典按 locale 渲染
+    /// （spec §4.2 / 裁定 R-E）：后端只发记号，`value` 用 `Provider::as_str()`
+    /// 的稳定 id（与 Task 4 对 `geo-llm/src/client.rs` 的口径一致），不是中文句子。
     #[test]
-    fn custom_provider_without_base_url_or_model_explains_what_to_fill_in() {
+    fn custom_provider_gaps_report_stable_reasons_keyed_by_the_provider_id() {
         let mut settings = AppSettings::default();
         settings.model.provider = "custom".to_string();
 
         let error = LlmFactory::config_from_settings(&settings).expect_err("缺接口地址必须拦下");
         assert_eq!(error.code, "llm/config");
-        assert!(error.message.contains("接口地址"), "{}", error.message);
+        assert_eq!(error.params["reason"], "missing_base_url");
+        assert_eq!(error.params["value"], "custom");
+        assert_eq!(error.params.len(), 2, "{:?}", error.params);
 
         settings.model.base_url = Some("https://api.example.com/v1".to_string());
         let error = LlmFactory::config_from_settings(&settings).expect_err("缺模型名必须拦下");
         assert_eq!(error.code, "llm/config");
-        assert!(error.message.contains("模型名"), "{}", error.message);
+        assert_eq!(error.params["reason"], "missing_model");
+        assert_eq!(error.params["value"], "custom");
+        assert_eq!(error.params.len(), 2, "{:?}", error.params);
+    }
+
+    /// `unknown_provider` 的 `value` 是**用户填的那个非法串**，不是合法取值列表
+    /// （裁定 R-E：列表前端本来就能从 `llm_providers` 拿到，属文案不属参数）。
+    #[test]
+    fn unknown_provider_reason_carries_the_offending_value() {
+        let mut settings = AppSettings::default();
+        settings.model.provider = "gpt".to_string();
+
+        let error =
+            LlmFactory::config_from_settings(&settings).expect_err("认不出的服务商必须拦下");
+        assert_eq!(error.code, "llm/config");
+        assert_eq!(error.params["reason"], "unknown_provider");
+        assert_eq!(error.params["value"], "gpt");
+        assert_eq!(error.params.len(), 2, "{:?}", error.params);
     }
 
     /// 预设 Provider 也允许覆盖接口地址（企业内网网关 / 自建代理的常见诉求）。

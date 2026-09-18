@@ -242,6 +242,10 @@ async fn secret_commands_reject_an_unknown_provider() {
         .await
         .expect_err("空 Key 应拒绝");
     assert_eq!(error.code, "validation/failed");
+    // 裁定 R-F 的唯一例外：`field` 从含糊的 `value` 改成 `api_key`
+    assert_eq!(error.params["field"], "api_key");
+    assert_eq!(error.params["reason"], "required");
+    assert_eq!(error.params.len(), 2, "{:?}", error.params);
 }
 
 #[tokio::test]
@@ -451,5 +455,6 @@ async fn full_chain_still_delivers_sixty_prompts_without_a_model() {
         .await
         .expect("无 Key 时出题降级而不是报错");
     assert!(set.items.len() >= SUFFICIENT_SAMPLE_SIZE);
-    assert!(set.notes.unwrap_or_default().contains("降级"));
+    // 降级说明是 `degraded ` 前缀的机器行（裁定 §H-1），散文行不再表示降级
+    assert!(set.notes.unwrap_or_default().contains("degraded "));
 }

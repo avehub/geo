@@ -2,6 +2,9 @@
 //!
 //! 列顺序即契约；表头缺列直接报错（不静默），行级错误逐行回报（允许部分成功）。
 
+use std::collections::BTreeMap;
+use std::fmt;
+
 use csv::{ReaderBuilder, Writer};
 use serde::{Deserialize, Serialize};
 
@@ -28,11 +31,58 @@ pub const ASSET_CSV_HEADER: [&str; 4] = ["kind", "url", "title", "note"];
 /// tags 单元格内的分隔符（避免与 CSV 逗号混淆）。
 const TAG_SEPARATOR: char = ';';
 
+/// CSV 单行失败。**行号 + 目录 key + 语言中立参数**，不含任何自然语言：
+/// 前端（`CsvToolbar`）按 `reason` 查词典、用 `params` 插值，与 `IpcError` 同构。
+///
+/// `reason` 取 `crates/geo-domain/src/error.rs` 模块注释那张目录表里的 key；
+/// `params` 是该 key 的配套参数（`value` / `limit` / `expected`）。
+/// 合规那一支直接透传 `compliance::check()` 的 `GeoError::params()`（裁定 R-C），
+/// 因此除配套参数外还会带 `field` 与 `reason` 两个基础键——**原样透传、不重写字面量**，
+/// 命中词是数据不是文案，渲不渲染由词典决定（裁定 §J）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CsvRowError {
     /// CSV 物理行号（表头为第 1 行）。
     pub row: usize,
     pub reason: String,
+    /// 该 reason key 的配套参数。`default` 是为了兼容升级前落库/序列化的旧载荷。
+    #[serde(default)]
+    pub params: BTreeMap<String, String>,
+}
+
+/// `parse_prompt_row` 的失败形态（crate 内私有）。
+///
+/// **刻意不经 `GeoError` 构造**（裁定 R-B）：① 行级失败本来就不是 `GeoError`
+/// （它是 `Result<_, String>` 的产物），硬套 `GeoError` 只为拿 key 是绕路；
+/// ② 这样 `csv_io.rs` 的 `GeoError::{validation,conflict,config}(` 生产站点数
+/// 保持 **10** 不变，`crates/geo-domain/tests/reason_key_sites.rs` 的反向计数守卫
+/// 原地绿，不必改它。
+#[derive(Debug, Clone, PartialEq)]
+struct RowFailure {
+    reason: String,
+    params: BTreeMap<String, String>,
+}
+
+impl RowFailure {
+    fn new(reason: &str) -> Self {
+        Self {
+            reason: reason.to_string(),
+            params: BTreeMap::new(),
+        }
+    }
+
+    /// 链式追加一个语言中立参数（`value` / `limit` / `expected`）。
+    fn with_param(mut self, key: &str, value: impl fmt::Display) -> Self {
+        self.params.insert(key.to_string(), value.to_string());
+        self
+    }
+
+    /// 复用领域自己的映射（裁定 R-C）：`compliance::check` 返回的 `GeoError`
+    /// 已经带 `reason="not_allowed"` + `value=命中词`，原样搬过来，不在这里重写字面量。
+    fn from_geo(error: &GeoError) -> Self {
+        let params = error.params();
+        let reason = params.get("reason").cloned().unwrap_or_default();
+        Self { reason, params }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -111,9 +161,13 @@ pub fn prompts_from_csv(raw: &str, set_id: PromptSetId) -> Result<CsvImportResul
         let record = match record {
             Ok(record) => record,
             Err(err) => {
+                // csv 库自己读不出这一物理行：`row_invalid` + `value` = 库原文
+                // （目录语义规则 3：解析器库返回的 Error 走 `parse_failed`/`row_invalid`，
+                // `value` 装原文）。
                 result.errors.push(CsvRowError {
                     row: err.position().map(|pos| pos.line() as usize).unwrap_or(0),
-                    reason: format!("CSV 行解析失败：{err}"),
+                    reason: "row_invalid".to_string(),
+                    params: BTreeMap::from([("value".to_string(), err.to_string())]),
                 });
                 continue;
             }
@@ -125,42 +179,53 @@ pub fn prompts_from_csv(raw: &str, set_id: PromptSetId) -> Result<CsvImportResul
         let cell = |name: &str| record.get(index_of(name)).unwrap_or("").trim().to_string();
         match parse_prompt_row(&cell, set_id, result.items.len() as i32) {
             Ok(item) => result.items.push(item),
-            Err(reason) => result.errors.push(CsvRowError { row, reason }),
+            Err(failure) => result.errors.push(CsvRowError {
+                row,
+                reason: failure.reason,
+                params: failure.params,
+            }),
         }
     }
     Ok(result)
 }
 
+/// 逐列判据一律发目录 key + 配套参数（裁定 R-D 把参数定死）：
+/// 留空 → `required`；字符数超限 → `too_long` + `limit`（**不带「字」**）；
+/// 我们自己的取值判据不通过（intent / weight / repeat_count / source 非法）→
+/// `invalid_format` + `value`=原始串；数值越界 → `out_of_range` + `expected`=`1~{MAX}` + `value`；
+/// 命中广告法红线词 → `not_allowed` + `value`=命中词（透传 `compliance::check` 的 params）。
 fn parse_prompt_row(
     cell: &dyn Fn(&str) -> String,
     set_id: PromptSetId,
     position: i32,
-) -> Result<PromptItem, String> {
+) -> Result<PromptItem, RowFailure> {
     let text = cell("text");
     if text.is_empty() {
-        return Err("text 不能为空".to_string());
+        return Err(RowFailure::new("required"));
     }
     if text.chars().count() > MAX_PROMPT_CHARS {
-        return Err(format!("text 不能超过 {MAX_PROMPT_CHARS} 字"));
+        return Err(RowFailure::new("too_long").with_param("limit", MAX_PROMPT_CHARS));
     }
     // 导入的清单会直接变成采集用的抽样内容，所以红线检查不能只在生成/编辑环节做：
     // 「导出 → Excel 里改词 → 再导入」否则就是一条现成的绕过路径。
     if let Err(error) = crate::compliance::check(&text) {
-        return Err(error.user_message());
+        return Err(RowFailure::from_geo(&error));
     }
     let intent_raw = cell("intent");
-    let intent =
-        IntentCategory::parse(&intent_raw).ok_or_else(|| format!("intent 非法：{intent_raw}"))?;
+    let intent = IntentCategory::parse(&intent_raw)
+        .ok_or_else(|| RowFailure::new("invalid_format").with_param("value", &intent_raw))?;
     let weight_raw = cell("weight");
     let weight = if weight_raw.is_empty() {
         3
     } else {
         weight_raw
             .parse::<u8>()
-            .map_err(|_| format!("weight 非法：{weight_raw}"))?
+            .map_err(|_| RowFailure::new("invalid_format").with_param("value", &weight_raw))?
     };
     if !(1..=MAX_WEIGHT).contains(&weight) {
-        return Err(format!("weight 需在 1~{MAX_WEIGHT} 之间，当前 {weight}"));
+        return Err(RowFailure::new("out_of_range")
+            .with_param("expected", format!("1~{MAX_WEIGHT}"))
+            .with_param("value", weight));
     }
     let repeat_raw = cell("repeat_count");
     let repeat_count = if repeat_raw.is_empty() {
@@ -168,18 +233,19 @@ fn parse_prompt_row(
     } else {
         repeat_raw
             .parse::<u8>()
-            .map_err(|_| format!("repeat_count 非法：{repeat_raw}"))?
+            .map_err(|_| RowFailure::new("invalid_format").with_param("value", &repeat_raw))?
     };
     if !(1..=MAX_REPEAT_COUNT).contains(&repeat_count) {
-        return Err(format!(
-            "repeat_count 需在 1~{MAX_REPEAT_COUNT} 之间，当前 {repeat_count}"
-        ));
+        return Err(RowFailure::new("out_of_range")
+            .with_param("expected", format!("1~{MAX_REPEAT_COUNT}"))
+            .with_param("value", repeat_count));
     }
     let source_raw = cell("source");
     let source = if source_raw.is_empty() {
         PromptSource::Imported
     } else {
-        PromptSource::parse(&source_raw).ok_or_else(|| format!("source 非法：{source_raw}"))?
+        PromptSource::parse(&source_raw)
+            .ok_or_else(|| RowFailure::new("invalid_format").with_param("value", &source_raw))?
     };
     let group_name = cell("group_name");
     let tags_raw = cell("tags");
@@ -340,9 +406,9 @@ mod tests {
         assert_eq!(result.imported_count(), 2);
         assert_eq!(result.error_count(), 2);
         assert_eq!(result.errors[0].row, 3, "weight 非法在第 3 行");
-        assert!(result.errors[0].reason.contains("weight"));
+        assert_eq!(result.errors[0].reason, "out_of_range");
         assert_eq!(result.errors[1].row, 4);
-        assert!(result.errors[1].reason.contains("intent"));
+        assert_eq!(result.errors[1].reason, "invalid_format");
         assert_eq!(result.items[1].tags, vec!["核心词".to_string()]);
         assert_eq!(
             result.items[0].source,
@@ -356,7 +422,7 @@ mod tests {
         let csv = "text,intent,weight,group_name,tags,source,repeat_count\n ,pricing_plan,3,,,,\n";
         let result = prompts_from_csv(csv, PromptSetId::new()).unwrap();
         assert_eq!(result.imported_count(), 0);
-        assert!(result.errors[0].reason.contains("text"));
+        assert_eq!(result.errors[0].reason, "required");
     }
 
     /// 导出 → Excel 里加一句「保证排名」→ 再导入，是绕过红线检查的现成路径，
@@ -370,10 +436,103 @@ mod tests {
         assert_eq!(result.imported_count(), 1, "干净行照常导入");
         assert_eq!(result.error_count(), 1);
         assert_eq!(result.errors[0].row, 2, "行号要能对上物理行");
+        assert_eq!(result.errors[0].reason, "not_allowed");
+    }
+
+    /// 行级错误的**逐处映射**：`reason` 是目录 key，`params` 恰好是该 key 登记的配套参数
+    /// （裁定 R-D 把参数定死）。全部经生产函数 `prompts_from_csv` 触发。
+    #[test]
+    fn row_errors_carry_directory_keys_and_language_neutral_params() {
+        let long = "长".repeat(MAX_PROMPT_CHARS + 1);
+        // 一行只坏一列：`parse_prompt_row` 是顺序判据，一个单元格坏了就轮不到后面的列。
+        let mut payload = String::from("text,intent,weight,group_name,tags,source,repeat_count\n");
+        payload.push_str(",category_awareness,3,,,,\n");
+        payload.push_str(&format!("{long},category_awareness,3,,,,\n"));
+        payload.push_str("这个水泵100%好用,category_awareness,3,,,,\n");
+        payload.push_str("意图写错,not_an_intent,3,,,,\n");
+        payload.push_str("权重不是数字,category_awareness,abc,,,,\n");
+        payload.push_str("权重越界,category_awareness,9,,,,\n");
+        payload.push_str("采样不是数字,category_awareness,3,,,,x\n");
+        payload.push_str("采样越界,category_awareness,3,,,,7\n");
+        payload.push_str("来源非法,category_awareness,3,,,nope,\n");
+
+        let result = prompts_from_csv(&payload, PromptSetId::new()).expect("表头合法");
+        assert_eq!(result.imported_count(), 0, "每一行都该被拒");
+        assert_eq!(result.error_count(), 9, "{:?}", result.errors);
+
+        let expect = |index: usize, reason: &str, extra: &[(&str, &str)]| {
+            let error = &result.errors[index];
+            assert_eq!(error.reason, reason, "第 {} 条行错误", index + 1);
+            for (key, value) in extra {
+                assert_eq!(
+                    error.params.get(*key).map(String::as_str),
+                    Some(*value),
+                    "第 {} 条行错误的 params[{key:?}]：{:?}",
+                    index + 1,
+                    error.params
+                );
+            }
+        };
+
+        // 第 1 行：text 留空 → `required`，目录登记它不带任何配套参数
+        expect(0, "required", &[]);
+        assert_eq!(result.errors[0].params.len(), 0, "{:?}", result.errors[0]);
+        // 第 2 行：字符数超限 → `too_long` + `limit`（数字，**不带「字」**）
+        expect(1, "too_long", &[("limit", "300")]);
+        assert_eq!(result.errors[1].params.len(), 1);
+        // 第 3 行：命中广告法红线词 → 透传 `compliance::check` 的 params（裁定 R-C / §J）
+        expect(2, "not_allowed", &[("value", "100%")]);
+        assert_eq!(
+            result.errors[2].params["field"], "content",
+            "R-C 要求原样透传领域的 params，因此带 `field`：{:?}",
+            result.errors[2].params
+        );
+        assert_eq!(result.errors[2].params["reason"], "not_allowed");
+        // 第 4~9 行：逐列判据
+        expect(3, "invalid_format", &[("value", "not_an_intent")]);
+        expect(4, "invalid_format", &[("value", "abc")]);
+        expect(5, "out_of_range", &[("expected", "1~5"), ("value", "9")]);
+        expect(6, "invalid_format", &[("value", "x")]);
+        expect(7, "out_of_range", &[("expected", "1~3"), ("value", "7")]);
+        expect(8, "invalid_format", &[("value", "nope")]);
+
+        // 行号是 CSV **物理行号**（表头为第 1 行）
+        let line_numbers: Vec<usize> = result.errors.iter().map(|error| error.row).collect();
+        assert_eq!(
+            line_numbers,
+            (2..=10).collect::<Vec<_>>(),
+            "{line_numbers:?}"
+        );
+    }
+
+    /// 计划正文验收：`csv_io.rs` 里 `user_message()` 的**生产**用法归零。
+    ///
+    /// 它今天是紧凑日志串（`{code} k=v …`），而 `CsvRowError.reason` 直送 UI
+    /// （`CsvToolbar` 逐字渲染），日志串与散文混排是 Task 3 留下的可见退化。
+    #[test]
+    fn user_message_has_no_production_use_left_in_this_file() {
+        let source = include_str!("csv_io.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(
-            result.errors[0].reason.contains("保证排名"),
-            "原因里要给出命中词：{}",
-            result.errors[0].reason
+            !production.contains("user_message()"),
+            "`user_message()` 不得再进 `CsvRowError.reason`：行级错误要发目录 key + params"
+        );
+    }
+
+    /// 「物理行读不出来」那一支**从公开 API 不可达**：`prompts_from_csv` 只收 `&str`
+    /// （UTF-8 必然合法），reader 又是 `flexible(true)`（列数不齐不算错），
+    /// 于是 `records()` 的 `Err` 只剩 IO 错误，而源是内存里的 `&[u8]`。
+    /// 因此用源码字面量钉住映射（与 `tests/reason_key_sites.rs` 的 `UNREACHABLE` 同一手法）。
+    #[test]
+    fn the_unreachable_physical_row_failure_pins_row_invalid() {
+        let source = include_str!("csv_io.rs");
+        assert!(
+            source.contains("\"row_invalid\""),
+            "物理行失败必须发目录 key `row_invalid`"
+        );
+        assert!(
+            source.contains("err.to_string()"),
+            "`row_invalid` 必须配 `value` = csv 库原文（裁定 R-D）"
         );
     }
 

@@ -38,18 +38,36 @@ impl CrawlRequest {
     }
 }
 
-/// 被跳过的页面与原因（robots / 网络 / 解码）。
+/// 被跳过的页面与原因（robots / 总超时 / 抓取失败）。
 ///
-/// `reason` 今天混着两种形态：robots 与总超时是 `site.rs` 自己写的中文说明；
-/// 抓取失败那条来自 [`CrawlerError::user_message`](crate::CrawlerError::user_message)，
-/// Task 4 之后是紧凑日志格式（`crawler/network reason=http_status status=503 url=…`）。
+/// `reason` 是**稳定记号**，取值只有三种（裁定 §G-5 / R-C4）：
+/// [`SKIP_TOTAL_TIMEOUT`] / [`SKIP_ROBOTS_DISALLOWED`] / [`SKIP_FETCH_FAILED`]。
 /// 它最终经 `entity_card_service` 落进 `crawler/empty` 的 `skipped` 参数，
-/// 统一成稳定 key 属 Plan A 后续 task 的活。
+/// 而壳侧 `guard_instance_params_stay_ascii` **没有白名单**——params 的取值只能是
+/// 语言中立数据或稳定记号，中文说明一律只进日志（AGENTS 规则 7）。
+///
+/// 代价是粒度变粗：抓取失败不再区分超时 / 5xx / 非 HTML（改造前由
+/// [`CrawlerError::user_message`](crate::CrawlerError::user_message) 的紧凑串带出来）。
+/// 细节没有丢，只是换到了它该在的地方——`crawl_site` 的 `tracing::debug!`
+/// 已经把整个 `CrawlerError`（含 `status` / `url`）打进日志。
 #[derive(Debug, Clone, PartialEq)]
 pub struct SkippedPage {
     pub url: String,
     pub reason: String,
 }
+
+/// `SkippedPage::reason` 的三种取值。
+///
+/// 提成常量而不是各站点写字面量：这三个记号是 `crawler/empty` 的 `skipped` 参数
+/// 与前端词典之间的契约，拼错一个字母不会有任何测试变红（漂移守卫比的是**键名**
+/// 不是取值），与 `geo-llm` 把 reason key 收成常量的理由相同。
+///
+/// 总超时预算用尽（`FetchLimits::total_timeout`）。
+pub const SKIP_TOTAL_TIMEOUT: &str = "total_timeout";
+/// robots.txt 禁止抓取该路径。
+pub const SKIP_ROBOTS_DISALLOWED: &str = "robots_disallowed";
+/// 单页抓取或正文提取失败（超时 / 非 2xx / 超大 / 非 HTML / 解码失败）。
+pub const SKIP_FETCH_FAILED: &str = "fetch_failed";
 
 /// 抓取结果：成功页面、角色索引与跳过明细。
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -116,9 +134,14 @@ pub async fn crawl_site(
     let mut covered: HashSet<PageRole> = HashSet::new();
     while result.pages.len() < limits.max_pages {
         if Instant::now() >= deadline {
+            tracing::debug!(
+                budget = ?limits.total_timeout,
+                pages = result.pages.len(),
+                "已达总超时上限，提前结束抓取"
+            );
             result.skipped.push(SkippedPage {
                 url: request.origin.to_string(),
-                reason: format!("已达总超时上限（{:?}），提前结束抓取", limits.total_timeout),
+                reason: SKIP_TOTAL_TIMEOUT.to_string(),
             });
             break;
         }
@@ -134,7 +157,7 @@ pub async fn crawl_site(
             tracing::debug!(url = %url, "robots.txt 禁止抓取");
             result.skipped.push(SkippedPage {
                 url: url.to_string(),
-                reason: "robots.txt 禁止抓取该路径".to_string(),
+                reason: SKIP_ROBOTS_DISALLOWED.to_string(),
             });
             continue;
         }
@@ -153,7 +176,7 @@ pub async fn crawl_site(
                 tracing::debug!(url = %url, error = %error, "页面抓取失败，跳过");
                 result.skipped.push(SkippedPage {
                     url: url.to_string(),
-                    reason: error.user_message(),
+                    reason: SKIP_FETCH_FAILED.to_string(),
                 });
             }
         }
@@ -294,10 +317,9 @@ mod tests {
             .iter()
             .find(|page| page.url.contains("/admin"))
             .unwrap_or_else(|| panic!("/admin/secret 应被 robots 拦下：{result:?}"));
-        assert!(
-            blocked.reason.contains("robots"),
-            "reason 必须点明是 robots：{}",
-            blocked.reason
+        assert_eq!(
+            blocked.reason, SKIP_ROBOTS_DISALLOWED,
+            "reason 必须是稳定记号（裁定 §G-5），不得是中文说明"
         );
         assert!(
             !result.pages.iter().any(|page| page.url.contains("/admin")),
@@ -349,9 +371,11 @@ mod tests {
             .iter()
             .find(|page| page.url.contains("/broken.html"))
             .unwrap_or_else(|| panic!("坏页应记入 skipped：{result:?}"));
-        assert!(
-            broken.reason.contains("500"),
-            "reason 应含状态码：{}",
+        // 裁定 §G-5：`reason` 统一成稳定记号，状态码这类细节留在 `tracing::debug!`
+        // （那里打的是整个 `CrawlerError`，含 `status` 与 `url`），不进 params。
+        assert_eq!(
+            broken.reason, SKIP_FETCH_FAILED,
+            "reason 必须是稳定记号，不得是紧凑日志串：{}",
             broken.reason
         );
     }

@@ -67,7 +67,7 @@
     },
     {
       "code": "ipc/internal",
-      "params": ["reason"],
+      "params": [],
       "note": "IpcError::internal：不属于任何下游 crate 的壳内错误（配置、路径、序列化）。"
     },
     {

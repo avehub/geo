@@ -74,18 +74,16 @@ impl ProjectService {
         payload: &str,
         now: DateTime<Utc>,
     ) -> Result<ImportReport, IpcError> {
+        // `parse_failed` 装**序列化库原文**（目录语义规则 3），不自己拼句子；
+        // 当前支持的版本号属文案，由前端词典给，不进 params（`expected` 只用于
+        // `a~b` / `<=n` / `<n` 三种数值区间表达式，装版本串会说谎）。
         let exported: ProjectExport = serde_json::from_str(payload).map_err(|error| {
-            GeoError::validation("payload", format!("不是合法的项目导出文件：{error}"))
+            GeoError::validation("payload", "parse_failed").with_param("value", error)
         })?;
         if exported.format_version != EXPORT_FORMAT_VERSION {
-            return Err(GeoError::validation(
-                "format_version",
-                format!(
-                    "导出文件版本 {} 与当前 {} 不兼容",
-                    exported.format_version, EXPORT_FORMAT_VERSION
-                ),
-            )
-            .into());
+            return Err(GeoError::validation("format_version", "invalid_format")
+                .with_param("value", exported.format_version.clone())
+                .into());
         }
 
         let project_id = ProjectId::new();

@@ -1,17 +1,21 @@
 //! IPC 边界的错误契约。
 //!
-//! 前端只认两样东西：稳定的 `code`（用于分支处理，例如 `llm/missing_secret`
-//! 就去引导用户填 Key）与中文 `message`（直接展示）。因此所有 crate 的错误
-//! 都在这一层收敛成 [`IpcError`]，不允许把内部错误类型直接抛给 WebView。
+//! 前端认三样东西：稳定的 `code`（用于分支处理，例如 `llm/missing_secret`
+//! 就去引导用户填 Key）、语言中立的 `params`（`field` / `id` / `status` …，
+//! 供词典按当前语言插值，参数名由冻结的 `contracts/error-codes.json` 登记）
+//! 与兜底 `message`（词典未命中时展示、以及打日志用，不承诺任何语言的散文）。
+//! 因此所有 crate 的错误都在这一层收敛成 [`IpcError`]，不允许把内部错误类型
+//! 直接抛给 WebView。
 //!
-//! 这里还是密钥防泄漏的**最后一道关**：即便上游把 API Key 拼进了错误信息，
-//! [`redact`] 也会在送出前把它抹成 `***`。
+//! 这里还是密钥防泄漏的**最后一道关**：即便上游把 API Key 拼进了错误信息或
+//! 参数值，[`redact`] 也会在送出前把它抹成 `***`。
 
 use geo_crawler::CrawlerError;
 use geo_domain::GeoError;
 use geo_llm::LlmError;
 use geo_store::StoreError;
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 /// 壳内直接用字面量发出的错误码。
 ///
@@ -36,6 +40,10 @@ pub(crate) mod err_codes {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IpcError {
     pub code: String,
+    /// 语言中立参数：键是稳定标识符（snake_case），值是原始值，都不是散文。
+    /// 每个 code 能带哪些键由 `contracts/error-codes.json` 冻结。
+    /// 用 `BTreeMap` 而不是 `HashMap`：序列化顺序稳定，快照与日志可比对。
+    pub params: BTreeMap<String, String>,
     pub message: String,
     pub detail: Option<serde_json::Value>,
 }
@@ -44,9 +52,34 @@ impl IpcError {
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
+            params: BTreeMap::new(),
             message: redact(&message.into()),
             detail: None,
         }
+    }
+
+    /// 带语言中立参数构造。参数名必须来自 `contracts/error-codes.json` 里该
+    /// code 登记的 `params`，值一律原样透传（不得是句子）。
+    ///
+    /// `message` 用紧凑日志格式 `"{code} {k}={v} …"` 兜底：它不含任何自然语言，
+    /// 因此前端切语言时不会露出另一种语言的散文；词典命中时前端根本不用它。
+    pub fn with_params(
+        code: impl Into<String>,
+        params: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
+    ) -> Self {
+        let code = code.into();
+        let params: BTreeMap<String, String> = params
+            .into_iter()
+            .map(|(key, value)| (key.into(), value.into()))
+            .collect();
+        let message = fallback_message(&code, &params);
+        Self::new(code, message).with_redacted_params(params)
+    }
+
+    /// 在既有错误上追加一个参数（[`IpcError::with_params`] 的单个版本）。
+    pub fn with_param(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.params.insert(key.into(), redact(&value.into()));
+        self
     }
 
     /// 附带结构化上下文。detail 里可能原样夹带上游响应片段，因此同样要脱敏。
@@ -61,6 +94,15 @@ impl IpcError {
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new(err_codes::IPC_INTERNAL, message)
     }
+
+    /// 批量补参数。params 是新增的出口，值同样要过 [`redact`]，
+    /// 否则密钥能绕开 `message` 那道关直达 WebView（AGENTS 规则 3）。
+    fn with_redacted_params(mut self, params: BTreeMap<String, String>) -> Self {
+        for (key, value) in params {
+            self.params.insert(key, redact(&value));
+        }
+        self
+    }
 }
 
 impl std::fmt::Display for IpcError {
@@ -73,25 +115,33 @@ impl std::error::Error for IpcError {}
 
 impl From<GeoError> for IpcError {
     fn from(error: GeoError) -> Self {
-        Self::new(error.code(), error.user_message())
+        let code = error.code();
+        let message = error.user_message();
+        Self::new(code, message).with_redacted_params(geo_params(error))
     }
 }
 
 impl From<StoreError> for IpcError {
     fn from(error: StoreError) -> Self {
-        Self::new(error.code(), error.to_string())
+        let code = error.code();
+        let message = error.to_string();
+        Self::new(code, message).with_redacted_params(store_params(error))
     }
 }
 
 impl From<LlmError> for IpcError {
     fn from(error: LlmError) -> Self {
-        Self::new(error.code(), error.user_message())
+        let code = error.code();
+        let message = error.user_message();
+        Self::new(code, message).with_redacted_params(llm_params(error))
     }
 }
 
 impl From<CrawlerError> for IpcError {
     fn from(error: CrawlerError) -> Self {
-        Self::new(error.code(), error.user_message())
+        let code = error.code();
+        let message = error.user_message();
+        Self::new(code, message).with_redacted_params(crawler_params(error))
     }
 }
 
@@ -117,6 +167,110 @@ impl From<std::io::Error> for IpcError {
     fn from(error: std::io::Error) -> Self {
         Self::from(GeoError::from(error))
     }
+}
+
+// ---------------------------------------------------------------------
+// params 派生。
+//
+// 契约（spec §4.2）要求每个 code 带一组语言中立参数，参数名由冻结的
+// `contracts/error-codes.json` 登记，因此键名必须逐字取自清单、不得在这里
+// 发明新键（测试 `params_keys_stay_inside_the_shared_catalog` 会红）。
+//
+// 下游 crate 今天只暴露 `code()` 与中文 `Display`，还没有自己的 `params()`，
+// 所以先在这一层按变体就地取值：Plan A Task 3/4 会把同样的映射下推成
+// `GeoError::params()` / `StoreError::params()` / `LlmError::params()` /
+// `CrawlerError::params()`，届时下面四个函数各自塌成一行转发。
+//
+// 四个 `match` 都**不写 `_` 兜底**：给下游错误加变体，这里立刻编译失败，
+// 逼实现者顺手决定新变体带哪些 params（与本文件测试模块的穷举守卫同一思路）。
+//
+// 值一律原样透传。部分值今天仍是中文散文（`validation` 的 reason、
+// `CrawlerError::Network` 那段合并文本），那是 Task 3/5 换 reason key、
+// Task 4 拆变体的活；本任务只负责把管道接通。
+// ---------------------------------------------------------------------
+
+/// `GeoError` → params。`Upstream` 按契约换成包装族的两个键：
+/// `upstream_code` 是里层稳定码，`upstream` 是上游原文（不进词典，
+/// UI 以次要文本展示）。
+fn geo_params(error: GeoError) -> BTreeMap<String, String> {
+    match error {
+        GeoError::Validation { field, reason } => param_map([("field", field), ("reason", reason)]),
+        GeoError::NotFound { kind, id } => param_map([("kind", kind), ("id", id)]),
+        GeoError::Conflict { reason } => param_map([("reason", reason)]),
+        GeoError::Config { reason } => param_map([("reason", reason)]),
+        GeoError::Upstream { code, message } => {
+            param_map([("upstream_code", code), ("upstream", message)])
+        }
+        GeoError::Io(io_error) => param_map([("reason", io_error.to_string())]),
+        GeoError::Serde(serde_error) => param_map([("reason", serde_error.to_string())]),
+    }
+}
+
+/// `StoreError` → params。`Sqlx` 按 `code()` 落到 `state/conflict` 或
+/// `io/failed`，两者登记的都是 `reason`，因此不必在这里重复唯一约束判定。
+fn store_params(error: StoreError) -> BTreeMap<String, String> {
+    match error {
+        StoreError::NotFound { kind, id } => param_map([("kind", kind), ("id", id)]),
+        StoreError::Validation { field, reason } => {
+            param_map([("field", field), ("reason", reason)])
+        }
+        StoreError::Conflict(reason) => param_map([("reason", reason)]),
+        StoreError::Sqlx(sqlx_error) => param_map([("reason", sqlx_error.to_string())]),
+        StoreError::Serde(serde_error) => param_map([("reason", serde_error.to_string())]),
+        StoreError::Secret(reason) => param_map([("reason", reason)]),
+        StoreError::Io(io_error) => param_map([("reason", io_error.to_string())]),
+    }
+}
+
+/// `LlmError` → params。`RateLimited` / `MissingSecret` 在清单里 params 为空，
+/// 不能凭空塞键；`BadResponse` / `Deserialize` 变体只带一段诊断文本，
+/// 清单里的 `upstream`（上游原文）要等 Task 4 拆变体才填得上。
+fn llm_params(error: LlmError) -> BTreeMap<String, String> {
+    match error {
+        LlmError::Config(reason) => param_map([("reason", reason)]),
+        LlmError::Transport(transport_error) => {
+            param_map([("reason", transport_error.to_string())])
+        }
+        LlmError::RateLimited | LlmError::MissingSecret => BTreeMap::new(),
+        LlmError::Server { status } => param_map([("status", status.to_string())]),
+        LlmError::BadResponse(reason) => param_map([("reason", reason)]),
+        LlmError::Deserialize(reason) => param_map([("reason", reason)]),
+    }
+}
+
+/// `CrawlerError` → params。清单给 `crawler/network` 登记了 url / status / reason
+/// 三个键，但变体只带一段合并文本，因此现在只填 `reason`（清单里唯一恒在的键）；
+/// `crawler/too_large` 的 `limit` 同理要等 Task 4。
+fn crawler_params(error: CrawlerError) -> BTreeMap<String, String> {
+    match error {
+        CrawlerError::Blocked { url, reason } => param_map([("url", url), ("reason", reason)]),
+        CrawlerError::Timeout { url } => param_map([("url", url)]),
+        CrawlerError::Network(reason) => param_map([("reason", reason)]),
+        CrawlerError::TooLarge { url } => param_map([("url", url)]),
+        CrawlerError::InvalidUrl(url) => param_map([("url", url)]),
+        CrawlerError::Decode(reason) => param_map([("reason", reason)]),
+    }
+}
+
+/// 收若干 `(键, 值)` 成有序 map。键限定 `&'static str`：参数名是契约的一部分，
+/// 必须写死在代码里，不允许运行期拼出来。
+fn param_map(pairs: impl IntoIterator<Item = (&'static str, String)>) -> BTreeMap<String, String> {
+    pairs
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect()
+}
+
+/// `with_params` 的兜底文案：`"{code} {k}={v} …"`，键按字典序（`BTreeMap`）。
+fn fallback_message(code: &str, params: &BTreeMap<String, String>) -> String {
+    let mut message = String::from(code);
+    for (key, value) in params {
+        message.push(' ');
+        message.push_str(key);
+        message.push('=');
+        message.push_str(value);
+    }
+    message
 }
 
 /// 递归抹掉 JSON 里所有字符串中的密钥样式片段。
@@ -177,7 +331,7 @@ mod tests {
     use geo_crawler::CrawlerError;
     use geo_llm::{LlmError, TransportError};
     use geo_store::StoreError;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::io;
 
     /// 前后端共享的错误码真值源：`contracts/error-codes.json`。
@@ -268,6 +422,14 @@ mod tests {
         assert!(!leaked.message.contains("sk-second0000"));
         assert!(leaked.message.contains("***"));
         assert!(leaked.message.contains("鉴权失败"));
+        // params 是新增的出口，同样不得夹带 Key（AGENTS 规则 3）
+        let upstream = leaked
+            .params
+            .get("upstream")
+            .expect("upstream/* 带 upstream 参数");
+        assert!(!upstream.contains("sk-abc123XYZ_-9"), "{upstream}");
+        assert!(!upstream.contains("sk-second0000"), "{upstream}");
+        assert!(upstream.contains("***"), "{upstream}");
     }
 
     #[test]
@@ -348,6 +510,19 @@ mod tests {
             StoreError::Serde(serde_json::from_str::<u8>("nope").unwrap_err()),
             StoreError::secret("keyring unavailable"),
             StoreError::Io(io::Error::other("磁盘满")),
+        ]
+    }
+
+    /// `GeoError` 的代表性用例：除 `NotFound`（kind 是运行期字符串，由
+    /// `NOT_FOUND_KINDS` 显式列举）外每个变体各一条。
+    fn geo_cases() -> Vec<GeoError> {
+        vec![
+            GeoError::validation("brand_name", "required"),
+            GeoError::conflict("duplicate"),
+            GeoError::config("missing_base_url"),
+            GeoError::upstream("llm/server", "HTTP 503"),
+            GeoError::Io(io::Error::other("磁盘满")),
+            GeoError::Serde(serde_json::from_str::<u8>("nope").unwrap_err()),
         ]
     }
 
@@ -462,15 +637,7 @@ mod tests {
         emitted.extend(crawler.into_iter().map(|e| geo_code(&GeoError::from(e))));
 
         // 领域层：除 NotFound（kind 是运行期字符串，走下面的循环）外逐个变体过一遍
-        let geo_cases = [
-            GeoError::validation("brand_name", "required"),
-            GeoError::conflict("duplicate"),
-            GeoError::config("missing_base_url"),
-            GeoError::upstream("llm/server", "HTTP 503"),
-            GeoError::Io(io::Error::other("磁盘满")),
-            GeoError::Serde(serde_json::from_str::<u8>("nope").unwrap_err()),
-        ];
-        emitted.extend(geo_cases.iter().map(geo_code));
+        emitted.extend(geo_cases().iter().map(geo_code));
 
         // 存储层：7 个变体逐个过一遍（含 Sqlx / Serde / Secret / Io）
         emitted.extend(store_variants().iter().map(store_code));
@@ -593,6 +760,233 @@ mod tests {
                 );
             }
             previous = Some(code);
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // 语言中立 `params`（spec §4.2）。
+    //
+    // Plan A 的错误契约是「稳定 code + 语言中立 params」，文案由前端词典按当前
+    // 语言渲染。因此下面只断言 `code` 与 `params` 的形状与取值，**不断言
+    // `message` 的中文散文**——Task 3 会把 Display 改成紧凑日志格式，
+    // 现在钉住的散文到时候必然全红。
+    // -----------------------------------------------------------------
+
+    /// 共享清单里每个 code 登记的 params 名（`contracts/error-codes.json`）。
+    fn catalog_params() -> HashMap<String, Vec<String>> {
+        let parsed: serde_json::Value = serde_json::from_str(ERROR_CATALOG).expect("清单可解析");
+        parsed["codes"]
+            .as_array()
+            .expect("codes 是数组")
+            .iter()
+            .map(|entry| {
+                let code = entry["code"]
+                    .as_str()
+                    .expect("每条都要有字符串 code")
+                    .to_string();
+                let params = entry["params"]
+                    .as_array()
+                    .expect("params 是数组")
+                    .iter()
+                    .map(|param| param.as_str().expect("params 必须都是字符串").to_string())
+                    .collect();
+                (code, params)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn not_found_error_carries_kind_and_id_params() {
+        let error = IpcError::from(GeoError::not_found("project", "abc"));
+        assert_eq!(error.code, "project/not_found");
+        assert_eq!(error.params["kind"], "project");
+        assert_eq!(error.params["id"], "abc");
+        assert_eq!(error.params.len(), 2);
+
+        let stored = IpcError::from(StoreError::not_found("prompt_set", "set-1"));
+        assert_eq!(stored.code, "prompt_set/not_found");
+        assert_eq!(stored.params["kind"], "prompt_set");
+        assert_eq!(stored.params["id"], "set-1");
+    }
+
+    #[test]
+    fn validation_error_carries_field_and_reason_params() {
+        let error = IpcError::from(GeoError::validation("brand_name", "required"));
+        assert_eq!(error.code, "validation/failed");
+        assert_eq!(error.params["field"], "brand_name");
+        assert_eq!(error.params["reason"], "required");
+        assert_eq!(error.params.len(), 2);
+
+        let stored = IpcError::from(StoreError::validation("domain", "invalid_url"));
+        assert_eq!(stored.params["field"], "domain");
+        assert_eq!(stored.params["reason"], "invalid_url");
+    }
+
+    #[test]
+    fn llm_and_crawler_params_follow_the_contract() {
+        let server = IpcError::from(LlmError::Server { status: 500 });
+        assert_eq!(server.code, "llm/server");
+        assert_eq!(server.params["status"], "500");
+        assert_eq!(server.params.len(), 1);
+
+        // 清单里这两条的 params 是空数组，就不能凭空塞 key
+        for error in [LlmError::RateLimited, LlmError::MissingSecret] {
+            let ipc = IpcError::from(error);
+            assert!(ipc.params.is_empty(), "{} 不该带 params", ipc.code);
+        }
+
+        let timeout = IpcError::from(CrawlerError::Timeout {
+            url: "https://a.example/x".into(),
+        });
+        assert_eq!(timeout.code, "crawler/timeout");
+        assert_eq!(timeout.params["url"], "https://a.example/x");
+        assert_eq!(timeout.params.len(), 1);
+
+        let blocked = IpcError::from(CrawlerError::Blocked {
+            url: "https://a.example/x".into(),
+            reason: "robots".into(),
+        });
+        assert_eq!(blocked.params["url"], "https://a.example/x");
+        assert_eq!(blocked.params["reason"], "robots");
+        assert_eq!(blocked.params.len(), 2);
+    }
+
+    /// 跨 crate 转成 `GeoError::Upstream` 后，params 换成包装族的那两个键
+    /// （清单里 `upstream/*` 恒为 `["upstream_code","upstream"]`，与里层码的
+    /// params 不相交，前端只能走共享包装键渲染）。
+    #[test]
+    fn upstream_conversion_wraps_code_and_raw_text() {
+        let error = IpcError::from(GeoError::from(LlmError::Server { status: 503 }));
+        assert_eq!(error.code, "upstream/llm/server");
+        assert_eq!(error.params["upstream_code"], "llm/server");
+        assert!(error.params.contains_key("upstream"));
+        assert_eq!(error.params.len(), 2);
+
+        let crawled = IpcError::from(GeoError::from(CrawlerError::Decode("非法字节".into())));
+        assert_eq!(crawled.code, "upstream/crawler/decode");
+        assert_eq!(crawled.params["upstream_code"], "crawler/decode");
+        assert_eq!(crawled.params.len(), 2);
+    }
+
+    #[test]
+    fn serialised_payload_includes_the_params_object() {
+        let error = IpcError::from(GeoError::validation("brand_name", "required"));
+        let json = serde_json::to_value(&error).expect("可序列化");
+        assert_eq!(
+            json["params"],
+            serde_json::json!({ "field": "brand_name", "reason": "required" })
+        );
+
+        // 没有 params 时也要给出空对象，前端不必判空
+        let empty = serde_json::to_value(IpcError::from(LlmError::RateLimited)).expect("可序列化");
+        assert_eq!(empty["params"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn with_params_builds_a_language_neutral_error() {
+        let error = IpcError::with_params(
+            "validation/failed",
+            [("field", "brand_name"), ("reason", "required")],
+        );
+        assert_eq!(error.code, "validation/failed");
+        assert_eq!(error.params["field"], "brand_name");
+        assert_eq!(error.params["reason"], "required");
+        // 兜底文案是紧凑日志格式，不含任何自然语言散文
+        assert!(error.message.starts_with("validation/failed"), "{error}");
+        assert!(error.message.contains("field=brand_name"), "{error}");
+        assert!(error.detail.is_none());
+    }
+
+    #[test]
+    fn with_param_extends_an_existing_error_without_touching_its_message() {
+        let error = IpcError::new(err_codes::CRAWLER_EMPTY, "no pages crawled")
+            .with_param("domain", "a.example")
+            .with_param("skipped", "https://a.example/admin");
+        assert_eq!(error.message, "no pages crawled");
+        assert_eq!(error.params["domain"], "a.example");
+        assert_eq!(error.params["skipped"], "https://a.example/admin");
+        assert_eq!(error.params.len(), 2);
+    }
+
+    #[test]
+    fn param_values_are_redacted_before_reaching_the_frontend() {
+        let error = IpcError::with_params("llm/config", [("reason", "sk-live-abc123 不可用")])
+            .with_param("upstream", "Bearer sk-second9999");
+        assert_eq!(error.params["reason"], "*** 不可用");
+        assert_eq!(error.params["upstream"], "Bearer ***");
+        assert!(
+            !error.params.values().any(|value| value.contains("sk-")),
+            "{:?}",
+            error.params
+        );
+        assert!(
+            !error.message.contains("sk-"),
+            "兜底文案由 params 拼出，同样要脱敏：{}",
+            error.message
+        );
+    }
+
+    /// 穷举：每个错误变体转成 `IpcError` 后带的 params 键，都必须在共享清单里
+    /// 该 code 的 `params` 数组内。清单是冻结的，因此这条断言把「后端凭空造
+    /// 参数名」挡在编译期之后第一道测试里——前端词典按 params 名插值，
+    /// 多一个没登记的键就是渲染出一个空占位符。
+    ///
+    /// 变体清单由上面四个无兜底 `match` 强制（加变体即编译失败）；
+    /// 只断言「子集」而不是「相等」，因为部分变体今天携带的信息不足以填满清单
+    /// （如 `CrawlerError::Network(String)` 拿不到独立的 url / status），
+    /// 补齐属于 Task 4。
+    #[test]
+    fn params_keys_stay_inside_the_shared_catalog() {
+        let allowed = catalog_params();
+        let mut emitted: Vec<IpcError> = Vec::new();
+
+        emitted.extend(llm_variants().into_iter().map(IpcError::from));
+        emitted.extend(crawler_variants().into_iter().map(IpcError::from));
+        emitted.extend(store_variants().into_iter().map(IpcError::from));
+        emitted.extend(geo_cases().into_iter().map(IpcError::from));
+        // 先转 GeoError::Upstream 的形态（upstream/{code}）
+        emitted.extend(
+            llm_variants()
+                .into_iter()
+                .map(|error| IpcError::from(GeoError::from(error))),
+        );
+        emitted.extend(
+            crawler_variants()
+                .into_iter()
+                .map(|error| IpcError::from(GeoError::from(error))),
+        );
+        for kind in NOT_FOUND_KINDS {
+            emitted.push(IpcError::from(GeoError::not_found(kind, "x")));
+            emitted.push(IpcError::from(StoreError::not_found(kind, "x")));
+        }
+        // 壳内字面量站点：Task 5 才会逐个补 params，这里先保证 code 认得、键不越界
+        emitted.push(IpcError::internal("boom"));
+        emitted.extend(
+            [
+                err_codes::COMPLIANCE_VIOLATION,
+                err_codes::PROMPT_SET_EMPTY_IMPORT,
+                err_codes::CRAWLER_EMPTY,
+                err_codes::LLM_CONFIG,
+            ]
+            .into_iter()
+            .map(|code| IpcError::new(code, "x")),
+        );
+
+        assert!(!emitted.is_empty());
+        // 防空跑：真有 params 被填出来，下面的「键不越界」才有意义
+        let filled: usize = emitted.iter().map(|error| error.params.len()).sum();
+        assert!(filled > 0, "没有任何错误带 params，这条断言等于没跑");
+        for error in &emitted {
+            let registered = allowed
+                .get(&error.code)
+                .unwrap_or_else(|| panic!("{} 不在 contracts/error-codes.json 里", error.code));
+            for key in error.params.keys() {
+                assert!(
+                    registered.iter().any(|name| name == key),
+                    "{} 的 params 带了清单外的键 {key}（清单登记：{registered:?}）",
+                    error.code
+                );
+            }
         }
     }
 }

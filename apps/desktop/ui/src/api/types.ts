@@ -13,6 +13,11 @@
 /** 后端 `IpcError` 的 JSON 形状。 */
 export interface IpcErrorPayload {
   code: string;
+  /**
+   * 语言中立参数：键由 `contracts/error-codes.json` 冻结，值是稳定标识符或原始值，
+   * 供词典按当前语言插值（spec §4.2）。旧后端不带此字段，因此可选。
+   */
+  params?: Record<string, string>;
   message: string;
   detail?: unknown | null;
 }

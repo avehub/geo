@@ -213,8 +213,9 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 
 **Files:**
 - Create: `apps/desktop/ui/src/api/errors.ts`
+- Modify（**控制器裁定，补计划漏掉的接缝**）：`apps/desktop/ui/src/api/client.ts` —— **仅限**给 `IpcRequestError` 增 `readonly params: Readonly<Record<string,string>>`（构造函数 `this.params = payload.params ?? {}`）。理由：Task 2 只给线上类型 `IpcErrorPayload` 加了 `params?`，**没接到类上**（`rg -n params src/api/client.ts` 零命中），而页面 catch 到的是这个类的实例 ⇒ 不改它，`describeIpcError` 拿不到任何插值数据，所有带 `{{field}}`/`{{limit}}`/`{{status}}` 的模板都会渲染成空洞而门禁全绿。**不许**碰同文件的 `unwrapIpcError`/`IPC_COMMANDS`/`userMessage`（归 Task 9）。
 - Modify: `apps/desktop/ui/src/i18n/locales/{zh-CN,en-US}/errors.ts`、`fields.ts`
-- Modify: 5 个页面里各自的 `describeError` 改为引用 `describeIpcError`
+- Modify: **4 个页面**里各自的 `describeError` 改为引用 `describeIpcError`（`ProjectListPage`/`SettingsPage`/`PromptSetPage`/`EntityCardPage`）。**控制器更正**：`rg -n describeError src/` 实测命中 6 个文件 = 这 4 个页面 + `components/CsvToolbar.tsx` + `components/SecretStatus.tsx`；`ProjectWizardPage.tsx` 里没有 `describeError`。两个组件归 Task 8。
 - Test: `apps/desktop/ui/src/api/errors.test.ts`、`src/i18n/dictionary.test.ts`
 
 **Interfaces:**
@@ -227,7 +228,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
   - 代价：2 条词典（wrapper 的 zh/en），而不是 26 条近似重复文案。
 - Produces: `fields.ts` 覆盖后端会返回的全部 `field` 值（`brand_name` `aliases` `domain` `intents` `items` `ids` `label` `set_id` `standard_name` `products.name` `text` `payload` `model.provider` `model.model` `model.base_url` …）
 - Produces（**控制器裁定**）：reason key 与 field 的 **raw passthrough 回退**——`errors.reasons.<reason>` 查不到时原样显示该参数值（覆盖 `io/failed`、`data/invalid` 的 OS/serde 原文）；`fields.<field>` 查不到时同样原样显示，因为后端会发出**动态** field（`competitors[0].name`、`core_pages[1]`），无法穷举进 `fields.ts`。词典模板可用 `{{limit}}` / `{{expected}}` / `{{value}}`（Task 3 已把它们登记进 `validation/failed` 的 params）。
-- Produces（**控制器裁定，Task 4 fix round 1 复审后补**）：`not_allowed` 是**一个 reason key、两种相反的展示策略**，词典必须按 **code 分级**而不是只按 reason 分级。`crawler/blocked` 的 `value` 是 content-type（**该显示**）；`compliance/violation` 的 `value` 是**命中的广告法红线词本身**（`crates/geo-domain/src/compliance.rs:93`，**AGENTS 规则 6 明令禁止复述**，该文件 `:91`-`92` 的注释已写死「词典模板只说需改写、绝不复述红线词」）。所以：① `errors.reasons.not_allowed` 这条**共享回退模板不得含 `{{value}}`**；② 需要显示 `value` 的 code（`crawler/blocked`）用 **code 级模板**覆写；③ 加一条断言——渲染 `{code:'compliance/violation', params:{field:'content',reason:'not_allowed',value:'<某个红线词>'}}` 时**输出不含那个红线词**（zh 与 en 两侧都断言）。理由：本任务已有的「模板里的 `{{xxx}}` 都在该 code 的 params 清单内」是**单向**检查，实现者把 `{{value}}` 写进合规模板也能全绿 — 代价是词典多一层 code 级覆写。
+- Produces（**控制器裁定，Task 4 fix round 1 复审后补**）：`not_allowed` 是**一个 reason key、两种相反的展示策略**，词典必须按 **code 分级**而不是只按 reason 分级。`crawler/blocked` 的 `value` 是 content-type（**该显示**）；命中红线词则走**两条互相独立的路径**（**控制器更正：本节早先把它写成了一条，且把参数名写错了**）。**路径 1（reason 级）**：`crates/geo-domain/src/compliance.rs:93` = `GeoError::validation("content","not_allowed").with_param("value", unique.join("、"))`，发出的 code 是 **`validation/failed`**（不是 `compliance/violation`），params 形如 `{field:'content',reason:'not_allowed',value:'<词1、词2>'}`，CSV 导入走这条。**路径 2（code 级）**：`services/prompt_service.rs` 的编辑校验走 `IpcError::new(err_codes::COMPLIANCE_VIOLATION, …)`，code 是 `compliance/violation`，而**冻结契约给它登记的 params 是 `["terms"]`，不是 `value`**（AGENTS 规则 6 明令禁止复述红线词，`compliance.rs:91`-`92` 的注释已写死「词典模板只说需改写、绝不复述红线词」）。所以：① `errors.reasons.not_allowed` 这条**共享回退模板不得含 `{{value}}`**；② 需要显示 `value` 的 code（`crawler/blocked`）用 **code 级模板**覆写；③ 断言分两条——路径 1 喂 `{code:'validation/failed', params:{field:'content',reason:'not_allowed',value:'<某个红线词>'}}`，路径 2 喂 `{code:'compliance/violation', params:{terms:'<某个红线词>'}}`，**两侧 zh 与 en 的输出都不得含那个红线词**，并额外断言 `compliance/violation` 的模板**不含 `{{terms}}`**。理由：本任务已有的「模板里的 `{{xxx}}` 都在该 code 的 params 清单内」是**单向**检查，实现者把 `{{value}}` 写进合规模板也能全绿 — 代价是词典多一层 code 级覆写。
 - Produces（**控制器裁定 R-C3，Task 4 复审后补**）：`llm/transport` 的三条 reason 必须写成**可操作指引**而不是名词——`network`（提示检查代理/VPN/DNS/证书）、`timeout`（提示上游超时与并发/频控）、`other`（提示查看日志与上游网关）。理由：Task 4 把 `llm/transport` 的 params 从 `["reason","upstream"]` 收缩成 `["reason"]`，上游原文（DNS/证书/代理细节）此后**只进日志**，「测试连接」失败时用户能看到的诊断全部由这三条文案承载；写得含糊就等于诊断信息比改造前更少。
 - Produces（**控制器裁定，Task 4 复审 M-4 后补**）：`crawler/network` 的模板要能插 `{{status}}`，且 `errors.reasons.http_status` 必须有 zh/en 两条——`http_status` 是 `crates/geo-crawler/src/fetch.rs:22` 的 `REASON_HTTP_STATUS`，fix round 1 已把它补进目录（此前它是 reason 的取值却不在词表里，照表建词典会漏）。reqwest 原文那条仍走 raw passthrough 回退，**不要**给它编键。
 
@@ -239,7 +240,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - [ ] 跑红：`mise exec -- pnpm --dir apps/desktop/ui run test src/i18n src/api/errors`
 - [ ] 实现 `errors.ts`（zh/en 覆盖清单里全部 code）+ `fields.ts` + reason key 词典（`errors.reasons.*`）+ `describeIpcError`
 - [ ] 词典完整性断言同时覆盖 `errors.reasons.*`：目录里的 **23** 个 key（Task 4 补 `secret_unavailable`，fix round 1 再补 `missing_choices` / `json_not_found` / `validation_failed` / `http_status`；**清单以 `crates/geo-domain/src/error.rs` 的模块注释表为准**）——**控制器推翻自己早先「整串逐字抄进 TS、不解析」的更正**：词典完整性测试必须用 `fs.readFileSync` 读 `../../../../../crates/geo-domain/src/error.rs`，解析 `//! | \`key\` | 语义 | 配套参数 |` 那张表得到键集，再断言 zh/en 词典**双向**覆盖它。理由：不解析就只剩人工同步，而 Task 3 复审的 N-1 已经实证人工同步会错（镜像表与目录相反却全绿）；Rust 侧同一轮也加了 `the_directory_table_and_companion_table_agree` 做同源守卫，两侧一起把「目录 ⟷ 镜像」这条缝焊死在 zh/en 两侧都存在且非空，且 zh/en 的 key 集合相等；`expected` 参数**整串插入不解析**（zh「需在 {{expected}} 范围内」/ en「expected {{expected}}」，不写正则、不拆区间）；**N-3 记账**——目录给 `out_of_range` 写了 `expected` 与 `value` 两个配套参数，但 8 个站点里 7 个不带 `value`，所以模板里的 `{{value}}` 必须是**可选**占位符（缺了整段不渲染，不许留下空占位符或字面 `{{value}}`）
-- [ ] 把 5 个页面的本地 `describeError` 换成 `describeIpcError(error, t)`；跑绿：`mise exec -- pnpm --dir apps/desktop/ui run test`
+- [ ] 把 **4 个页面**的本地 `describeError` 换成 `describeIpcError(error, t)`（`CsvToolbar`/`SecretStatus` 留给 Task 8）；跑绿：`mise exec -- pnpm --dir apps/desktop/ui run test`
 - [ ] Commit `feat(ui): 错误文案按语言渲染，词典完整性由错误码清单守住`
 
 ### Task 8: 存量文案抽取 · 组件层
@@ -273,6 +274,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 **Interfaces:**
 - Consumes: Task 6/7/8
 - Consumes: Task 6 已在 `src/test/setup.ts` 接好 `initI18n('zh-CN')`，本任务不再动该文件
+- 边界说明（**控制器裁定**）：`client.ts` 会被 Task 7 与 Task 9 各改一次，区域不重叠——**Task 7 只加 `IpcRequestError.params` 这一个 readonly 字段**；**Task 9 负责** `unwrapIpcError` 的中文明文、`super(payload.message || '未知错误')` 的兜底中文与 `userMessage` getter 的处置。
 - Produces: `client.ts` 的 `unwrapIpcError(cmd, cause)` 不再拼中文，改为返回 `IpcRequestError{ code:'ipc/invoke_failed', params:{ cmd, reason } }`，展示交给 `describeIpcError`
 - Produces: `client.ts:92` 的 `payload.code || 'ipc/unknown'` **保持原样**（控制器裁定）：它兜的是「后端给了合法 payload 但 `code` 是空串」，与 `ipc/invoke_failed`（`invoke` 本身抛异常/在浏览器里根本没有 `invoke`）是两种不同故障，合并会把「契约破损」伪装成「通道不通」。两个码 Task 1 都已入契约，此处不新增。
 

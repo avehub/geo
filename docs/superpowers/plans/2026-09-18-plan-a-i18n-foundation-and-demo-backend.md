@@ -137,6 +137,7 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 
 **Interfaces:**
 - Consumes: Task 2 的 `IpcError::with_params`、Task 3/4 的 reason key 目录
+- Consumes: Task 1 落在 `apps/desktop/src-tauri/src/error.rs:22`-`33` 的 `pub(crate) mod err_codes`（5 个壳内 code 常量）与 4 个无兜底 `match` 穷举守卫（`llm_code` / `crawler_code` / `geo_code` / `store_code`）。**站点改造一律走常量，不要把字面量重新写回去**；守卫与清单用例必须继续绿（它们红了说明你改的是 code 本身，而 code 已冻结）。
 - Produces: `state.rs` 的 `config_from_settings` 错误码固定为 `llm/config`，params 带 `reason=missing_base_url|missing_model|unknown_provider`（前端据此渲染"设置 → 模型服务商 → 接口地址"这类可操作指引）
 - Produces: 约 40 处 `GeoError::validation(...)`、~15 处 `conflict/config` 全部使用目录内 key
 

@@ -36,8 +36,8 @@
 //! | `missing_header` | CSV 缺少必需列 | `value` |
 //! | `row_invalid` | CSV 单行非法（行级错误，配 `CsvRowError`） | `value` |
 //! | `unknown_provider` | 服务商档案不存在 | `value` |
-//! | `missing_base_url` | 服务商缺 base_url | — |
-//! | `missing_model` | 缺模型名 | — |
+//! | `missing_base_url` | 服务商缺 base_url | `value` |
+//! | `missing_model` | 缺模型名 | `value` |
 //! | `parse_failed` | 序列化/反序列化失败（上游响应、文件内容、请求体） | `value` |
 //! | `json_not_found` | 模型输出里找不到合法 JSON | — |
 //! | `missing_choices` | 上游响应缺 choices（多为网关拦截） | — |

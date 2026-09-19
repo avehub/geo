@@ -245,7 +245,12 @@ async fn custom_provider_without_base_url_is_config_error() {
     assert_eq!(params.len(), 2, "{params:?}");
 }
 
-/// 缺模型名走 `missing_model`（清单给 `llm/config` 登记了 `value`，但这个 key 没有配套值）。
+/// 缺模型名走 `missing_model`，`value` = `Provider::as_str()` 的稳定 id。
+///
+/// 与上一例的 `missing_base_url` **同形**：契约给 `llm/config` 登记的就是
+/// `["reason","value"]`，壳侧 `config_from_settings` 也一直两个键都发（裁定 R-E）。
+/// 本 crate 此前只在 `missing_base_url` 上发 `value`，于是同一个 `(code, reason)`
+/// 在两条链路上键集不同，前端词典只能把 `{{value}}` 当可选占位符处理。
 #[tokio::test]
 async fn blank_model_is_a_config_error_with_the_missing_model_key() {
     let mut config = LlmConfig::for_provider(LlmProvider::Custom, "keyring://llm/test");
@@ -255,9 +260,15 @@ async fn blank_model_is_a_config_error_with_the_missing_model_key() {
     let error = client.chat(&hello_request()).await.unwrap_err();
 
     assert_eq!(error.code(), "llm/config");
-    assert_eq!(error.params()["reason"], "missing_model", "{error}");
-    assert_eq!(error.params().len(), 1, "{error:?}");
-    assert_eq!(error.to_string(), "llm/config reason=missing_model");
+    // `value` 装 `Provider::as_str()` 的稳定 id，不是 `label_zh()` 的中文
+    let params = error.params();
+    assert_eq!(params["reason"], "missing_model", "{error}");
+    assert_eq!(params["value"], "custom", "{error}");
+    assert_eq!(params.len(), 2, "{params:?}");
+    assert_eq!(
+        error.to_string(),
+        "llm/config reason=missing_model value=custom"
+    );
 }
 
 #[tokio::test]

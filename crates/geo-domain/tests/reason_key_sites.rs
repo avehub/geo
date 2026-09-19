@@ -89,6 +89,12 @@ struct Site {
     /// 与 `task-3-report.md` §1 的 50 行表同号。
     no: u8,
     /// 生产站点的源码位置（人读 + 复核用）。
+    ///
+    /// **一律不写行号**：`csv_io.rs` 那 10 处原先写成 `csv_io.rs:NN`，Task 5 大改该文件
+    /// （+180/−21）之后 10 个行号**全部漂移**，而本守卫的行为断言（`trigger` →
+    /// `(code, field, reason, extra)`）与 `at` 无关 ⇒ 5 条测试照样全绿，漂移没人发现
+    /// （裁定 B-4）。现在的写法是「`文件::函数` + 该函数内唯一可辨的语法特征」，
+    /// 重排函数体也不会失效。别再改回行号。
     at: &'static str,
     /// 真的调用生产函数把它触发出来；返回的必须是 `Err`。
     trigger: fn() -> GeoError,
@@ -103,6 +109,7 @@ struct Site {
 /// 一行 = 一处**不可达**的生产站点，用源码字面量钉住映射。
 struct UnreachableSite {
     no: u8,
+    /// 同 [`Site::at`]：稳定指向，不写行号。
     at: &'static str,
     /// 属于哪个源文件（`include_str!` 的那份）。
     file: File,
@@ -435,7 +442,7 @@ const SITES: &[Site] = &[
     // ---- csv_io.rs（10 处里唯一可达的一处）----
     Site {
         no: 26,
-        at: "csv_io.rs:104",
+        at: "csv_io.rs::prompts_from_csv 的 missing_header 分支",
         trigger: || prompts_from_csv("text,weight\n问题,3\n", PromptSetId::new()).unwrap_err(),
         code: VALIDATION,
         field: Some("csv_header"),
@@ -640,7 +647,7 @@ const SITES: &[Site] = &[
 const UNREACHABLE: &[UnreachableSite] = &[
     UnreachableSite {
         no: 22,
-        at: "csv_io.rs:58",
+        at: "csv_io.rs::prompts_to_csv 写 PROMPT_CSV_HEADER 那一处",
         file: File::CsvIo,
         literal: WRITE_FAILED,
         reason: "write_failed",
@@ -649,7 +656,7 @@ const UNREACHABLE: &[UnreachableSite] = &[
     },
     UnreachableSite {
         no: 23,
-        at: "csv_io.rs:71",
+        at: "csv_io.rs::prompts_to_csv 写数据行（write_record(&record)）那一处",
         file: File::CsvIo,
         literal: WRITE_FAILED,
         reason: "write_failed",
@@ -658,7 +665,7 @@ const UNREACHABLE: &[UnreachableSite] = &[
     },
     UnreachableSite {
         no: 24,
-        at: "csv_io.rs:75",
+        at: "csv_io.rs::prompts_to_csv 的 into_inner() 那一处",
         file: File::CsvIo,
         literal: WRITE_FAILED,
         reason: "write_failed",
@@ -667,7 +674,7 @@ const UNREACHABLE: &[UnreachableSite] = &[
     },
     UnreachableSite {
         no: 25,
-        at: "csv_io.rs:91",
+        at: "csv_io.rs::prompts_from_csv 的 reader.headers() 那一处",
         file: File::CsvIo,
         literal: PARSE_FAILED,
         reason: "parse_failed",
@@ -676,7 +683,7 @@ const UNREACHABLE: &[UnreachableSite] = &[
     },
     UnreachableSite {
         no: 27,
-        at: "csv_io.rs:215",
+        at: "csv_io.rs::competitors_to_csv 写 COMPETITOR_CSV_HEADER 那一处",
         file: File::CsvIo,
         literal: WRITE_FAILED,
         reason: "write_failed",
@@ -685,7 +692,7 @@ const UNREACHABLE: &[UnreachableSite] = &[
     },
     UnreachableSite {
         no: 28,
-        at: "csv_io.rs:225",
+        at: "csv_io.rs::competitors_to_csv 写数据行那一处",
         file: File::CsvIo,
         literal: WRITE_FAILED,
         reason: "write_failed",
@@ -694,7 +701,7 @@ const UNREACHABLE: &[UnreachableSite] = &[
     },
     UnreachableSite {
         no: 29,
-        at: "csv_io.rs:234",
+        at: "csv_io.rs::assets_to_csv 写 ASSET_CSV_HEADER 那一处",
         file: File::CsvIo,
         literal: WRITE_FAILED,
         reason: "write_failed",
@@ -703,7 +710,7 @@ const UNREACHABLE: &[UnreachableSite] = &[
     },
     UnreachableSite {
         no: 30,
-        at: "csv_io.rs:244",
+        at: "csv_io.rs::assets_to_csv 写数据行那一处",
         file: File::CsvIo,
         literal: WRITE_FAILED,
         reason: "write_failed",
@@ -712,7 +719,7 @@ const UNREACHABLE: &[UnreachableSite] = &[
     },
     UnreachableSite {
         no: 31,
-        at: "csv_io.rs:252",
+        at: "csv_io.rs::finish 的 into_inner() 那一处",
         file: File::CsvIo,
         literal: WRITE_FAILED,
         reason: "write_failed",
@@ -812,8 +819,19 @@ const COMPANIONS: &[(&str, Companion)] = &[
     ("required", Companion::Exactly(&[])),
     ("empty", Companion::Exactly(&[])),
     ("duplicate", Companion::Exactly(&[])),
-    ("missing_base_url", Companion::Exactly(&[])),
-    ("missing_model", Companion::Exactly(&[])),
+    // `missing_base_url` / `missing_model` 恰配一个 `value` = `Provider::as_str()` 的稳定
+    // id。裁定 B-1 之后 geo-llm `request_url()` 与壳侧 `config_from_settings` 两条链路
+    // 同形，同一个 `(code, reason)` 不再有两套键集（此前 `missing_model` 在 geo-llm 侧
+    // 不发 `value`，逼着前端词典把 `{{value}}` 当可选占位符）。
+    //
+    // ⚠ 这两条期望**当前无法被真实发射验证**：`missing_base_url` / `missing_model` 在
+    // geo-domain 内**零站点**（发射方是 geo-llm 与壳），而
+    // [`reason_key_pins_its_companion_params`] 只以 geo-domain 站点为输入，永远不会拿
+    // 这两个 key 去调 [`companion`]。真正兜住它们的是
+    // [`the_directory_table_and_companion_table_agree`]（目录表 ⟷ COMPANIONS 同源）。
+    // 别把这两行当成活的行为守卫读。
+    ("missing_base_url", Companion::Exactly(&["value"])),
+    ("missing_model", Companion::Exactly(&["value"])),
     // Task 4 fix round 1 新增的 4 个：它们描述的是「上游响应/校验器的哪种失败形态」，
     // 详情（校验器原文、reqwest 原文）只进日志不进 params，因此都不配套参数。
     ("missing_choices", Companion::Exactly(&[])),

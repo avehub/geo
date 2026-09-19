@@ -7,8 +7,11 @@
 //! 壳里 `IpcError::with_params` 的兜底文案逐字同构，不是给人读的句子。
 //!
 //! `Config` 的 `reason` 取 reason key 目录里的 key（目录是
-//! `crates/geo-domain/src/error.rs` 模块注释里那张表）：`missing_base_url` /
-//! `missing_model` / `unknown_provider` / `parse_failed`，配套参数一律装 `value`。
+//! `crates/geo-domain/src/error.rs` 模块注释里那张表）。本 crate 实际只发三个：
+//! `missing_base_url` / `missing_model`（`value` = `Provider::as_str()` 的稳定 id）与
+//! `parse_failed`（`value` = serde 库原文）——配套参数一律装 `value`。
+//! 目录里同挂 `llm/config` 的 `unknown_provider` **不由本 crate 发出**：它没有对应的
+//! `LlmError` 变体，是壳侧解析 provider 串失败时直接发的（那条链路同样带 `value`）。
 //! `BadResponse` 的 `reason` 取 `parse_failed` / `json_not_found` / `missing_choices`，
 //! `Deserialize` 的 `reason` 取 `parse_failed` / `json_not_found` / `validation_failed`
 //! （追问一次后仍抽不到 JSON 就是 `json_not_found`）；只有 `parse_failed` 会带 `value`

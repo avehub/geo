@@ -215,7 +215,8 @@ impl LlmClient {
                 .with_param("value", self.config.provider.as_str()));
         }
         if self.config.model.trim().is_empty() {
-            return Err(LlmError::config("missing_model"));
+            return Err(LlmError::config("missing_model")
+                .with_param("value", self.config.provider.as_str()));
         }
         if self.api_key.trim().is_empty() {
             return Err(LlmError::MissingSecret);

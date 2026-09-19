@@ -119,9 +119,20 @@ export function unwrapIpcError(cmd: string, cause: unknown): IpcRequestError {
         ? cause.message
         : JSON.stringify(cause) ?? String(cause);
 
+  // 用 `ipc/invoke_failed` 而不是 `ipc/internal`（裁定 B-2 / 复审 I-1）：
+  // `ipc/internal` 的契约 params 被冻结成 `[]`，模板里一个占位符都没有，走它等于把
+  // 命令名与真实原因整个丢给词典吞掉，用户只看到「内部错误，请重试」——
+  // 对确定性的参数形状不匹配而言还是个错建议（重试每次都失败）。
+  // `ipc/invoke_failed` 的契约 params 正是 `['cmd','reason']`，模板 zh
+  // `调用 {{cmd}} 失败：{{reason}}` / en `The call to {{cmd}} failed: {{reason}}`
+  // 与从前那句硬编码中文逐字同构 ⇒ 信息量不减，还顺带双语、并把散文搬进了词典。
+  //
+  // `message` 用语言中立的紧凑串，与后端 `IpcError::with_params` 同构
+  // （`apps/desktop/src-tauri/src/error.rs:68`-`:90`，键按 BTreeMap 排序）。
   return new IpcRequestError({
-    code: 'ipc/internal',
-    message: `调用 ${cmd} 失败：${message}`,
+    code: 'ipc/invoke_failed',
+    params: { cmd, reason: message },
+    message: `ipc/invoke_failed cmd=${cmd} reason=${message}`,
     detail: null,
   });
 }

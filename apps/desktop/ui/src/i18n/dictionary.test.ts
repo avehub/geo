@@ -14,6 +14,13 @@
  *   「后端实际保证发出的最小 params」各渲染一次，输出不得残留 `{{…}}`、不得出现
  *   字面 `undefined`/`null`、不得有连续空格或悬空标点。i18next 默认 `skipOnVariables: true`
  *   会把缺失变量**原样**留给用户，那是最坏的失败形态（门禁全绿、界面露花括号）。
+ *
+ * Task 7b（裁定 B-1）补的两件事：
+ * - 判据**不再住在本文件里**，而是从 `src/api/error-text.ts` 导入——生产码的兜底与门禁
+ *   共用同一份实现，两份判定不可能漂移（B-1③）。
+ * - 加**第三轮**「空 params / 缺配套参数」渲染。前两轮喂的都是后端保证发出的形状，
+ *   这一轮喂的是退化形状，钉的是**兜底**：渲染结果不合格 ⇒ 生产码必须回落
+ *   `common.unknownError`，端给用户的输出因此永远合格。
  */
 /// <reference types="node" />
 // `tsconfig.app.json` 的 `types` 只有 `vitest/globals` 与 `@testing-library/jest-dom`，
@@ -23,11 +30,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // 清单在仓库根的 `contracts/`：从 `apps/desktop/ui/src/i18n/` 上去是 **5 层**（同 error-codes.test.ts）。
 import catalogJson from '../../../../../contracts/error-codes.json';
 import { IpcRequestError } from '../api/client';
+import { MIN_INFO_CHARS, problemsOf } from '../api/error-text';
 import { describeIpcError } from '../api/errors';
 import { i18n } from './index';
 import enUS from './locales/en-US';
@@ -144,24 +152,27 @@ function placeholdersOf(text: string): string[] {
   return [...text.matchAll(/\{\{\s*([^},]+?)\s*(?:,[^}]*)?\}\}/g)].map((match) => match[1]);
 }
 
-/** B-5 的「干净输出」判据：返回问题清单，空数组即合格。 */
-function problemsOf(text: string): string[] {
-  const problems: string[] = [];
-  if (text === '') problems.push('渲染成空串');
-  if (text.includes('{{') || text.includes('}}')) problems.push('残留 {{…}} 占位符');
-  if (/\bundefined\b/.test(text)) problems.push('字面 undefined');
-  if (/\bnull\b/.test(text)) problems.push('字面 null');
-  if (text.includes('  ')) problems.push('连续两个空格');
-  if (text !== text.trim()) problems.push('首尾空白');
-  if (/[，、；：,;:（(【[]$/.test(text)) problems.push('结尾悬空标点');
-  if (text.includes('（）') || text.includes('()') || text.includes('（ ）')) problems.push('空括号');
-  return problems;
-}
+/**
+ * B-5 的「干净输出」判据现在住在 `src/api/error-text.ts`（裁定 B-1③）：
+ * 生产码的兜底与本文件的门禁**共用同一个函数**，所以不会再出现「门禁绿、界面露洞」。
+ * 这里只留两个读起来顺手的包装。
+ */
+const hasProblem = (text: string, token: string) => problemsOf(text).some((p) => p.startsWith(token));
 
 function render(code: string, params: Record<string, string>, side: Side): string {
   const error = new IpcRequestError({ code, params, message: `${code} fallback` });
   return describeIpcError(error, i18n.getFixedT(side));
 }
+
+/** 通用兜底句：渲染结果等于它，就说明生产码的质量闸门落下来了（B-1③）。 */
+const unknownText = (side: Side) => i18n.getFixedT(side)('common.unknownError');
+
+/** 结构化捕获 `console.warn`（§D-8：不许拿「输出里没有某行」当判据，vitest 会吞掉 console）。 */
+const captureWarn = () => vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 /** 每个 param 名的现实取值：用于「契约声明的全部 params」那一轮渲染。 */
 const PARAM_VALUES: Record<string, string> = {
@@ -531,20 +542,78 @@ describe('B-11 · 每条 code 在两侧词典里都有条目', () => {
   });
 });
 
+describe('B-1① · 判据本身（共享模块 `src/api/error-text.ts`）', () => {
+  // 这两条判据是 Task 7b 补的（复审 M-1）。§E 要求「以缺席为判据的门禁必须先证明它非永真」，
+  // 所以下面每条都先喂**该被抓到**的形态，再喂**不该被抓到**的形态。
+  it('HOLLOW_BRACKETS 抓到「括号里只剩标签或空白」', () => {
+    // 前 5 个就是复审 §A-2 数出来、旧判据静默放过的真空洞形态
+    const hollow = [
+      '不存在（ID：）', // zh `{kind}/not_found` + 空 params（5 条 code 同形）
+      'The project was not found (ID: nope)'.replace('nope', ''), // en 同族
+      '未知错误（命令 ）：', // 占位符被填空后括号内留下内边距
+      '已拒收该页面（）：内容类型 不在允许范围内',
+      '（  ）',
+    ];
+    for (const text of hollow) expect(hasProblem(text, 'HOLLOW_BRACKETS'), text).toBe(true);
+  });
+
+  it('HOLLOW_BRACKETS 不误伤「括号里真有值」的合格文案', () => {
+    const fine = [
+      '项目不存在（ID：nope）',
+      'The project was not found (ID: nope)',
+      '抓取网页失败：上游返回了非 2xx 状态码（HTTP 503），页面 https://a.example/news',
+      '模型服务配置有问题：缺少模型名（custom）', // 复审建议的简化正则会在这里误伤
+      '配置无效：系统钥匙串读写失败（keyring_unavailable）',
+      '数据状态冲突：存在重复项（UNIQUE constraint failed: prompt_items.text）',
+      '抓取 https://a.example/ 后没有得到任何可用页面；跳过的页面：https://a.example/news（总时长预算用尽）',
+      '还没有配置 API Key，请先在「设置」里填写并保存', // 引号括号里是真词
+      '标签超出允许范围（<=20）（5）',
+      '文件或数据库读写失败：Permission denied (os error 13)',
+    ];
+    for (const text of fine) expect(problemsOf(text), text).toEqual([]);
+  });
+
+  it('TOO_SHORT 抓到「短到不承载信息」的渲染结果', () => {
+    // `链接` 是复审 §A-2 的第 6 个真空洞：zh `crawler/invalid_url` + 空 params
+    expect(hasProblem('链接', 'TOO_SHORT')).toBe(true);
+    expect(hasProblem('不能为空', 'TOO_SHORT')).toBe(true); // field 为空串时的退化形态
+    expect(hasProblem('', 'TOO_SHORT')).toBe(true);
+  });
+
+  it('TOO_SHORT 的阈值留了余量：合格渲染里最短的也比它长', () => {
+    // 实测口径：现有四轮共 272 次合格渲染中，信息字符（字母+数字，含 CJK）最少的是 6
+    // （zh「链接不能为空」）。阈值取 5 ⇒ 真空洞 `链接`(2) 被抓，合格文案一条不误伤。
+    const shortest = ['链接不能为空', '品牌名不能为空', '抓取超时：https://a.example/news'];
+    for (const text of shortest) {
+      const infoChars = text.replace(/[^\p{L}\p{N}]/gu, '').length;
+      expect(infoChars, text).toBeGreaterThanOrEqual(MIN_INFO_CHARS);
+      expect(hasProblem(text, 'TOO_SHORT'), text).toBe(false);
+    }
+  });
+});
+
 describe('B-5 · 占位符纪律（渲染面）', () => {
   it('每条 code 用「契约声明的全部 params」渲染，zh/en 都干净', () => {
+    const warn = captureWarn();
     const bad: string[] = [];
+    let shortest = Number.MAX_SAFE_INTEGER;
     for (const entry of catalog.codes) {
       const params = declaredParams(entry.code);
       for (const side of SIDES) {
         const text = render(entry.code, params, side);
         for (const problem of problemsOf(text)) bad.push(`${side} ${entry.code}：${problem} → ${text}`);
+        shortest = Math.min(shortest, text.replace(/[^\p{L}\p{N}]/gu, '').length);
       }
     }
     expect(bad).toEqual([]);
+    // 反向：合格渲染**不许**被 B-1③ 的兜底顶掉——否则「模板退化」会被兜底句掩盖成一片绿
+    expect(warn, '合格渲染不该触发兜底 warn').not.toHaveBeenCalled();
+    // TOO_SHORT 的阈值必须比最短的合格渲染还小，否则这一轮自己就会误伤
+    expect(shortest).toBeGreaterThanOrEqual(MIN_INFO_CHARS);
   });
 
   it('每条 code 用「后端保证发出的最小 params」渲染，zh/en 都干净', () => {
+    const warn = captureWarn();
     expect(Object.keys(MINIMAL_PARAMS).sort(), 'MINIMAL_PARAMS 必须覆盖全部非 upstream code').toEqual(
       PLAIN.map((entry) => entry.code).sort(),
     );
@@ -564,9 +633,11 @@ describe('B-5 · 占位符纪律（渲染面）', () => {
       }
     }
     expect(bad).toEqual([]);
+    expect(warn, '合格渲染不该触发兜底 warn').not.toHaveBeenCalled();
   });
 
   it('每条 reason key 用「目录配套参数」与「最小保证参数」各渲染一次，都干净', () => {
+    const warn = captureWarn();
     const bad: string[] = [];
     for (const row of DIRECTORY) {
       const companions = Object.fromEntries(row.companions.map((name) => [name, PARAM_VALUES[name] ?? name]));
@@ -585,9 +656,11 @@ describe('B-5 · 占位符纪律（渲染面）', () => {
       expect(render('validation/failed', { field: 'brand_name', reason: row.key, ...companions }, 'zh-CN')).not.toContain(row.key);
     }
     expect(bad).toEqual([]);
+    expect(warn, '合格渲染不该触发兜底 warn').not.toHaveBeenCalled();
   });
 
   it('fields 归一化后的动态 field 也能渲染成人类可读字段名', () => {
+    const warn = captureWarn();
     const bad: string[] = [];
     for (const field of ['competitors[0].name', 'competitors[7].website', 'core_pages[1]', 'products[2].name']) {
       for (const side of SIDES) {
@@ -597,6 +670,99 @@ describe('B-5 · 占位符纪律（渲染面）', () => {
       }
     }
     expect(bad).toEqual([]);
+    expect(warn, '合格渲染不该触发兜底 warn').not.toHaveBeenCalled();
+  });
+});
+
+describe('B-1② · 第三轮：退化 params 一律被兜底挡住（裁定 B-1）', () => {
+  /**
+   * 「空 params 是不是正常输入」用**输出口径**分开，不看契约里 params 有几条：
+   *
+   * - 模板里**没有**占位符 ⇒ 空 params 是正常输入，渲染本来就合格，**不该**兜底。
+   *   今天有 5 条：契约 params 为空的 4 条（`ipc/internal` / `llm/missing_secret` /
+   *   `llm/rate_limited` / `prompt_set/empty_import`），加上 `compliance/violation`
+   *   ——它契约里登记了 `terms`，但模板**刻意不复述**红线词（B-6），所以也不含占位符。
+   * - 模板里**有**占位符 ⇒ 空 params 必然挖出洞 ⇒ 必须兜底成 `common.unknownError`。
+   *
+   * 这条一一对应是**防漂移**的关键：判据一旦放松到放过某个空洞，`fellBack` 就与
+   * `hasPlaceholder` 不再相等，测试立刻红——不会因为兜底句本身「合格」而静默变绿。
+   */
+  it('每条非 upstream code 喂 `params: {}`：输出合格，且兜底触发条件与「模板有占位符」一一对应', () => {
+    const warn = captureWarn();
+    const bad: string[] = [];
+    const drift: string[] = [];
+    let fallbacks = 0;
+
+    for (const entry of PLAIN) {
+      for (const side of SIDES) {
+        const text = render(entry.code, {}, side);
+        for (const problem of problemsOf(text)) bad.push(`${side} ${entry.code}：${problem} → ${text}`);
+
+        const fellBack = text === unknownText(side);
+        if (fellBack) fallbacks += 1;
+        const hasPlaceholder = placeholdersOf(template(side, `errors.${entry.code}`) ?? '').length > 0;
+        if (fellBack !== hasPlaceholder) {
+          drift.push(`${side} ${entry.code}：兜底=${String(fellBack)} 模板有占位符=${String(hasPlaceholder)} → ${text}`);
+        }
+      }
+    }
+
+    expect(bad, '端给用户的输出必须合格').toEqual([]);
+    expect(drift, '兜底触发条件与「模板有占位符」不再一一对应').toEqual([]);
+    // 非永真（§E）：兜底必须真的落下来过，且每次恰好 warn 一声
+    expect(fallbacks).toBe(
+      PLAIN.filter((entry) => placeholdersOf(template('zh-CN', `errors.${entry.code}`) ?? '').length > 0).length *
+        SIDES.length,
+    );
+    expect(fallbacks).toBeGreaterThan(0);
+    expect(warn).toHaveBeenCalledTimes(fallbacks);
+  });
+
+  it('模板不含占位符的那 5 条 code，空 params 属正常输入，不许兜底', () => {
+    const noPlaceholder = PLAIN.filter((entry) =>
+      SIDES.every((side) => placeholdersOf(template(side, `errors.${entry.code}`) ?? '').length === 0),
+    )
+      .map((entry) => entry.code)
+      .sort();
+
+    expect(noPlaceholder).toEqual(
+      [
+        'compliance/violation',
+        'ipc/internal',
+        'llm/missing_secret',
+        'llm/rate_limited',
+        'prompt_set/empty_import',
+      ].sort(),
+    );
+
+    const warn = captureWarn();
+    for (const code of noPlaceholder) {
+      for (const side of SIDES) {
+        const text = render(code, {}, side);
+        expect(text, `${side} ${code}`).not.toBe(unknownText(side));
+        expect(problemsOf(text), `${side} ${code}`).toEqual([]);
+      }
+    }
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('每条 reason 只带 `{field, reason}`（配套参数全缺）：输出合格，缺值的那几条被兜底', () => {
+    const warn = captureWarn();
+    const bad: string[] = [];
+    const fellBack: string[] = [];
+
+    for (const row of DIRECTORY) {
+      for (const side of SIDES) {
+        const text = render('validation/failed', { field: 'brand_name', reason: row.key }, side);
+        for (const problem of problemsOf(text)) bad.push(`${side} reason=${row.key}：${problem} → ${text}`);
+        if (text === unknownText(side)) fellBack.push(`${side} reason=${row.key}`);
+      }
+    }
+
+    expect(bad).toEqual([]);
+    // 非永真：zh 的 too_long / too_short / out_of_range 与 en 的 out_of_range 确实会被兜底
+    expect(fellBack.length).toBeGreaterThan(0);
+    expect(warn).toHaveBeenCalledTimes(fellBack.length);
   });
 });
 

@@ -8,6 +8,10 @@
  * B-8 `crawler/network` 能插 `status`、B-9 `validation/failed` 的槽位组合、
  * B-10 固定回退阶梯；结构面的断言（词典完整性）在 `src/i18n/dictionary.test.ts`。
  *
+ * Task 7b 追加（裁定 B-1③ / B-3 / F-2f / F-2h①）：渲染结果不合格时的兜底、
+ * `value` 回显的 allowlist（fail-closed）、回退阶梯第 ① 级的 `console.warn`、
+ * 以及 miss 回退前抹掉 `terms=` / `value=` 段。
+ *
  * 语言切换用 `i18n.getFixedT(...)` 而不是 `initI18n`：它不动全局单例，
  * 所以不需要复位语言（`src/test/setup.ts` 的 `beforeEach` 也仍会把全局拨回 zh-CN）。
  */
@@ -15,7 +19,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '../i18n';
 import { IpcRequestError } from './client';
-import { describeIpcError } from './errors';
+import { problemsOf } from './error-text';
+import { MAY_ECHO_VALUE, describeIpcError, mayEchoParamValue } from './errors';
 
 const zh = () => i18n.getFixedT('zh-CN');
 const en = () => i18n.getFixedT('en-US');
@@ -59,14 +64,31 @@ describe('B-2 · IpcRequestError.params', () => {
 
 describe('B-10 · describeIpcError 的回退阶梯', () => {
   it('拿到的不是 IpcRequestError 时回落 common.unknownError', () => {
+    const warn = captureWarn();
     const unknownKey = '操作未成功，请稍后重试';
 
     expect(describeIpcError(new Error('boom'), zh())).toBe(unknownKey);
     expect(describeIpcError('boom', zh())).toBe(unknownKey);
     expect(describeIpcError(null, zh())).toBe(unknownKey);
     expect(describeIpcError(undefined, en())).toBe('Something went wrong. Please try again later.');
+    // F-2f：这一级今天会 warn 4 次。断言次数而不是「输出里有没有某行」——
+    // vitest 默认拦截 console，靠 grep 门禁输出恒为 0（§D-8）。
+    expect(warn).toHaveBeenCalledTimes(4);
   });
 
+  it('F-2f · 第 ① 级的 warn 带上原因，前端自身异常不再是「通用 toast + 日志零痕迹」', () => {
+    const warn = captureWarn();
+    const boom = new TypeError('cannot read properties of undefined (reading items)');
+
+    expect(describeIpcError(boom, zh())).toBe('操作未成功，请稍后重试');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0].join(' ')).toContain('non-IpcRequestError');
+    expect(warn.mock.calls[0][1]).toBe(boom);
+  });
+
+  // `store/sqlx` 是**故意**选的契约外 code：后端发不出它（`StoreError::Sqlx` 映射成
+  // `state/conflict` 或 `io/failed`，见 `crates/geo-store/src/error.rs:146`-`:152`），
+  // 43 码契约里也没有它。这一条要测的就是「词典 miss」，所以必须用一个 miss 得掉的 code。
   it('code 未命中词典时 console.warn 带上 code，并回落到后端 message', () => {
     const warn = captureWarn();
     const error = ipcError('store/sqlx', {}, '数据库读写失败');
@@ -76,12 +98,78 @@ describe('B-10 · describeIpcError 的回退阶梯', () => {
     expect(warn.mock.calls[0].join(' ')).toContain('store/sqlx');
   });
 
+  it('F-2h① · miss 回退前抹掉 terms= / value= 段（第三条红线泄漏面）', () => {
+    const warn = captureWarn();
+    // 后端 message 是紧凑串 `"{code} {k}={v} …"`，逐字含全部 params（error.rs:68-90）
+    const terms = ipcError('x/miss', { terms: '国家级' }, 'x/miss terms=国家级');
+    const text = describeIpcError(terms, zh());
+
+    expect(text).not.toContain('国家级');
+    expect(text).toBe('x/miss terms=***');
+
+    const value = ipcError('x/miss', { value: '最好' }, 'x/miss reason=duplicate value=最好');
+    const valueText = describeIpcError(value, zh());
+
+    expect(valueText).not.toContain('最好');
+    expect(valueText).toBe('x/miss reason=duplicate value=***');
+    // 只抹这两个键：别的段原样留着，排障信息不受损
+    expect(valueText).toContain('reason=duplicate');
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
   it('命中词典时不 console.warn（噪音只属于未命中那一条路径）', () => {
     const warn = captureWarn();
 
     describeIpcError(ipcError('llm/missing_secret'), zh());
     describeIpcError(ipcError('validation/failed', { field: 'brand_name', reason: 'required' }), en());
 
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+// 注：本组的 B-1③ / B-3 指 **Task 7b** 简报的裁定编号，与 Task 7 的 B-3（upstream 包装键）无关。
+describe('B-1③ · 渲染结果不合格时兜底（判据与门禁共用 `error-text.ts`）', () => {
+  it('空洞渲染回落 common.unknownError，绝不回落紧凑日志串', () => {
+    const warn = captureWarn();
+    const error = new IpcRequestError({
+      code: 'project/not_found',
+      params: {},
+      message: 'project/not_found id= kind=project',
+    });
+
+    const text = describeIpcError(error, zh());
+
+    expect(text).toBe('操作未成功，请稍后重试');
+    expect(text).not.toContain('不存在（ID：）'); // 复审 §A-2 数出的真空洞
+    expect(text).not.toContain('project/not_found'); // B-1④：不许回落 error.message
+    expect(describeIpcError(error, en())).toBe('Something went wrong. Please try again later.');
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[0].join(' ')).toContain('not presentable');
+    // warn 里带上判据结果，排障时不用猜是哪条判据落下来的
+    expect(JSON.stringify(warn.mock.calls[0])).toContain('HOLLOW_BRACKETS');
+  });
+
+  it('契约 params 为空的 4 条 code：空 params 是正常输入，不兜底也不 warn', () => {
+    const warn = captureWarn();
+
+    for (const code of ['ipc/internal', 'llm/missing_secret', 'llm/rate_limited', 'prompt_set/empty_import']) {
+      const text = describeIpcError(ipcError(code), zh());
+
+      expect(text, code).not.toBe('操作未成功，请稍后重试');
+      expect(problemsOf(text), code).toEqual([]);
+    }
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('后端保证发出的形状（最小 params）不触发兜底：闸门只挡退化输入', () => {
+    const warn = captureWarn();
+
+    expect(describeIpcError(ipcError('project/not_found', { kind: 'project', id: 'nope' }), zh())).toBe(
+      '项目不存在（ID：nope）',
+    );
+    expect(
+      describeIpcError(ipcError('io/failed', { reason: 'Permission denied (os error 13)' }), zh()),
+    ).toBe('文件或数据库读写失败：Permission denied (os error 13)');
     expect(warn).not.toHaveBeenCalled();
   });
 });
@@ -237,6 +325,57 @@ describe('B-6 · 红线词的两条独立泄漏面', () => {
 
     expect(describeIpcError(blocked, zh())).toContain('application/pdf');
     expect(describeIpcError(blocked, en())).toContain('application/pdf');
+  });
+});
+
+describe('B-3(7b) · `value` 回显改 allowlist（fail-closed）', () => {
+  const banned = '国家级';
+
+  it('不在 allowlist 的 reason：`value` 一个字都不回显', () => {
+    // `not_allowed` 是红线词的老家（`compliance.rs:93`）；`validation_failed` 代表
+    // 「目录里没给它登记 `value`」；最后一个是**将来后端新加的 reason**——
+    // fail-closed 的实质就是它默认不显示。
+    for (const reason of ['not_allowed', 'validation_failed', 'some_reason_nobody_registered']) {
+      const error = ipcError('validation/failed', {
+        field: 'content',
+        reason,
+        value: `${banned}、最好`,
+      });
+
+      for (const t of [zh(), en()]) {
+        const text = describeIpcError(error, t);
+
+        expect(text, reason).not.toContain(banned);
+        expect(text, reason).not.toContain('最好');
+        expect(text, reason).not.toBe('');
+      }
+    }
+  });
+
+  it('在 allowlist 内的 reason：`value` 照常回显（不是一刀切藏掉）', () => {
+    const cases: Array<[string, Record<string, string>, string]> = [
+      ['llm/config', { reason: 'missing_model', value: 'custom' }, '（custom）'],
+      ['validation/failed', { field: 'asset.url', reason: 'invalid_url', value: 'ftp://a.example/x' }, '（ftp://a.example/x）'],
+      ['validation/failed', { field: 'tags', reason: 'out_of_range', expected: '1~5', value: '9' }, '（9）'],
+      ['config/invalid', { reason: 'secret_unavailable', value: 'keyring_unavailable' }, '（keyring_unavailable）'],
+      ['state/conflict', { reason: 'duplicate', value: 'UNIQUE constraint failed: prompt_items.text' }, 'UNIQUE constraint failed'],
+      ['validation/failed', { field: 'field_path', reason: 'unknown_field', value: 'products' }, '（products）'],
+    ];
+
+    for (const [code, params, expected] of cases) {
+      expect(describeIpcError(ipcError(code, params), zh()), code).toContain(expected);
+    }
+  });
+
+  it('判定导出给 Task 8 的 `CsvToolbar` 共用，且 allowlist 不是 denylist 取反', () => {
+    expect(mayEchoParamValue('not_allowed')).toBe(false);
+    expect(MAY_ECHO_VALUE.has('not_allowed')).toBe(false);
+    expect(mayEchoParamValue('missing_model')).toBe(true);
+    // fail-closed：未知 reason / 空 reason 一律 false
+    expect(mayEchoParamValue('some_future_reason')).toBe(false);
+    expect(mayEchoParamValue('')).toBe(false);
+    // 目录里 23 个 reason key，14 个进表、9 个不进（依据见 `errors.ts` 的 `MAY_ECHO_VALUE` 注释）
+    expect(MAY_ECHO_VALUE.size).toBe(14);
   });
 });
 

@@ -10,7 +10,15 @@
  * 1. `error` 不是 `IpcRequestError` → `common.unknownError`；
  * 2. `upstream/*` 一族 → 共享包装键 `errors.upstream.wrapper`（B-3）；
  * 3. `errors.<code>` 命中 → 按下面的「组合」渲染；
- * 4. 未命中 → `console.warn`（带上 code，契约漂移要吵出来）后回落 `error.message`。
+ * 4. 未命中 → `console.warn`（带上 code，契约漂移要吵出来）后回落 `error.message`
+ *    （回落前抹掉 `terms=` / `value=` 段，见下面的红线③）。
+ *
+ * Task 7b 在第 ③ 级的**出口**追加了一道质量闸门（裁定 B-1③；不改上面 4 级的顺序与语义）：
+ * 渲染结果过 `problemsOf()` 不合格 ⇒ `console.warn` 后回落 `common.unknownError`。
+ * 判据与 `src/i18n/dictionary.test.ts` 的门禁**共用 `src/api/error-text.ts` 里同一个函数**，
+ * 所以不会再出现「门禁绿、界面露洞」（Task 7 的 R-1 就是这个错位）。
+ * 它刻意**不**回落 `error.message`：那是紧凑日志串（`{code} {k}={v}…`），比空洞更糟。
+ * 它也不去救第 ④ 级——词典 miss 是契约漂移，该吵出来，不该被通用文案盖住。
  *
  * # 组合：主模板 + 槽位预渲染 + 可选片段
  *
@@ -26,12 +34,22 @@
  * - **空值兜底**：即便如此，`render()` 仍会把「模板里出现、params 里缺失」的占位符填空串。
  *   契约被违反时（旧后端、手造 payload）用户看到的是信息偏少的一句话，而不是 `{{limit}}`。
  *
- * # 红线（裁定 B-6 / AGENTS 规则 6）
+ * # 红线（裁定 B-6 / B-3 / AGENTS 规则 6）
  *
- * 广告法红线词有两条互相独立的泄漏面，本模块都不回显：`compliance/violation` 的 `terms`
- * 与 `validation/failed` + `reason=not_allowed` 的 `value`（`NEVER_ECHO_VALUE`）。
- * 词典模板同样不含 `{{terms}}` / `{{value}}`，由 `src/i18n/dictionary.test.ts` 双向钉住。
- * 反面：`crawler/blocked` 的 `value` 是 content-type，属**该显示**的数据，走 code 级模板插值。
+ * 广告法红线词有**三条**互相独立的泄漏面，本模块一条都不放过：
+ *
+ * 1. `compliance/violation` 的 `terms`——词典模板不含 `{{terms}}`，由
+ *    `src/i18n/dictionary.test.ts` 双向钉住；
+ * 2. `reason=not_allowed` 的 `value`——`compliance.rs:93` 把命中的红线词装在这里。
+ *    这一条走 **allowlist**（`MAY_ECHO_VALUE`，fail-closed）：只有逐个核过语义、确认
+ *    `value` 装的是可操作数据的 reason 才允许回显，其余一律不送进插值；
+ * 3. 第 ④ 级回落的 `error.message`——后端紧凑串逐字含全部 params（`error.rs` 的
+ *    `with_params`），所以 miss 回退前要把 `terms=` / `value=` 段抹成 `***`。
+ *
+ * 反面（allowlist 存在的理由，不是「一刀切藏掉所有 value」）：`crawler/blocked` 的 `value`
+ * 是 content-type、`out_of_range` 的 `value` 是实际数值、`missing_model` 的 `value` 是
+ * provider 的稳定 id——都属**该显示**的数据。`crawler/blocked` 走 code 级模板插值，
+ * 其余走 `errors.fragments.param_value` 片段。
  *
  * 词典值一律当**纯文本**用：`interpolation.escapeValue` 是关掉的（React 自己会转义），
  * 所以任何调用方都不得把返回值塞进 `dangerouslySetInnerHTML`（`src/i18n/index.ts` 的 R-I）。
@@ -40,6 +58,7 @@ import type { TFunction } from 'i18next';
 
 import type { TranslationKey } from '../i18n/resources';
 import { IpcRequestError } from './client';
+import { problemsOf } from './error-text';
 
 /** 写死的 key 一律用 `TranslationKey` 标注：拼错在 `tsc -b` 就红（§H-2 的补偿手段）。 */
 const UNKNOWN_ERROR_KEY: TranslationKey = 'common.unknownError';
@@ -64,8 +83,67 @@ const REASON_SCOPES: Record<string, string> = {
   'llm/transport': TRANSPORT_PREFIX,
 };
 
-/** 永不回显 `value` 的 reason：它装的是命中的广告法红线词（B-6 路径 1）。 */
-const NEVER_ECHO_VALUE: ReadonlySet<string> = new Set(['not_allowed']);
+/**
+ * **可以**把 `params.value` 送进插值的 reason（allowlist，fail-closed；裁定 B-3 / 复审 I-2）。
+ *
+ * 前身是一份 denylist（`NEVER_ECHO_VALUE = {'not_allowed'}`），方向错了：后端将来新加一个
+ * reason 并给它塞 `value`，denylist 会**默认回显**。翻成 allowlist 之后默认**不显示**——
+ * 丢信息，但不泄红线词，这正是广告法该选的失败方向。
+ *
+ * 成员是**逐 reason 核过发射点**定的，不是把 denylist 取反：
+ *
+ * | reason | `value` 装什么 | 依据的发射点 |
+ * | --- | --- | --- |
+ * | `invalid_url` | 用户填的网址/域名 | `asset.rs:108`/`:117`、`entity_card_service.rs:299` |
+ * | `invalid_id` | 原始 ID 串 | `ids.rs:42`、`prompt_service.rs:558` |
+ * | `invalid_format` | 形状判据的原始输入 | `entity_card.rs:420`/`:430`/`:444`、`csv_io.rs:216`-`:248` |
+ * | `out_of_range` | 实际数量/数值 | `prompt_service.rs:167`/`:173`/`:631`、`settings_service.rs:397` |
+ * | `missing_header` | 缺失的列名列表 | `csv_io.rs:154`-`:155` |
+ * | `row_invalid` | csv 库的行级原文 | `csv_io.rs:167`-`:171` |
+ * | `unknown_provider` | 用户填的 provider 串 | `settings_service.rs:282` |
+ * | `missing_base_url` | `Provider::as_str()` 稳定 id | `geo-llm/src/client.rs:214`-`:215` |
+ * | `missing_model` | `Provider::as_str()` 稳定 id | `geo-llm/src/client.rs:218`-`:219` |
+ * | `parse_failed` | serde / csv 库原文 | `project_transfer.rs:81`、`csv_io.rs:141` |
+ * | `unknown_field` | 未知字段名 | `entity_card.rs:441`/`:476` |
+ * | `write_failed` | io 库原文 | `csv_io.rs:108`/`:121`/`:281`-`:318` |
+ * | `duplicate` | sqlx 驱动原文（唯一约束） | `geo-store/src/error.rs:199`-`:203` |
+ * | `secret_unavailable` | 已 `redact` 的钥匙串原文 | `geo-store/src/error.rs:210`-`:213`（变体注释明写不得含密钥） |
+ *
+ * **不在**表里的 9 个 reason：`required` / `empty` / `too_long` / `too_short` /
+ * `json_not_found` / `missing_choices` / `http_status` / `validation_failed` 的目录
+ * 配套参数里**没有 `value`**（`geo-llm/tests/chat_json.rs:114` 明写 `validation_failed`
+ * 的 params 只有 `{reason}`），列进来只会白开一个口子；`not_allowed` 是唯一会装红线词的
+ * reason（`compliance.rs:93`），**永远不进表**——代价是 `asset.rs:110` 那条用同一个 reason
+ * 装 URL scheme 的站点被一并抑制（复审 M-3），根因在后端的 reason 重载，已记成 micro-task。
+ *
+ * **Task 8 必须复用这张表**：`csv_io.rs:81`-`:85` 的 `RowFailure::from_geo` 把 compliance 的
+ * `value`=命中词原样搬进 `CsvRowError.params`，`CsvToolbar` 渲染它是同一条泄漏面的第二次出现。
+ * 用下面的 `mayEchoParamValue()`，不要另抄一份。
+ */
+export const MAY_ECHO_VALUE: ReadonlySet<string> = new Set([
+  'duplicate',
+  'invalid_format',
+  'invalid_id',
+  'invalid_url',
+  'missing_base_url',
+  'missing_header',
+  'missing_model',
+  'out_of_range',
+  'parse_failed',
+  'row_invalid',
+  'secret_unavailable',
+  'unknown_field',
+  'unknown_provider',
+  'write_failed',
+]);
+
+/**
+ * 这个 reason 的 `params.value` 能不能回显给用户（fail-closed）。
+ * 导出给 Task 8 的 `CsvToolbar` 共用，见 `MAY_ECHO_VALUE` 的注释。
+ */
+export function mayEchoParamValue(reason: string): boolean {
+  return MAY_ECHO_VALUE.has(reason);
+}
 
 /** 可选参数 → 独立片段键（B-5）。`prefix` 在主模板前拼，`suffix` 在后拼。 */
 interface Segment {
@@ -153,7 +231,8 @@ function renderKind(t: TFunction, raw: string): string {
  *
  * `value` 用**可选片段**追加而不是写进主模板：目录给 `out_of_range` 登记了 `expected` 与
  * `value`，但 `competitors` / `aliases` / `tags` 三处不发 `value`（§F-2 / N-3 记账）。
- * `not_allowed` 例外——它的 `value` 是红线词，永远不追加（B-6）。
+ * 追加与否由 allowlist `MAY_ECHO_VALUE` 决定（fail-closed，B-3）——不在表里的 reason
+ * 一律不追加，`not_allowed` 的红线词因此永远上不了屏。
  */
 function renderReason(t: TFunction, code: string, params: Readonly<Record<string, string>>): string {
   const reason = params.reason ?? '';
@@ -163,7 +242,7 @@ function renderReason(t: TFunction, code: string, params: Readonly<Record<string
   const text =
     render(t, `${scope}${reason}`, params) ?? render(t, `${REASONS_PREFIX}${reason}`, params) ?? reason;
 
-  if (NEVER_ECHO_VALUE.has(reason)) return text;
+  if (!mayEchoParamValue(reason)) return text;
   if ((params.value ?? '') === '') return text;
   return `${text}${render(t, PARAM_VALUE_FRAGMENT, params) ?? ''}`;
 }
@@ -220,6 +299,21 @@ function renderSegments(
 }
 
 /**
+ * miss 回退前把后端紧凑串里的敏感段抹掉（红线③，裁定 F-2h①）。
+ *
+ * 后端 `IpcError::with_params`（`apps/desktop/src-tauri/src/error.rs:68`-`:90`）把 message
+ * 拼成 `"{code} {k}={v} …"`（键按 BTreeMap 排序），**逐字含全部 params**。词典 miss 时第 ④ 级
+ * 会把它原样端上屏，于是 `terms=国家级…` 经这条路上屏——这是 B-6 没数到的第三条泄漏面。
+ * 只抹 `terms=` / `value=` 两个键：前者恒装红线词，后者在 `not_allowed` 下装红线词。
+ *
+ * 保留匹配到的前导空白（用捕获组回填），免得把 `code terms=x` 变成 `code  terms=***`
+ * 反而制造出「连续两个空格」这种新问题。
+ */
+function redactCompactMessage(message: string): string {
+  return message.replace(/(^|\s)(terms|value)=[^\s]*/g, (_match, lead: string, key: string) => `${lead}${key}=***`);
+}
+
+/**
  * `upstream/*` 一族（13 条 code）共用一条包装键（B-3）。
  *
  * **不要**拿里层 code 的模板渲染：两族 params 不相交（`upstream/*` 是
@@ -245,6 +339,10 @@ function describeUpstream(error: IpcRequestError, t: TFunction): string {
  */
 export function describeIpcError(error: unknown, t: TFunction): string {
   if (!(error instanceof IpcRequestError)) {
+    // 前端自身的异常（TypeError、queryFn 里映射代码抛错、CSV 组装抛错）走到这里。
+    // 用户看到的是通用文案，所以日志是**唯一**的排障线索——第 ③ 级 miss 会 warn，
+    // 这一级不 warn 就成了「通用 toast + 日志零痕迹」（复审 M-5，且相对 BASE 是回归）。
+    console.warn('[geo-i18n] non-IpcRequestError surfaced to UI:', error);
     // 词典里连这个键都没有属于不可能状态（index.test.ts 钉着），真发生就露 key 而不是空白
     return render(t, UNKNOWN_ERROR_KEY, {}) ?? UNKNOWN_ERROR_KEY;
   }
@@ -255,13 +353,24 @@ export function describeIpcError(error: unknown, t: TFunction): string {
   const main = render(t, `errors.${error.code}`, values);
   if (main === null) {
     console.warn('[geo-i18n] no dictionary entry for error code:', error.code);
-    return error.message;
+    return redactCompactMessage(error.message);
   }
 
   const segments = CODE_SEGMENTS[error.code];
-  return (
+  const text =
     renderSegments(t, segments?.prefix, params, values) +
     main +
-    renderSegments(t, segments?.suffix, params, values)
-  );
+    renderSegments(t, segments?.suffix, params, values);
+
+  // 质量闸门（B-1③）：第 ③ 级的**出口**检查，不改上面 4 级的顺序与语义。
+  // 判据与 `src/i18n/dictionary.test.ts` 的门禁共用 `error-text.ts` 同一个函数。
+  const problems = problemsOf(text);
+  if (problems.length > 0) {
+    console.warn('[geo-i18n] rendered error text is not presentable, falling back:', {
+      code: error.code,
+      problems,
+    });
+    return render(t, UNKNOWN_ERROR_KEY, {}) ?? UNKNOWN_ERROR_KEY;
+  }
+  return text;
 }

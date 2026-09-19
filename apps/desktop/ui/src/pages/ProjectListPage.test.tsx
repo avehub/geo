@@ -92,15 +92,35 @@ describe('ProjectListPage', () => {
     });
   });
 
-  it('后端报错时展示中文原因', async () => {
-    mockInvoke.stubAlways(
-      'project_list',
-      { code: 'store/sqlx', message: '数据库读写失败', detail: null },
-      'reject',
-    );
+  // F-2h②：fixture 换成契约内的真实形状。`store/sqlx` 后端**零发射点**
+  // （`StoreError::Sqlx` 映射成 `state/conflict` 或 `io/failed`，`geo-store/src/error.rs:146`-`:152`），
+  // 拿它当 fixture 会让这条用例永远走词典 miss，断言命中的是 fixture 自己编的中文
+  // ⇒ 4 个页面里唯一一个 `Alert description` 分支的页面级测试，实际没覆盖词典渲染。
+  const ioFailed = {
+    code: 'io/failed',
+    params: { reason: 'Permission denied (os error 13)' },
+    message: 'io/failed reason=Permission denied (os error 13)',
+  };
+
+  it('后端报错时按词典渲染原因（zh-CN）', async () => {
+    mockInvoke.stubAlways('project_list', ioFailed, 'reject');
     renderWithProviders(<ProjectListPage />);
 
-    expect(await screen.findByText(/数据库读写失败/)).toBeInTheDocument();
+    expect(
+      await screen.findByText('文件或数据库读写失败：Permission denied (os error 13)'),
+    ).toBeInTheDocument();
+  });
+
+  // F-2h③（复审 R-3 提前到本轮）：这是唯一能抓到「页面忘了传 `t` / 传了错的 `t`」的形态。
+  // 单元级用例证明**词典**能渲染英文，页面级用例才证明**页面**真的把 `t` 接上了——
+  // `onError` / `Alert description` 都不在 render 之外求值，靠闭包捕获 `t`，很容易接错。
+  it('同一个后端错误在 en-US 下渲染成英文词典文案（页面级冒烟）', async () => {
+    mockInvoke.stubAlways('project_list', ioFailed, 'reject');
+    renderWithProviders(<ProjectListPage />, { locale: 'en-US' });
+
+    expect(
+      await screen.findByText('A file or database operation failed: Permission denied (os error 13)'),
+    ).toBeInTheDocument();
   });
 
   it('归档操作调用 project_archive 并刷新列表', async () => {
@@ -237,7 +257,7 @@ describe('ProjectListPage', () => {
     await user.type(tagsInput, '太多');
     pressEnter(tagsInput);
 
-    expect(await screen.findByText('标签需在 <=20 范围内')).toBeInTheDocument();
+    expect(await screen.findByText('标签超出允许范围（<=20）')).toBeInTheDocument();
     expect(screen.queryByText('标签已更新')).not.toBeInTheDocument();
   });
 

@@ -269,11 +269,30 @@ const FRAGMENTS: Record<
   'errors.fragments.list_separator': { owner: 'crawler/empty', params: [] },
 };
 
-/** `{kind}/not_found` 的 kind 取值（壳侧 `error.rs` 的 `NOT_FOUND_KINDS`，5 个）。 */
+/**
+ * 下面三份都是**手抄清单**（F-2e 要求把真值源写在脸上，免得它们像 Task 3 复审 N-1
+ * 那样悄悄漂移）。改后端时请同步改这里；`结构闭合` 那条用例会拿它们做双向对账。
+ */
+
+/**
+ * `{kind}/not_found` 的 kind 取值，5 个。
+ * 真值源：`apps/desktop/src-tauri/src/error.rs:401` 的 `const NOT_FOUND_KINDS: [&str; 5]`。
+ * 机器守卫：`crates/geo-domain/tests/reason_key_sites.rs` 与壳侧 `error.rs:678`/`:1162`
+ * 都会遍历它；前端这一份只对词典负责。
+ */
 const NOT_FOUND_KINDS = ['project', 'entity_card', 'prompt_set', 'prompt_item', 'competitor'];
-/** `llm/transport` 的 reason 取值（`geo-llm/src/transport.rs` 的 `reason_key()`）。 */
+/**
+ * `llm/transport` 的 reason 取值，3 个（**不在** `error.rs` 的 reason 目录表里，
+ * 所以走 `errors.transport.*` 而不是 `errors.reasons.*`）。
+ * 真值源：`crates/geo-llm/src/transport.rs:120`-`:126` 的 `reason_key()`；
+ * 它自己也被 `transport.rs:508` 的 `reason_key_is_one_of_the_three_catalog_keys` 钉住。
+ */
 const TRANSPORT_REASONS = ['network', 'timeout', 'other'];
-/** `crawler/empty` 的 skipped 记号（`geo-crawler/src/site.rs` 的三个 `pub const`）。 */
+/**
+ * `crawler/empty` 的 `skipped` 记号，3 个。
+ * 真值源：`crates/geo-crawler/src/site.rs:66`/`:68`/`:70` 的三个 `pub const`
+ * （`SKIP_TOTAL_TIMEOUT` / `SKIP_ROBOTS_DISALLOWED` / `SKIP_FETCH_FAILED`）。
+ */
 const SKIP_TOKENS = ['total_timeout', 'robots_disallowed', 'fetch_failed'];
 
 /**
@@ -782,17 +801,29 @@ describe('AGENTS 规则 6 · 文案合规', () => {
   });
 });
 
-describe('fields · 后端会发出的 field 值都有词条', () => {
-  it('§3.2 的 field 清单在 zh 与 en 都非空', () => {
-    const missing: string[] = [];
+describe('fields · 词典与手抄清单**双向**相等（F-2e）', () => {
+  /**
+   * `FIELD_VALUES` 是**手抄快照**：field 不可穷举（后端 `set_field` 家族一律用动态
+   * `field_path`，见简报 §A-6），所以这一组守的**不是**「后端发的每个 field 都有词条」
+   * ——那一条由 raw passthrough（裁定 B-4）兜底、由 Task 8/9 的页面测试兜底。
+   *
+   * 它守的是**反向**：词典不许悄悄长出没人认领的键（拼错一个 field 名、或建一条永远
+   * 用不到的词条）。复审 M-4 实测过：往 zh 与 en 的 `fields.ts` 同时塞一个野键，
+   * test / build / lint 三道门**全绿**——缺的就是下面这条反向断言。
+   * 真值源：`task-5-report.md` §3.2 / §3.3 + geo-domain 的其余 `validation()` 站点。
+   */
+  it('FIELD_VALUES 与两侧词典的 fields.* 叶子集合相等，且值都非空', () => {
     for (const side of SIDES) {
       const map = new Map(FIELD_ENTRIES[side]);
-      for (const field of FIELD_VALUES) {
-        const value = map.get(`fields.${field}`);
-        if (typeof value !== 'string' || value.trim() === '') missing.push(`${side} fields.${field}`);
-      }
+      const dictFields = [...map.keys()].map((path) => path.slice('fields.'.length));
+
+      expect({
+        side,
+        词典缺失: FIELD_VALUES.filter((field) => !dictFields.includes(field)),
+        词典多出: dictFields.filter((field) => !FIELD_VALUES.includes(field)),
+        空值: [...map].filter(([, value]) => value.trim() === '').map(([path]) => path),
+      }).toEqual({ side, 词典缺失: [], 词典多出: [], 空值: [] });
     }
-    expect(missing).toEqual([]);
     expect(FIELD_VALUES.length).toBeGreaterThanOrEqual(50);
   });
 });

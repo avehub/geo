@@ -16,7 +16,8 @@ const errors: ResourceBundle['errors'] = {
   'crawler/blocked': 'This page was rejected ({{url}}): the content type {{value}} is not accepted',
   'crawler/decode': 'Failed to read the page content: {{reason}}',
   'crawler/empty': 'No usable pages were found on {{domain}}',
-  'crawler/invalid_url': 'The link {{reason}}',
+  // F-2g：`url` 是本 code 保证发出的 param，理由同 zh-CN 侧的注释。
+  'crawler/invalid_url': 'The link {{reason}}: {{url}}',
   'crawler/network': 'Fetching the page failed: {{reason}}',
   'crawler/timeout': 'Fetching timed out: {{url}}',
   'crawler/too_large': 'The page is larger than the {{limit}}-byte limit: {{url}}',
@@ -53,8 +54,12 @@ const errors: ResourceBundle['errors'] = {
     invalid_id: 'is not a valid ID',
     invalid_format: 'has an invalid format',
     duplicate: 'contains duplicates',
-    out_of_range: 'must be within {{expected}}',
-    not_allowed: 'is not allowed; please revise the content',
+    // F-2c：与 zh 侧同步改措辞，`expected` 落在括号里当附注。
+    out_of_range: 'is outside the allowed range ({{expected}})',
+    // F-2d：不能写死 `revise the content`——`asset.rs:110` 用同一个 reason 装 URL scheme，
+    // 那时被拒的是一个链接不是 content（复审 M-3）。根因是后端把 `not_allowed` 重载成
+    // 「协议/取值/内容」三种语义，已记成 Plan A 之后的 micro-task（改用 `invalid_format`）。
+    not_allowed: 'is not accepted; please revise and submit again',
     missing_header: 'is missing a required column',
     row_invalid: 'this row cannot be read',
     unknown_provider: 'is not available; please pick one from the list',

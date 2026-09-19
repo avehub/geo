@@ -255,8 +255,10 @@ describe('B-9 · validation/failed 的槽位组合', () => {
       expected: '<=20',
     });
 
-    expect(describeIpcError(error, zh())).toBe('标签需在 <=20 范围内');
-    expect(describeIpcError(error, en())).toBe('Tags must be within <=20');
+    // F-2c：旧措辞 `标签需在 <=20 范围内` 把纯 ASCII 的边界表达式直接端给中文用户，
+    // 读起来像漏翻。新措辞不解析 `expected`、不动契约，只把语义搬进词典。
+    expect(describeIpcError(error, zh())).toBe('标签超出允许范围（<=20）');
+    expect(describeIpcError(error, en())).toBe('Tag list is outside the allowed range (<=20)');
   });
 
   it('out_of_range 带 value 时追加可选片段（expected 整串插入，不解析）', () => {
@@ -267,8 +269,10 @@ describe('B-9 · validation/failed 的槽位组合', () => {
       value: '5',
     });
 
-    expect(describeIpcError(error, zh())).toBe('选中条目需在 <3 范围内（5）');
-    expect(describeIpcError(error, en())).toBe('Selected items must be within <3 (5)');
+    expect(describeIpcError(error, zh())).toBe('选中条目超出允许范围（<3）（5）');
+    // F-2d：`ids` 的 en 标签从复数 `Selected items` 改成单数头名词 `Selected item list`，
+    // 否则会渲染出 `Selected items is outside…` 这种主谓不一致（复审 M-2）。
+    expect(describeIpcError(error, en())).toBe('Selected item list is outside the allowed range (<3) (5)');
   });
 
   it('B-4 · field 查不到词典时原样显示，不猜也不拆路径', () => {
@@ -302,6 +306,9 @@ describe('B-6 · 红线词的两条独立泄漏面', () => {
       expect(text).not.toBe('');
     }
     expect(describeIpcError(error, zh())).toBe('内容不被允许，请改写后再提交');
+    // F-2d：en 措辞不能写死 `revise the content`——`asset.rs:110` 用同一个 reason
+    // 装 URL scheme，那时被拒的是一个链接，不是 content（复审 M-3）。
+    expect(describeIpcError(error, en())).toBe('Content is not accepted; please revise and submit again');
   });
 
   it('路径 2：compliance/violation 的 terms 一个字都不出现', () => {
@@ -474,6 +481,22 @@ describe('F-2 · crawler/empty 的 skipped 扁平串', () => {
     expect(text).toContain('https://a.example/x（抓取或解析失败）');
     expect(text).toContain('https://a.example/y（mystery_token）');
     expect(text).not.toContain('{{');
+  });
+});
+
+describe('F-2g · crawler/invalid_url 的模板带上 {{url}}', () => {
+  // `url` 是该 code **保证发出**的 param（`geo-crawler/src/error.rs` 的 `InvalidUrl`
+  // 分支无条件插 `url` 与 `reason` 两个键），所以它有资格进主模板（B-5 的口径）。
+  // 整站抓取时用户填了一堆链接（`project.rs:222` 的 `core_pages[{i}]`、
+  // `:256` 的 `competitors[{i}].website`），不说是哪一条就没法改。
+  it('zh/en 都说清是哪一条链接不合法', () => {
+    const error = ipcError('crawler/invalid_url', {
+      url: 'ftp://a.example/x',
+      reason: 'invalid_url',
+    });
+
+    expect(describeIpcError(error, zh())).toBe('链接不是合法网址：ftp://a.example/x');
+    expect(describeIpcError(error, en())).toBe('The link is not a valid URL: ftp://a.example/x');
   });
 });
 

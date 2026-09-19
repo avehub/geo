@@ -33,7 +33,10 @@ const errors = {
   'crawler/blocked': '已拒收该页面（{{url}}）：内容类型 {{value}} 不在允许范围内',
   'crawler/decode': '页面内容解析失败：{{reason}}',
   'crawler/empty': '抓取 {{domain}} 后没有得到任何可用页面',
-  'crawler/invalid_url': '链接{{reason}}',
+  // F-2g：`url` 是本 code **保证发出**的 param（`geo-crawler/src/error.rs` 的 `InvalidUrl`
+  // 分支无条件插 `url` 与 `reason`），所以它有资格进主模板。整站抓取时用户填了一堆链接，
+  // 不说是哪一条就没法改；同族的 `crawler/timeout` / `crawler/too_large` 也都带 url。
+  'crawler/invalid_url': '链接{{reason}}：{{url}}',
   'crawler/network': '抓取网页失败：{{reason}}',
   'crawler/timeout': '抓取超时：{{url}}',
   'crawler/too_large': '页面超过大小上限（{{limit}} 字节）：{{url}}',
@@ -67,7 +70,11 @@ const errors = {
     invalid_id: '不是合法 ID',
     invalid_format: '格式不正确',
     duplicate: '存在重复项',
-    out_of_range: '需在 {{expected}} 范围内',
+    // F-2c：旧措辞 `需在 {{expected}} 范围内` 会渲染成 `标签需在 <=20 范围内`——
+    // 把纯 ASCII 的边界表达式直接塞进中文句子里，读起来像漏翻。改成「超出允许范围（…）」
+    // 后 `expected` 落在括号里，视觉上是个附注而不是句子成分。刻意**不解析** `expected`
+    // （它只有 `a~b` / `<=n` / `<n` 三种语言中立形态，解析等于在前端重造一套后端语义）。
+    out_of_range: '超出允许范围（{{expected}}）',
     not_allowed: '不被允许，请改写后再提交',
     missing_header: '缺少必需的列',
     row_invalid: '这一行无法读取',

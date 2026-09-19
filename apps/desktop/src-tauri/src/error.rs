@@ -354,8 +354,9 @@ mod tests {
         assert_eq!(error.message, "config/invalid reason=missing_base_url");
     }
 
-    /// `internal` 的 message 只在「前端词典 miss」时作为兜底渲染出口，而 Plan A 的前提
-    /// 就是后端不再产出自然语言 ⇒ 它必须是 Task 3 那种紧凑日志串（`{code} {k}={v}`），
+    /// `internal` 的 message 是「前端词典 miss」时的兜底渲染出口（**Task 7 建完词典后**才退化成
+    /// 只进日志；在那之前它会经 `userMessage` 原样进 toast——见 `ipc/export.rs` 里同一时态的
+    /// 说明），而 Plan A 的前提就是后端不再产出自然语言 ⇒ 它必须是 Task 3 那种紧凑日志串（`{code} {k}={v}`），
     /// 不是中文句子。原名 `internal_helper_produces_actionable_chinese_message` 钉的正是
     /// 被 Plan A 废掉的那个意图（裁定 A-3）；这里的取值逐字取自 `ipc/export.rs` 那个
     /// 唯一的生产调用点（裁定 A-2）。

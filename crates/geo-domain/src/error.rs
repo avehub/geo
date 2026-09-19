@@ -12,8 +12,10 @@
 //! 契约文件的 `note` 不再复制这份清单——两处清单必然漂移，以本注释为准。
 //!
 //! **适用范围**：本目录是后端所有 `reason` 参数的词表，不只属于 `GeoError`——
-//! `unknown_provider` / `missing_base_url` / `missing_model` 经 `LlmError::Config`
-//! （code `llm/config`）发出而不是 `GeoError::Config`；`row_invalid` / `missing_header`
+//! `missing_base_url` / `missing_model` 经 `LlmError::Config`（code `llm/config`）发出而不是
+//! `GeoError::Config`；`unknown_provider` 挂**同一个 code** 却**不由 geo-llm 发出**——它在 geo-llm
+//! 内零发射点，由壳侧（`state.rs` / `settings_service.rs`）直接构造 `IpcError`；
+//! `row_invalid` / `missing_header`
 //! 经 CSV 导入导出路径发出；`parse_failed` / `json_not_found` / `missing_choices` /
 //! `validation_failed` 经 `LlmError::BadResponse` / `LlmError::Deserialize`
 //! （code `llm/bad_response` / `llm/deserialize`）发出；`http_status` 与 `not_allowed`

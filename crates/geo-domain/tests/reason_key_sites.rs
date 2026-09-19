@@ -692,7 +692,7 @@ const UNREACHABLE: &[UnreachableSite] = &[
     },
     UnreachableSite {
         no: 28,
-        at: "csv_io.rs::competitors_to_csv 写数据行那一处",
+        at: "csv_io.rs::competitors_to_csv 写数据行（write_record(&[…])）那一处",
         file: File::CsvIo,
         literal: WRITE_FAILED,
         reason: "write_failed",
@@ -710,7 +710,7 @@ const UNREACHABLE: &[UnreachableSite] = &[
     },
     UnreachableSite {
         no: 30,
-        at: "csv_io.rs::assets_to_csv 写数据行那一处",
+        at: "csv_io.rs::assets_to_csv 写数据行（write_record(&[…])）那一处",
         file: File::CsvIo,
         literal: WRITE_FAILED,
         reason: "write_failed",
@@ -992,10 +992,16 @@ fn the_directory_table_and_companion_table_agree() {
 /// reason + extra 键（这两个字段本身由 [`unreachable_sites_keep_their_literal_mapping`]
 /// 对照源码字面量核过，不是凭空声明的）。
 ///
-/// 注意这条**只以站点为输入**：域内零站点的 key（`row_invalid` / `unknown_provider` /
-/// `missing_choices` / `json_not_found` / `validation_failed` / `http_status` /
-/// `secret_unavailable`）永远不会以它们为参数调用 [`companion`]，因此归错组也不红。
-/// 那个盲区由 [`the_directory_table_and_companion_table_agree`] 兜（I-1）。
+/// 注意这条**只以站点为输入**：域内零站点的 key——判定标准是「登记进了 [`COMPANIONS`]，但
+/// [`SITES`] 与 [`UNREACHABLE`] 里没有任何 `reason:` 字段引用它」——永远不会以它们为参数
+/// 调用 [`companion`]，因此归错组也不红。那个盲区由
+/// [`the_directory_table_and_companion_table_agree`] 兜（I-1）。
+///
+/// **这里刻意不逐个列举那些 key**：Task 5b 复审 Minor 2 抓到旧版列了 7 个而真值是 12 个
+/// （漏 `duplicate` / `empty` / `too_short` / `missing_base_url` / `missing_model`；后两个正是 B-2
+/// 本轮把期望从 `Exactly(&[])` 改成 `Exactly(&["value"])` 的那两个）。列一份就等于在本文件里
+/// 再造一面会漂移的清单，而「哪些 key 零站点」本可由上面那条判定标准机器求出——与
+/// `crates/geo-domain/src/error.rs` 开头「契约不再复制清单，两处清单必然漂移」是同一条教训。
 #[test]
 fn reason_key_pins_its_companion_params() {
     fn check(where_: String, reason: &str, extra_keys: &[&str]) {

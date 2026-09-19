@@ -47,8 +47,12 @@ pub async fn export_write_file(
     // **用户取消不是**，它走下面 `let Some(path) = picked else { return Ok(None) }`。
     // 没有哪个既有 code 语义相符，而契约的 43 个 code 是冻结的 ⇒ 仍用 `ipc/internal`，
     // 但 message 换成 Task 3 那种紧凑日志串（裁定 A-2）：该 code 的 params 被契约冻结成
-    // `[]`，装不下 `reason` 键，所以这个 reason 只出现在兜底文案里；词典必然命中
-    // `ipc/internal`，这句话实际上只进日志。
+    // `[]`，装不下 `reason` 键，所以这个 reason 只出现在兜底文案里。
+    //
+    // ⚠ 时态（Task 5b 复审 Minor 1）：**Task 7 建完词典之后**，`ipc/internal` 必然命中词典、
+    // 这句话才真的只进日志；**在此之前**它会经前端 `describeError` → `client.ts` 的 `userMessage`
+    // 原样弹进 toast。这与 Task 5 之后所有 code 的现状一致，是 Plan A 的既定过渡态（Task 9 收口）。
+    // 别把下面这句读成「往 `internal()` 的 message 里塞什么都不会到用户眼前」。
     let picked = receiver
         .await
         .map_err(|_| IpcError::internal("ipc/internal reason=dialog_channel_closed"))?;

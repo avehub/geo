@@ -600,8 +600,12 @@ describe('B-1① · 判据本身（共享模块 `src/api/error-text.ts`）', () 
   });
 
   it('TOO_SHORT 的阈值留了余量：合格渲染里最短的也比它长', () => {
-    // 实测口径：现有四轮共 272 次合格渲染中，信息字符（字母+数字，含 CJK）最少的是 6
-    // （zh「链接不能为空」）。阈值取 5 ⇒ 真空洞 `链接`(2) 被抓，合格文案一条不误伤。
+    // 实测口径：现有四轮共 272 次合格渲染中，信息字符（字母+数字，含 CJK）最少的是 **7**
+    // （zh「品牌名不能为空」）。阈值取 5 ⇒ 真空洞 `链接`(2) 被抓，合格文案一条不误伤。
+    // **更正**（本轮第 4 个 commit · 报告 §9.3 / N-3）：原先记的是 6（zh「链接不能为空」）——
+    // F-2g 把 `crawler/invalid_url` 的 zh 模板改成 `链接{{reason}}：{{url}}` 之后那条渲染变长，
+    // 最短值升到 7。下面样本里仍保留「链接不能为空」(6)：它是个**更紧的**下界样本，
+    // `6 >= 5` 依然成立，留着无害（本断言判的是「样本 >= MIN_INFO_CHARS」，不是「样本 == 最短值」）。
     const shortest = ['链接不能为空', '品牌名不能为空', '抓取超时：https://a.example/news'];
     for (const text of shortest) {
       const infoChars = text.replace(/[^\p{L}\p{N}]/gu, '').length;
@@ -825,5 +829,144 @@ describe('fields · 词典与手抄清单**双向**相等（F-2e）', () => {
       }).toEqual({ side, 词典缺失: [], 词典多出: [], 空值: [] });
     }
     expect(FIELD_VALUES.length).toBeGreaterThanOrEqual(50);
+  });
+});
+
+describe('F-2d · en 字段标签一律单数头名词（主谓一致）', () => {
+  /**
+   * **为什么这一组住在 `dictionary.test.ts`**（控制器要求说明选择理由）：
+   * 它守的是**词典内容的词形**，不是 `describeIpcError` 的行为。同族的 F-2e
+   * 「`FIELD_VALUES` 与词典双向相等」也在这里（`:804`），两条守卫共用 `FIELD_ENTRIES`，
+   * 而且本组还要用 `DIRECTORY` / `template()` / `render()`——这三样都是本文件的模块级私有。
+   * `errors.test.ts:261`/`:275` 钉的是 `tags` / `ids` 出现在**句子**里的形态（行为面），保留不动、不重复。
+   */
+  const EN_FIELDS = new Map(FIELD_ENTRIES['en-US']);
+
+  /**
+   * F-2d 逐条改过的 **8** 个标签：复审 M-2 实测可达的 2 条（`aliases` / `ids`）+ 今天不可达的 6 条。
+   * 真值源：`task-7-review.md` §6 的 F-2d 行 + `en-US/fields.ts`。
+   *
+   * 这一份存在的原因是**变异自证抓到的缺口**（`task-7b-report.md` §8.3 的 M13 / M13d）：
+   * 把 `aliases` 改回 `'Brand aliases'`、或 `qualifications` 改回 `'Qualifications'`，
+   * 原先全量 161 条用例**全绿**——8 个标签里只有 `tags` / `ids` 被 `errors.test.ts` 顺带钉住。
+   */
+  const F2D_LABELS: ReadonlyArray<readonly [field: string, en: string]> = [
+    ['aliases', 'Brand alias list'],
+    ['tags', 'Tag list'],
+    ['ids', 'Selected item list'],
+    ['qualifications', 'Qualification list'],
+    ['products', 'Product and spec list'],
+    ['service_regions', 'Service region list'],
+    ['cases', 'Customer case list'],
+    ['differentiators', 'Differentiator list'],
+  ];
+
+  /**
+   * en 的 reason 文案以**单数谓语**开头的那一批：只有跟它们组合，复数标签才真的产生主谓不一致
+   * （`row_invalid` 的 `this row…`、`http_status` 的 `the upstream…`、`secret_unavailable` 的
+   * `the system…` 这类不以动词开头，不参与对账）。
+   * **从词典现算，不手抄**——真值源就是 `en-US/errors.ts` 的 `reasons`（今天 23 条里 18 条命中）。
+   */
+  const SINGULAR_VERB = /^(?:is|has|was|does|exceeds|contains|points|could|must|failed)\b/i;
+  const singularVerbReasons = DIRECTORY.map((row) => row.key).filter((key) =>
+    SINGULAR_VERB.test(template('en-US', `errors.reasons.${key}`) ?? ''),
+  );
+
+  /** 句子里「复数名词 + 单数动词」的撞击形态：词尾 s、空白、单数谓语。 */
+  const CLASH = /\bs\s+(?:is|has|was|does|exceeds|contains|points|could|must|failed)\b/i;
+
+  /**
+   * 头名词**合法**为复数、或 F-2d 的扫除没覆盖到的复数标签（例外表，逐条有据）。
+   *
+   * 这一份是**假阳性对账**的产物：52 个 en 标签里，首词或末词以 `s` 结尾的**恰好** 5 个，
+   * 其余 47 个都被下面的结构性守卫覆盖。新增条目需要控制器签字，
+   * 且 `expect(PLURAL_HEAD_KNOWN.size).toBe(5)` 与「反向哨兵」那条会立刻红。
+   *
+   * ⚠ 后 4 条是本轮**新发现**的残留（复审 M-2 只数到 3 条可达组合，F-2d 只改了 8 个标签，
+   * 都没覆盖到它们），而且**可达**：`repeat_count` 走 `crates/geo-domain/src/prompt.rs:239`
+   * 与 `services/prompt_service.rs:171` 的 `out_of_range`；`competitors` 走
+   * `crates/geo-domain/src/project.rs:238` 与 `services/project_service.rs:205`；另外 3 个走
+   * `services/settings_service.rs:302`-`:327` 的 `in_range()`（同样发 `out_of_range`）。
+   * 修它们要改 `en-US/fields.ts`，**超出本 commit 的边界**（控制器明令不许碰词典文件），
+   * 所以只记账不改：见 `task-7b-report.md` §11 的 **N-5**。
+   */
+  const PLURAL_HEAD_KNOWN: ReadonlyMap<string, string> = new Map([
+    ['competitors', '"Number of competitors" 的头名词是 Number（单数），"Number of competitors is outside…" 语法正确——**不是**缺陷'],
+    ['repeat_count', '"Rewrite rounds is outside the allowed range (…)" 不一致；残留 N-5'],
+    ['concurrency.max_parallel', '"Max parallel requests is outside the allowed range (…)" 不一致；残留 N-5'],
+    ['rate_limit.requests_per_minute', '"Requests per minute is outside the allowed range (…)" 不一致（复数在**首词**）；残留 N-5'],
+    ['rate_limit.retry_max', '"Max retries is outside the allowed range (…)" 不一致；残留 N-5'],
+  ]);
+
+  /**
+   * 首词或末词以 `s` 结尾 ⇒ 头名词**可能**是复数。刻意保守（宁多进例外表，不漏判）：
+   * 只看首末两个词，所以 `Brand alias list` 中间的 `alias` 不会被误伤。
+   * 已知局限：头名词本身以 s 结尾的**单数**词（`Business` / `Status` / `Address`）会被误判，
+   * 那时把它加进 `PLURAL_HEAD_KNOWN` 并写明理由（今天 52 个标签里一个都没有）。
+   */
+  function pluralHead(label: string): string | null {
+    const words = label.trim().split(/\s+/);
+    for (const word of [words[0], words[words.length - 1]]) {
+      if (word !== undefined && /s$/i.test(word)) return word;
+    }
+    return null;
+  }
+
+  it('F-2d 改过的 8 个 en 标签逐字钉住，且与单数谓语组合后整句主谓一致', () => {
+    // 非永真：8 条一条不许漏钉
+    expect(F2D_LABELS.length, 'F-2d 改了 8 个 en 标签，这里必须钉满 8 条').toBe(8);
+
+    const drifted: string[] = [];
+    for (const [field, expected] of F2D_LABELS) {
+      const actual = EN_FIELDS.get(`fields.${field}`);
+      if (actual !== expected) {
+        drifted.push(`${field}: 期望 "${expected}"，实际 "${actual ?? '(词典里没有这个键)'}"`);
+      }
+    }
+    expect(drifted, 'en 标签被改回了复数形态（F-2d 回退）').toEqual([]);
+
+    // 端到端：走真实渲染路径（不只是词典取值），整句必须与单数谓语一致
+    for (const [field, expected] of F2D_LABELS) {
+      expect(render('validation/failed', { field, reason: 'required' }, 'en-US'), field).toBe(
+        `${expected} is required`,
+      );
+    }
+
+    // 8 个标签 × 18 条单数谓语 reason = 144 句，一句都不许出现「复数名词 + 单数动词」
+    const clashes: string[] = [];
+    for (const [field] of F2D_LABELS) {
+      const label = EN_FIELDS.get(`fields.${field}`) ?? '';
+      for (const key of singularVerbReasons) {
+        const sentence = `${label} ${template('en-US', `errors.reasons.${key}`) ?? ''}`;
+        if (CLASH.test(sentence)) clashes.push(`${field} × ${key} → ${sentence}`);
+      }
+    }
+    expect(singularVerbReasons.length, '单数谓语 reason 今天应有 18 条，塌成空集就是判据失效').toBe(18);
+    expect(clashes).toEqual([]);
+  });
+
+  it('全部 en 标签的头名词都是单数（结构性守卫；例外表逐条有据且不许悄悄长大）', () => {
+    // 防空跑：例外表与词典都不许塌成空集
+    expect(PLURAL_HEAD_KNOWN.size).toBe(5);
+    expect(EN_FIELDS.size).toBeGreaterThanOrEqual(50);
+
+    const bad: string[] = [];
+    for (const [path, label] of EN_FIELDS) {
+      const head = pluralHead(label);
+      if (head === null) continue;
+      const field = path.slice('fields.'.length);
+      if (PLURAL_HEAD_KNOWN.has(field)) continue;
+      const reason = template('en-US', `errors.reasons.${singularVerbReasons[0]}`) ?? '';
+      bad.push(`${field}: "${label}"（头名词 "${head}"）→ "${label} ${reason}"`);
+    }
+    expect(bad, '新的 en 标签用了复数头名词，会渲染出主谓不一致的句子').toEqual([]);
+
+    // 反向哨兵（§E）：守卫**确实**数得出东西——今天带复数头名词的标签集合，
+    // 恰好等于例外表。这条同时挡住两种劣化：例外表被随手加胖、以及 `pluralHead()` 退化成永假。
+    const seen = [...EN_FIELDS]
+      .filter(([, label]) => pluralHead(label) !== null)
+      .map(([path]) => path.slice('fields.'.length))
+      .sort();
+    expect(seen).toEqual([...PLURAL_HEAD_KNOWN.keys()].sort());
   });
 });

@@ -5,7 +5,7 @@
  * try/catch 容忍损坏数据，**不**用 `zustand/middleware` 的 persist（部分水合时机会让
  * R-A 要求的"同步生效"变难，也与同类 store 不一致）。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '../i18n';
 import {
@@ -20,6 +20,15 @@ describe('usePreferences', () => {
   beforeEach(() => {
     localStorage.clear();
     resetPreferencesStore();
+  });
+
+  // M-3（Task 6b-C）：最后那条用例把 `Storage.prototype.setItem` 换成了**抛异常**的实现。
+  // vitest 默认 `restoreMocks: false`、`clearMocks: true`，而 `mockClear` 只清调用历史、
+  // **不清实现** ⇒ 那个会抛异常的 setItem 会留给同文件后续用例，Task 8/9 往这里加
+  // `setLocale` 落盘断言时会莫名失败。用 `afterEach` 而不是用例内 `mockRestore()`：
+  // 前者对将来新增的用例同样生效。写法与 `src/i18n/index.test.ts` 保持一致。
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('默认语言是 zh-CN，存储 key 固定为 geo.preferences', () => {

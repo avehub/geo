@@ -45,6 +45,11 @@ const REQUIRED_COMMON_KEYS = [
 describe('i18n 基座', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    // M-6（Task 6b-D）：下面 `R-B：applyDayjsLocale …` 那条用例把 dayjs **全局**留在 `zh-cn`。
+    // dayjs 是单例、没有 Context，所以这个状态会被同文件里后写的用例看到 ⇒ 顺序依赖。
+    // 复位值取 `'en'`：dayjs 的语言包是副作用导入（只注册、不设置全局），其它测试文件在各自
+    // 进程里看到的默认值就是 `'en'`，复位到它与 BASE 时其它文件的前提完全一致。
+    dayjs.locale('en');
   });
 
   it('语言清单固定为 zh-CN / en-US，默认 zh-CN', () => {
@@ -151,6 +156,43 @@ describe('i18n 基座', () => {
         expect((value as string).trim(), `${locale} ${path} 不能是空串`).not.toBe('');
       }
     }
+  });
+
+  /**
+   * M-2（Task 6b-B）· R-G 的**运行期**兜底网：比较两侧词典的叶子 key 路径集合。
+   *
+   * 为什么它不与类型检查重复（**别因为"类型已经管了"就删掉它**）——`tsc -b` 有三层键集网：
+   * ① en-US 每个 namespace 文件上的 `: ResourceBundle['<ns>']`；② `locales/en-US/index.ts`
+   * 组合层的 `const enUS: ResourceBundle`；③ 下面 `R-G：en-US 资源被 ResourceBundle 钉住`
+   * 那条用例里的 `const bundle: ResourceBundle = enUS`。Task 6b 逐个注入变异实测的结果：
+   *
+   * - **en 缺键**：①②③ 任意一层健在就红。实测同时删掉 ①②（并删掉 `nav.entityCard`）后，
+   *   仍由 ③ 报 `TS2322 … nav: { projects; entityCard; … }`；要让 `tsc` 对缺键彻底闭嘴，
+   *   得连本文件那条 R-G 用例一起删——而那时唯一还会红的就是本断言。
+   * - **en 多键**：**只有 ① 抓得到**。②③ 的右值都来自变量，TS 不做 excess property check
+   *   （`resources.ts` 的 R-G 注释已点明这一点）。实测「删掉 ① + 往 en 的 nav 多塞一个键」⇒
+   *   `pnpm run build` **exit 0**、产物照常产出（完全静默），而本断言红：
+   *   `en-US 多出来的键（zh-CN 侧没有）: expected [ 'nav.onlyInEn' ] to deeply equal []`。
+   *
+   * Task 8/9/10 要往 `errors` / `fields` / `project` / `prompt` / `entity` / `settings` / `demo`
+   * 这 7 个占位 namespace 塞几十条词条，而改写时最容易掉的正是 ①：占位文件现在整行就是
+   * `const errors: ResourceBundle['errors'] = {}`，往里填内容时顺手把标注删掉毫无阻力。
+   * 本断言只看运行期的真实对象，与三层标注是否健在**完全无关**。
+   *
+   * 占位 namespace 两侧都是空对象 ⇒ 各自贡献 0 个叶子，不影响相等；只填一侧就会在这里红。
+   */
+  it('R-G 运行期兜底：zh-CN 与 en-US 的叶子 key 路径集合完全相等（双向）', () => {
+    const paths = (bundle: unknown) => leafEntries(bundle).map(([path]) => path).sort();
+    const zh = paths(zhCN);
+    const en = paths(enUS);
+
+    // 两个方向分开断言：失败信息直接点名"en 多了哪些 / en 少了哪些"，
+    // 而不是让 Task 8/9 的实现者对着一句"数组不等"去数几十条词条。
+    expect(en.filter((path) => !zh.includes(path)), 'en-US 多出来的键（zh-CN 侧没有）').toEqual([]);
+    expect(zh.filter((path) => !en.includes(path)), 'en-US 缺失的键（会静默回落到中文）').toEqual(
+      [],
+    );
+    expect(en).toEqual(zh);
   });
 
   it('R-B：antdLocale 把内部语言码映射到 antd 的 locale 对象', () => {

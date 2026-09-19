@@ -1,5 +1,26 @@
 @import 'tailwindcss';
 
+/*
+ * 把测试文件排除出 Tailwind v4 的自动内容探测（裁定 B-5 / 复审 F-3c）。
+ *
+ * 自动探测的默认范围是 vite root（apps/desktop/ui）下的所有文件，**包括** src 里递归的
+ * 那些 .test.ts 与 .test.tsx。测试与注释里的散文单词只要长得像 class 名，就会生成一条死
+ * CSS 规则并改变产物 CSS 的文件名哈希；Vite/Rolldown 又把关联 CSS 计进 JS chunk 的
+ * content hash，于是「改一行测试注释」能让 JS 产物哈希跟着变
+ * （Task 7 报告 §9-3 / §9-4 的实测事故，Task 8/9 抽文案时会反复踩）。
+ *
+ * 下面两条指令的写法有硬约束（tailwindcss 4.3.3 实测）：路径**必须带引号**，不带引号
+ * 直接抛 "`@source` paths must be quoted."；相对路径按**本文件所在目录**解析，
+ * 所以那两条以点开头、匹配 src 下递归的 .test.ts / .test.tsx。
+ * 另：这两行的注释刻意不写出完整 glob——glob 里的星号斜杠组合会提前闭合 CSS 块注释。
+ *
+ * 守卫在 src/tailwind-sources.test.ts：它直接调 tailwindcss 的 compile() 断言这两条指令
+ * 真的被解析成 negated source、基准目录就是 src、且展开后覆盖到仓库里每一个测试文件，
+ * 并带一个「删掉指令 ⇒ negated source 消失」的对照组，免得守卫自己变成永真断言。
+ */
+@source not "./**/*.test.ts";
+@source not "./**/*.test.tsx";
+
 :root {
   color-scheme: light;
 }

@@ -151,15 +151,21 @@ describe('EntityCardPage', () => {
     expect(await screen.findByText(/请输入要抓取的官网域名/)).toBeInTheDocument();
   });
 
-  it('后端报错时展示中文原因', async () => {
+  // Task 7：`project/not_found` 的中文原因由词典渲染（kind → 名词、id 原样保留）。
+  // 后端 message 是紧凑日志串、不含中文，故按 `GeoError::not_found("project", id)` 的真实形状补 params。
+  it('后端报错时展示词典渲染的原因', async () => {
     mockInvoke.stubAlways(
       'entity_card_get',
-      { code: 'project/not_found', message: 'project 不存在：nope' },
+      {
+        code: 'project/not_found',
+        params: { kind: 'project', id: 'nope' },
+        message: 'project/not_found id=nope kind=project',
+      },
       'reject',
     );
     mockInvoke.stubAlways('entity_card_revisions', () => []);
     renderPage();
 
-    expect(await screen.findByText(/project 不存在/)).toBeInTheDocument();
+    expect(await screen.findByText('项目不存在（ID：nope）')).toBeInTheDocument();
   });
 });

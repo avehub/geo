@@ -2,19 +2,15 @@ import { useCallback } from 'react';
 import { Alert, App, Button, Card, Col, Empty, Progress, Row, Space, Typography } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 import * as client from '../api/client';
-import { IpcRequestError } from '../api/client';
+import { describeIpcError } from '../api/errors';
 import type { EntityCard, FieldStatus } from '../api/types';
 import AutoBuildPanel from '../components/AutoBuildPanel';
 import EntityFieldCard from '../components/EntityFieldCard';
 import { ENTITY_FIELDS } from '../components/entity-fields';
 import RevisionTimeline from '../components/RevisionTimeline';
-
-function describeError(error: unknown): string {
-  if (error instanceof IpcRequestError) return error.userMessage;
-  return error instanceof Error ? error.message : '未知错误';
-}
 
 function fieldValue(card: EntityCard, path: string): unknown {
   return (card.fields as unknown as Record<string, unknown>)[path];
@@ -25,6 +21,7 @@ export default function EntityCardPage() {
   const { id: projectId = '' } = useParams();
   const queryClient = useQueryClient();
   const { message } = App.useApp();
+  const { t } = useTranslation();
 
   const cardQuery = useQuery({
     queryKey: ['entity-card', projectId],
@@ -50,7 +47,7 @@ export default function EntityCardPage() {
       message.success('字段已更新，修订已留痕');
       refresh();
     },
-    onError: (error) => message.error(describeError(error)),
+    onError: (error) => message.error(describeIpcError(error, t)),
   });
 
   if (cardQuery.isError) {
@@ -59,7 +56,7 @@ export default function EntityCardPage() {
         type="error"
         showIcon
         message="加载实体卡失败"
-        description={describeError(cardQuery.error)}
+        description={describeIpcError(cardQuery.error, t)}
       />
     );
   }

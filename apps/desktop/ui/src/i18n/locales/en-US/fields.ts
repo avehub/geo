@@ -1,6 +1,62 @@
 import type { ResourceBundle } from '../../resources';
 
-/** 占位 namespace：由 Task 7（实体卡字段名，`fields.<field>`） 填入，键集必须与 zh-CN 侧完全一致（R-G / R-J）。 */
-const fields: ResourceBundle['fields'] = {};
+/**
+ * 字段名词典（en-US）。键集必须与 zh-CN 侧完全一致（R-G / R-J），
+ * 顶部的 `: ResourceBundle['fields']` 标注**不要删**——它是唯一抓得到「en 多键」的一层。
+ */
+const fields: ResourceBundle['fields'] = {
+  brand_name: 'Brand name',
+  name: 'Project name',
+  aliases: 'Brand aliases',
+  tags: 'Tags',
+  region: 'Region',
+  website: 'Website',
+  domain: 'Website domain',
+  content: 'Content',
+  csv_header: 'CSV header',
+  payload: 'Imported payload',
+  format_version: 'File format version',
+  target_count: 'Target count',
+  repeat_count: 'Rewrite rounds',
+  intents: 'Intent list',
+  label: 'Prompt set name',
+  items: 'Item list',
+  ids: 'Selected items',
+  set_id: 'Prompt set ID',
+  text: 'Prompt text',
+  weight: 'Weight',
+  api_key: 'API key',
+  language: 'Language',
+  field_path: 'Field path',
+  standard_name: 'Standard name',
+  founded_year: 'Founded year',
+  qualifications: 'Qualifications',
+  products: 'Products and specs',
+  'products.name': 'Product name',
+  price_range: 'Price range',
+  service_regions: 'Service regions',
+  cases: 'Customer cases',
+  differentiators: 'Differentiators',
+  official_tone: 'Official tone',
+  contact: 'Contact',
+  'asset.url': 'Asset URL',
+  'competitor.name': 'Competitor name',
+  'competitor.website': 'Competitor website',
+  competitors: 'Number of competitors',
+  'competitors.name': 'Competitor name',
+  'competitors.website': 'Competitor website',
+  core_pages: 'Core page',
+  'model.provider': 'Provider',
+  'model.model': 'Model name',
+  'model.base_url': 'Model base URL',
+  'model.temperature': 'Temperature',
+  'model.timeout_secs': 'Timeout',
+  'proxy.url': 'Proxy URL',
+  'concurrency.max_parallel': 'Max parallel requests',
+  'concurrency.queue_size': 'Queue size',
+  'rate_limit.requests_per_minute': 'Requests per minute',
+  'rate_limit.min_interval_ms': 'Minimum request interval',
+  'rate_limit.retry_max': 'Max retries',
+};
 
 export default fields;

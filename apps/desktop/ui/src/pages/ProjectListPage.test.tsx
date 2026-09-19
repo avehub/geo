@@ -214,11 +214,18 @@ describe('ProjectListPage', () => {
     expect(await screen.findByText('标签已更新')).toBeInTheDocument();
   });
 
-  it('标签写入失败时给出中文原因且不假装成功', async () => {
+  // Task 7：中文原因改由词典按 code + params 渲染。后端 message 已退化成紧凑日志串
+  // （`GeoError::user_message` == `Display` == `"{code} {k}={v}…"`，见 error.rs:286/:297），
+  // 所以这里按 `project_service.rs:315` 的真实发射形状补 params，断言换成词典文案。
+  it('标签写入失败时给出词典渲染的原因且不假装成功', async () => {
     stubList();
     mockInvoke.stubAlways(
       'project_update',
-      { code: 'validation/failed', message: '标签不能超过 20 个' },
+      {
+        code: 'validation/failed',
+        params: { field: 'tags', reason: 'out_of_range', expected: '<=20' },
+        message: 'validation/failed expected=<=20 field=tags reason=out_of_range',
+      },
       'reject',
     );
     const user = userEvent.setup();
@@ -230,7 +237,7 @@ describe('ProjectListPage', () => {
     await user.type(tagsInput, '太多');
     pressEnter(tagsInput);
 
-    expect(await screen.findByText('标签不能超过 20 个')).toBeInTheDocument();
+    expect(await screen.findByText('标签需在 <=20 范围内')).toBeInTheDocument();
     expect(screen.queryByText('标签已更新')).not.toBeInTheDocument();
   });
 

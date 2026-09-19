@@ -3,9 +3,10 @@ import { Alert, App, Button, Card, Radio, Select, Space, Tag, Typography } from 
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 import * as client from '../api/client';
-import { IpcRequestError } from '../api/client';
+import { describeIpcError } from '../api/errors';
 import type {
   GenerateOptions,
   IntentCategory,
@@ -25,11 +26,6 @@ type IntentFilter = IntentCategory | 'all';
 /** 没有分组的条目在筛选器里归到这一档。 */
 const NO_GROUP = '未分组';
 
-function describeError(error: unknown): string {
-  if (error instanceof IpcRequestError) return error.userMessage;
-  return error instanceof Error ? error.message : '未知错误';
-}
-
 function groupOf(item: PromptItem): string {
   const name = item.group_name?.trim();
   return name === undefined || name === '' ? NO_GROUP : name;
@@ -40,6 +36,7 @@ export default function PromptSetPage() {
   const { id: projectId = '' } = useParams();
   const queryClient = useQueryClient();
   const { message, modal } = App.useApp();
+  const { t } = useTranslation();
 
   const [intentFilter, setIntentFilter] = useState<IntentFilter>('all');
   const [groupFilter, setGroupFilter] = useState<string>('all');
@@ -93,7 +90,7 @@ export default function PromptSetPage() {
       setDedupeSummary(null);
       setSelectedKeys([]);
     },
-    onError: (error) => message.error(describeError(error)),
+    onError: (error) => message.error(describeIpcError(error, t)),
   });
 
   const itemMutation = useMutation({
@@ -104,7 +101,7 @@ export default function PromptSetPage() {
       // 改一条也会换掉整份快照的 content_hash，重取比手工打补丁可靠
       refresh();
     },
-    onError: (error) => message.error(describeError(error)),
+    onError: (error) => message.error(describeIpcError(error, t)),
   });
 
   const addMutation = useMutation({
@@ -114,7 +111,7 @@ export default function PromptSetPage() {
       message.success(`已新增 1 条，当前共 ${updated.items.length} 条`);
       setEditor(null);
     },
-    onError: (error) => message.error(describeError(error)),
+    onError: (error) => message.error(describeIpcError(error, t)),
   });
 
   const deleteMutation = useMutation({
@@ -124,7 +121,7 @@ export default function PromptSetPage() {
       setSelectedKeys([]);
       message.success(`已删除 ${ids.length} 条，剩余 ${updated.items.length} 条`);
     },
-    onError: (error) => message.error(describeError(error)),
+    onError: (error) => message.error(describeIpcError(error, t)),
   });
 
   const dedupeMutation = useMutation({
@@ -136,7 +133,7 @@ export default function PromptSetPage() {
       setSelectedKeys([]);
       refresh();
     },
-    onError: (error) => message.error(describeError(error)),
+    onError: (error) => message.error(describeIpcError(error, t)),
   });
 
   const promptSet = setQuery.data ?? null;
@@ -209,7 +206,7 @@ export default function PromptSetPage() {
         type="error"
         showIcon
         message="加载题库失败"
-        description={describeError(listQuery.error ?? setQuery.error)}
+        description={describeIpcError(listQuery.error ?? setQuery.error, t)}
       />
     );
   }

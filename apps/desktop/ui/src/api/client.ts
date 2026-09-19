@@ -85,12 +85,19 @@ export type IpcCommand = (typeof IPC_COMMANDS)[number];
 export class IpcRequestError extends Error {
   readonly code: string;
   readonly detail: unknown;
+  /**
+   * 语言中立参数（键名由 `contracts/error-codes.json` 冻结）。
+   * 词典靠它插值，见 `src/api/errors.ts` 的 `describeIpcError`；
+   * 后端没带这个字段时是 `{}` 而不是 `undefined`，调用方不必处处判空。
+   */
+  readonly params: Readonly<Record<string, string>>;
 
   constructor(payload: IpcErrorPayload) {
     super(payload.message || '未知错误');
     this.name = 'IpcRequestError';
     this.code = payload.code || 'ipc/unknown';
     this.detail = payload.detail ?? null;
+    this.params = payload.params ?? {};
   }
 
   /** 中文可展示原因（antd message 直接用）。 */

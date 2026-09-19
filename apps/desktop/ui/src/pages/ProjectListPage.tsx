@@ -3,22 +3,19 @@ import { Alert, App, Button, Checkbox, Input, Space, Typography } from 'antd';
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 import * as client from '../api/client';
-import { IpcRequestError } from '../api/client';
+import { describeIpcError } from '../api/errors';
 import type { Project, ProjectFilter } from '../api/types';
 import ProjectTable, { type ProjectExportKind } from '../components/ProjectTable';
-
-function describeError(error: unknown): string {
-  if (error instanceof IpcRequestError) return error.userMessage;
-  return error instanceof Error ? error.message : '未知错误';
-}
 
 /** M1 入口：多项目列表、搜索、归档、删除与导出。 */
 export default function ProjectListPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { message, modal } = App.useApp();
+  const { t } = useTranslation();
 
   const [query, setQuery] = useState('');
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -45,7 +42,7 @@ export default function ProjectListPage() {
       message.success(project.status === 'archived' ? '已归档' : '已取消归档');
       void invalidate();
     },
-    onError: (error) => message.error(describeError(error)),
+    onError: (error) => message.error(describeIpcError(error, t)),
   });
 
   const deleteMutation = useMutation({
@@ -54,7 +51,7 @@ export default function ProjectListPage() {
       message.success('项目已删除');
       void invalidate();
     },
-    onError: (error) => message.error(describeError(error)),
+    onError: (error) => message.error(describeIpcError(error, t)),
   });
 
   const tagsMutation = useMutation({
@@ -64,7 +61,7 @@ export default function ProjectListPage() {
       message.success('标签已更新');
       void invalidate();
     },
-    onError: (error) => message.error(describeError(error)),
+    onError: (error) => message.error(describeIpcError(error, t)),
   });
 
   async function handleExport(project: Project, kind: ProjectExportKind) {
@@ -87,7 +84,7 @@ export default function ProjectListPage() {
       const saved = await client.exportWriteFile(`${project.brand_name}-${label}.csv`, csv, true);
       if (saved !== null) message.success(`${label} CSV 已导出`);
     } catch (error) {
-      message.error(describeError(error));
+      message.error(describeIpcError(error, t));
     }
   }
 
@@ -142,7 +139,7 @@ export default function ProjectListPage() {
           showIcon
           style={{ marginBottom: 12 }}
           message="加载项目失败"
-          description={describeError(listQuery.error)}
+          description={describeIpcError(listQuery.error, t)}
         />
       )}
 

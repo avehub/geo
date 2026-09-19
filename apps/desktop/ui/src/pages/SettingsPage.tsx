@@ -16,18 +16,14 @@ import {
 } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 
 import * as client from '../api/client';
-import { IpcRequestError } from '../api/client';
+import { describeIpcError } from '../api/errors';
 import type { AppSettings, ConcurrencyConfig, ModelConfig, RateLimitConfig } from '../api/types';
 import ProviderSelect from '../components/ProviderSelect';
 import ProxyForm from '../components/ProxyForm';
 import SecretStatusPanel from '../components/SecretStatus';
-
-function describeError(error: unknown): string {
-  if (error instanceof IpcRequestError) return error.userMessage;
-  return error instanceof Error ? error.message : '未知错误';
-}
 
 // 三个段落各给一个补丁函数：`InputNumber` 清空时回调 null，用 `??` 回落到默认值，
 // 比动态键 + 类型强转安全，也不会把 null 写进设置。
@@ -52,6 +48,7 @@ function patchModel(settings: AppSettings, patch: Partial<ModelConfig>): AppSett
  */
 export default function SettingsPage() {
   const { message } = App.useApp();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<AppSettings | null>(null);
 
@@ -72,12 +69,12 @@ export default function SettingsPage() {
       setDraft(null);
       message.success('设置已保存；代理与超时改动将在重启后生效');
     },
-    onError: (error) => message.error(describeError(error)),
+    onError: (error) => message.error(describeIpcError(error, t)),
   });
 
   if (settingsQuery.isError) {
     return (
-      <Alert type="error" showIcon message="读取设置失败" description={describeError(settingsQuery.error)} />
+      <Alert type="error" showIcon message="读取设置失败" description={describeIpcError(settingsQuery.error, t)} />
     );
   }
 

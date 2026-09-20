@@ -44,7 +44,7 @@ export default function EntityCardPage() {
     mutationFn: ({ path, value, status }: { path: string; value: unknown; status: FieldStatus }) =>
       client.entityCardUpdateField(projectId, path, value, status, null),
     onSuccess: () => {
-      message.success('字段已更新，修订已留痕');
+      message.success(t('entity.card.fieldUpdated'));
       refresh();
     },
     onError: (error) => message.error(describeIpcError(error, t)),
@@ -55,7 +55,7 @@ export default function EntityCardPage() {
       <Alert
         type="error"
         showIcon
-        message="加载实体卡失败"
+        message={t('entity.card.loadFailed')}
         description={describeIpcError(cardQuery.error, t)}
       />
     );
@@ -67,7 +67,7 @@ export default function EntityCardPage() {
   return (
     <div>
       <Typography.Title level={4} style={{ marginTop: 0 }}>
-        品牌实体卡
+        {t('entity.card.title')}
       </Typography.Title>
 
       <AutoBuildPanel
@@ -81,14 +81,14 @@ export default function EntityCardPage() {
 
       {card === null ? (
         <Card>
-          <Empty description="还没有实体卡，先用上方「自动建档」抓一次官网，或手工逐字段填写">
+          <Empty description={t('entity.card.empty')}>
             <Button
               type="primary"
               onClick={() =>
                 updateMutation.mutate({ path: 'standard_name', value: '', status: 'pending' })
               }
             >
-              手工新建空白实体卡
+              {t('entity.card.createBlank')}
             </Button>
           </Empty>
         </Card>
@@ -99,15 +99,18 @@ export default function EntityCardPage() {
               size="small"
               title={
                 <Space size={16}>
-                  <span>字段完整率</span>
+                  <span>{t('entity.card.completeness')}</span>
                   <Progress type="circle" size={64} percent={percent} />
                 </Space>
               }
               extra={
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {card.source.llm_provider
-                    ? `AI 抽取：${card.source.llm_provider} ${card.source.llm_model ?? ''}`
-                    : '人工录入'}
+                    ? t('entity.card.sourceAi', {
+                        provider: card.source.llm_provider,
+                        model: card.source.llm_model ?? '',
+                      })
+                    : t('entity.card.sourceManual')}
                 </Typography.Text>
               }
             >
@@ -132,7 +135,7 @@ export default function EntityCardPage() {
             </Card>
           </Col>
           <Col span={7}>
-            <Card size="small" title="修订历史">
+            <Card size="small" title={t('entity.card.revisions')}>
               <RevisionTimeline revisions={revisionQuery.data ?? []} />
             </Card>
           </Col>

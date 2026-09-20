@@ -121,6 +121,43 @@ const prompt = {
   },
 
   promptSet: {
+    /**
+     * 页面自身的文案（Task 9，`pages/PromptSetPage.tsx`）。`notes.*` 是 Task 8 建的**机器行**
+     * 渲染，两者刻意分开：前者由页面骨架消费，后者由 `describeNoteLine` 按后端 `stage` 拼键。
+     *
+     * ⚠ 插值变量一律**不叫 `count`**：i18next 见到 `count` 会走复数分支去找 `key_one`/`key_other`
+     * （与上面 `sampleSize.detail` 用 `{{total}}` 是同一条纪律）。
+     *
+     * `groupFilterNoGroup` 是分组筛选器里「没有分组」那一档的**展示文案**；组件侧的筛选值改成
+     * 稳定 ASCII 记号 `NO_GROUP`，不再把中文当 value——否则 en locale 下 Select 的 value 仍是中文。
+     */
+    title: 'Prompt 题库',
+    loadFailed: '加载题库失败',
+    empty: '还没有题库。设置好生成参数后点「生成题库」，系统会产出 60–100 条覆盖 7 类意图的中文口语化 prompt，并保存为一个带内容哈希的版本快照。',
+    version: '第 {{version}} 版',
+    itemCount: '共 {{total}} 条',
+    contentHash: '内容哈希 {{hash}}',
+    metricSpec: '口径 {{spec}}',
+    dedupe: '去重检查',
+    dedupeSummary: '重复对：{{pairs}}，合并移除：{{removed}}，保留：{{kept}}',
+    generated: '已生成 {{total}} 条 prompt（第 {{version}} 版）',
+    added: '已新增 1 条，当前共 {{total}} 条',
+    removed: '已删除 {{deleted}} 条，剩余 {{total}} 条',
+    updated: '已更新',
+    addPrompt: '新增 prompt',
+    deleteSelected: '删除选中',
+    deleteSelectedCount: '删除选中（{{selected}}）',
+    deleteConfirmTitle: '删除选中的 {{total}} 条 prompt？',
+    deleteConfirmContent: '删除后内容哈希与样本量分级会重算，且不可恢复（可先导出 CSV 备份）。',
+    deleteConfirmOk: '确认删除',
+    filtered: '筛出 {{shown}} / {{total}} 条',
+    intentFilterAll: '全部（{{total}}）',
+    groupFilterAll: '全部分组',
+    groupFilterNoGroup: '未分组',
+    groupFilterAria: '按分组筛选',
+    sourceFilterAll: '全部来源',
+    sourceFilterAria: '按来源筛选',
+
     notes: {
       degraded: '{{stage}}未成功，本轮题目改由行业模板与本地改写补足（{{detail}}）',
       stage: {

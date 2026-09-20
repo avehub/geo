@@ -187,4 +187,36 @@ describe('SettingsPage', () => {
     const sent = mockInvoke.lastArgsOf('settings_update')!.settings as AppSettings;
     expect(sent.concurrency.max_parallel).toBe(5);
   });
+
+  /**
+   * 裁定 B-2：页面级冒烟（静态 chrome）。这一页的 label 用 `<label htmlFor>` 关联控件，
+   * 所以 `getByLabelText` 同时钉住了「文案进了词典」与「关联没被抽取弄断」两件事。
+   * ⚠ 不写「整页无 CJK」：单选钮的服务商名走 `settings.providers.*`（Task 8 已抽），
+   * 但 `ProxyForm` / `SecretStatus` 里的示例数据仍是中文。
+   */
+  it('B-2 · 页面骨架文案在 en-US 下渲染成英文', async () => {
+    stub();
+    renderWithProviders(<SettingsPage />, { locale: 'en-US' });
+
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByText('Model provider')).toBeInTheDocument();
+    expect(screen.getByLabelText('Model name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Max parallelism')).toBeInTheDocument();
+    expect(screen.getByLabelText('Minimum interval (ms)')).toBeInTheDocument();
+    expect(screen.getByText('Language and notifications')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Save settings/ })).toBeInTheDocument();
+  });
+
+  it('B-2 对照 · 同一批断言在 zh-CN 下渲染成中文', async () => {
+    stub();
+    renderWithProviders(<SettingsPage />);
+
+    expect(await screen.findByRole('heading', { name: '设置' })).toBeInTheDocument();
+    expect(screen.getByText('模型服务商')).toBeInTheDocument();
+    expect(screen.getByLabelText('模型名')).toBeInTheDocument();
+    expect(screen.getByLabelText('最大并发')).toBeInTheDocument();
+    expect(screen.getByLabelText('最小间隔（毫秒）')).toBeInTheDocument();
+    expect(screen.getByText('语言与通知')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /保存设置/ })).toBeInTheDocument();
+  });
 });

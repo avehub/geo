@@ -67,14 +67,19 @@ export default function SettingsPage() {
     onSuccess: (saved) => {
       queryClient.setQueryData(['settings'], saved);
       setDraft(null);
-      message.success('设置已保存；代理与超时改动将在重启后生效');
+      message.success(t('settings.page.saved'));
     },
     onError: (error) => message.error(describeIpcError(error, t)),
   });
 
   if (settingsQuery.isError) {
     return (
-      <Alert type="error" showIcon message="读取设置失败" description={describeIpcError(settingsQuery.error, t)} />
+      <Alert
+        type="error"
+        showIcon
+        message={t('settings.page.loadFailed')}
+        description={describeIpcError(settingsQuery.error, t)}
+      />
     );
   }
 
@@ -90,12 +95,12 @@ export default function SettingsPage() {
   return (
     <div>
       <Typography.Title level={4} style={{ marginTop: 0 }}>
-        设置
+        {t('settings.page.title')}
       </Typography.Title>
 
       <Row gutter={16}>
         <Col span={14}>
-          <Card size="small" title="模型服务商" style={{ marginBottom: 16 }}>
+          <Card size="small" title={t('settings.page.modelCard')} style={{ marginBottom: 16 }}>
             <ProviderSelect
               providers={providers}
               value={settings.model.provider}
@@ -129,13 +134,13 @@ export default function SettingsPage() {
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <div>
                 <label htmlFor="settings-model-name" style={{ marginRight: 8 }}>
-                  模型名
+                  {t('settings.page.modelName')}
                 </label>
                 <Input
                   id="settings-model-name"
                   style={{ maxWidth: 320 }}
                   value={settings.model.model ?? ''}
-                  placeholder="留空则使用默认模型"
+                  placeholder={t('settings.page.modelNamePlaceholder')}
                   onChange={(event) =>
                     patch({
                       ...settings,
@@ -151,7 +156,7 @@ export default function SettingsPage() {
               <Space size={24} wrap>
                 <div>
                   <label htmlFor="settings-temperature" style={{ marginRight: 8 }}>
-                    温度
+                    {t('settings.page.temperature')}
                   </label>
                   <InputNumber
                     id="settings-temperature"
@@ -166,7 +171,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <label htmlFor="settings-timeout" style={{ marginRight: 8 }}>
-                    超时（秒）
+                    {t('settings.page.timeoutSeconds')}
                   </label>
                   <InputNumber
                     id="settings-timeout"
@@ -182,21 +187,21 @@ export default function SettingsPage() {
             </Space>
           </Card>
 
-          <Card size="small" title="网络代理" style={{ marginBottom: 16 }}>
+          <Card size="small" title={t('settings.page.proxyCard')} style={{ marginBottom: 16 }}>
             <ProxyForm
               value={settings.proxy}
               onChange={(proxy) => patch({ ...settings, proxy })}
             />
           </Card>
 
-          <Card size="small" title="采集并发与频控" style={{ marginBottom: 16 }}>
+          <Card size="small" title={t('settings.page.crawlerCard')} style={{ marginBottom: 16 }}>
             <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-              这些取值给 P0-B 的采集队列用。默认刻意保守：目标是别被引擎封，不是跑得快。
+              {t('settings.page.crawlerHint')}
             </Typography.Paragraph>
             <Space size={24} wrap>
               <div>
                 <label htmlFor="settings-max-parallel" style={{ marginRight: 8 }}>
-                  最大并发
+                  {t('settings.page.maxParallel')}
                 </label>
                 <InputNumber
                   id="settings-max-parallel"
@@ -210,7 +215,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label htmlFor="settings-queue-size" style={{ marginRight: 8 }}>
-                  队列长度
+                  {t('settings.page.queueSize')}
                 </label>
                 <InputNumber
                   id="settings-queue-size"
@@ -224,7 +229,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label htmlFor="settings-rpm" style={{ marginRight: 8 }}>
-                  每分钟请求数
+                  {t('settings.page.requestsPerMinute')}
                 </label>
                 <InputNumber
                   id="settings-rpm"
@@ -238,7 +243,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label htmlFor="settings-interval" style={{ marginRight: 8 }}>
-                  最小间隔（毫秒）
+                  {t('settings.page.minIntervalMs')}
                 </label>
                 <InputNumber
                   id="settings-interval"
@@ -253,7 +258,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label htmlFor="settings-retry" style={{ marginRight: 8 }}>
-                  重试次数
+                  {t('settings.page.retryMax')}
                 </label>
                 <InputNumber
                   id="settings-retry"
@@ -274,21 +279,21 @@ export default function SettingsPage() {
             <SecretStatusPanel provider={settings.model.provider} />
           </Card>
 
-          <Card size="small" title="语言与通知" style={{ marginBottom: 16 }}>
+          <Card size="small" title={t('settings.page.languageCard')} style={{ marginBottom: 16 }}>
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <div>
                 <label htmlFor="settings-language" style={{ marginRight: 8 }}>
-                  界面语言
+                  {t('settings.page.uiLanguage')}
                 </label>
                 <Select
                   id="settings-language"
                   style={{ width: 200 }}
                   value={settings.language}
-                  options={[{ value: 'zh_cn', label: '简体中文' }]}
+                  options={[{ value: 'zh_cn', label: t('settings.page.languageZhCn') }]}
                   onChange={(language) => patch({ ...settings, language })}
                 />
                 <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-                  P0-A 只做中文，多语言列 P1
+                  {t('settings.page.languageHint')}
                 </Typography.Text>
               </div>
               <Space size={24} wrap>
@@ -300,7 +305,7 @@ export default function SettingsPage() {
                       patch({ ...settings, notify: { ...settings.notify, on_finish: onFinish } })
                     }
                   />
-                  <label htmlFor="settings-notify-finish">任务完成时通知</label>
+                  <label htmlFor="settings-notify-finish">{t('settings.page.notifyOnFinish')}</label>
                 </Space>
                 <Space size={8}>
                   <Switch
@@ -310,7 +315,7 @@ export default function SettingsPage() {
                       patch({ ...settings, notify: { ...settings.notify, on_risk: onRisk } })
                     }
                   />
-                  <label htmlFor="settings-notify-risk">发现风险时通知</label>
+                  <label htmlFor="settings-notify-risk">{t('settings.page.notifyOnRisk')}</label>
                 </Space>
                 <Space size={8}>
                   <Switch
@@ -320,7 +325,7 @@ export default function SettingsPage() {
                       patch({ ...settings, notify: { ...settings.notify, sound } })
                     }
                   />
-                  <label htmlFor="settings-notify-sound">播放提示音</label>
+                  <label htmlFor="settings-notify-sound">{t('settings.page.notifySound')}</label>
                 </Space>
               </Space>
             </Space>
@@ -334,14 +339,14 @@ export default function SettingsPage() {
               disabled={draft === null}
               onClick={() => saveMutation.mutate(settings)}
             >
-              保存设置
+              {t('settings.page.save')}
             </Button>
             <Button disabled={draft === null} onClick={() => setDraft(null)}>
-              放弃修改
+              {t('settings.page.discard')}
             </Button>
             {draft !== null && (
               <Typography.Text type="warning" style={{ fontSize: 12 }}>
-                有未保存的修改
+                {t('settings.page.unsaved')}
               </Typography.Text>
             )}
           </Space>

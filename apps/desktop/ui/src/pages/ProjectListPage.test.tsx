@@ -267,4 +267,38 @@ describe('ProjectListPage', () => {
     await screen.findByText('宏宇泵业 GEO');
     expect(screen.getByRole('button', { name: /新建项目/ })).toBeEnabled();
   });
+
+  /**
+   * 裁定 B-2：页面级 en-US 冒烟。错误路径那条（F-2h③）已经在上面，这里补的是**静态 chrome**
+   * ——标题 / 搜索框 placeholder / 复选框 / 两个按钮 / 页脚提示都在 render 里直接求值，
+   * 最容易「忘了接 `t`」，而单元级词典测试照样全绿。
+   *
+   * ⚠ 刻意**不**写「整页无 CJK」：表格里的行业标签仍来自 `api/types.ts` 的 `INDUSTRY_LABELS`
+   * （归紧随其后的 Task 9b），en locale 下它们是中文，属**已知且已排期**，不是本页面的缺陷。
+   */
+  it('B-2 · 页面骨架文案在 en-US 下渲染成英文', async () => {
+    stubList();
+    renderWithProviders(<ProjectListPage />, { locale: 'en-US' });
+    await screen.findByText('宏宇泵业 GEO');
+
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search by project or brand name')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Show archived' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Refresh/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /New project/ })).toBeInTheDocument();
+    expect(screen.getByText(/^Tip: type in the tags column/)).toBeInTheDocument();
+  });
+
+  it('B-2 对照 · 同一批断言在 zh-CN 下渲染成中文（证明英文不是写死进组件的）', async () => {
+    stubList();
+    renderWithProviders(<ProjectListPage />);
+    await screen.findByText('宏宇泵业 GEO');
+
+    expect(screen.getByRole('heading', { name: '项目' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('搜索项目名或品牌名')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: '显示已归档' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /刷新/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /新建项目/ })).toBeInTheDocument();
+    expect(screen.getByText(/^提示：标签列可直接输入后回车增删/)).toBeInTheDocument();
+  });
 });

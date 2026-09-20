@@ -2,9 +2,11 @@ import { useCallback, useState } from 'react';
 import { Alert, App, Button, Form, Space, Typography } from 'antd';
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 import * as client from '../api/client';
 import { IpcRequestError } from '../api/client';
+import { describeIpcError } from '../api/errors';
 import {
   toProjectDraft,
   useWizardDraft,
@@ -27,6 +29,7 @@ function hasContent(draft: WizardDraftData | null): draft is WizardDraftData {
 export default function ProjectWizardPage() {
   const navigate = useNavigate();
   const { message } = App.useApp();
+  const { t } = useTranslation();
   const [form] = Form.useForm<WizardDraftData>();
 
   const { step, setStep, patch, saveDraft, loadDraft, clearDraft } = useWizardDraft();
@@ -47,12 +50,17 @@ export default function ProjectWizardPage() {
     mutationFn: (draft: ReturnType<typeof toProjectDraft>) => client.projectCreate(draft),
     onSuccess: (project) => {
       clearDraft();
-      message.success(`项目「${project.name}」已创建`);
+      message.success(t('project.wizard.created', { name: project.name }));
       navigate(`/projects/${project.id}/entity-card`);
     },
     onError: (error) => {
+      // 裁定 B-5：`IpcRequestError` 走词典渲染；**另一支不许降级成 `common.unknownError`**——
+      // 「请检查填写内容」是这一支唯一能给出的可操作提示。`describeIpcError` 内部对
+      // 非 `IpcRequestError` 会回落通用文案，所以这里必须保留显式分支。
       const text =
-        error instanceof IpcRequestError ? error.userMessage : '创建失败，请检查填写内容';
+        error instanceof IpcRequestError
+          ? describeIpcError(error, t)
+          : t('project.wizard.createFailed');
       setSubmitError(text);
       message.error(text);
     },
@@ -78,13 +86,13 @@ export default function ProjectWizardPage() {
     try {
       await form.validateFields();
     } catch {
-      setSubmitError('请先补全必填项（品牌名必填，竞品官网需为合法 URL）');
+      setSubmitError(t('project.wizard.incomplete'));
       return;
     }
 
     const draft = toProjectDraft(form.getFieldsValue(true) as Partial<WizardDraftData>);
     if (draft.competitors.length < MIN_COMPETITORS) {
-      setSubmitError(`竞品不足：请补齐到 ${MIN_COMPETITORS} 家后再创建，否则无法生成「品牌对比」类同框 prompt`);
+      setSubmitError(t('project.wizard.tooFewCompetitors', { min: MIN_COMPETITORS }));
       return;
     }
     createMutation.mutate(draft);
@@ -93,7 +101,7 @@ export default function ProjectWizardPage() {
   return (
     <div style={{ maxWidth: 860 }}>
       <Typography.Title level={4} style={{ marginTop: 0 }}>
-        新建项目
+        {t('project.wizard.title')}
       </Typography.Title>
 
       {restorable && (
@@ -101,8 +109,10 @@ export default function ProjectWizardPage() {
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="检测到上次未完成的建档草稿"
-          description={`品牌：${restorable.brand_name || '（未填写）'}`}
+          message={t('project.wizard.draftFound')}
+          description={t('project.wizard.draftBrand', {
+            brand: restorable.brand_name || t('project.wizard.draftBrandEmpty'),
+          })}
           action={
             <Space>
               <Button
@@ -112,10 +122,10 @@ export default function ProjectWizardPage() {
                   form.setFieldsValue(restorable);
                   patch(restorable);
                   setRestorable(null);
-                  message.success('草稿已恢复');
+                  message.success(t('project.wizard.draftRestored'));
                 }}
               >
-                恢复草稿
+                {t('project.wizard.restoreDraft')}
               </Button>
               <Button
                 size="small"
@@ -124,7 +134,7 @@ export default function ProjectWizardPage() {
                   setRestorable(null);
                 }}
               >
-                丢弃
+                {t('project.wizard.discardDraft')}
               </Button>
             </Space>
           }
@@ -148,15 +158,15 @@ export default function ProjectWizardPage() {
 
         <Space style={{ marginTop: 24 }}>
           <Button disabled={step === 0} onClick={onPrev}>
-            上一步
+            {t('project.wizard.prev')}
           </Button>
           {step < WIZARD_STEPS.length - 1 ? (
             <Button type="primary" onClick={() => void onNext()}>
-              下一步
+              {t('project.wizard.next')}
             </Button>
           ) : (
             <Button type="primary" loading={createMutation.isPending} onClick={() => void onSubmit()}>
-              创建项目
+              {t('project.wizard.submit')}
             </Button>
           )}
           <Button
@@ -166,7 +176,7 @@ export default function ProjectWizardPage() {
               navigate('/projects');
             }}
           >
-            取消
+            {t('common.cancel')}
           </Button>
         </Space>
       </Form>

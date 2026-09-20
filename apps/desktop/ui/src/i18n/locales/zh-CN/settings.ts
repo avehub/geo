@@ -68,6 +68,45 @@ const settings = {
       cost: '成本',
     },
   },
+
+  /**
+   * 设置页自身的文案（Task 9，`pages/SettingsPage.tsx`）。
+   *
+   * `page.*` 与上面几个块刻意分开：`providers` / `providerForm` / `proxy` / `secret` 是
+   * **组件层**（Task 8 抽的）在用的键，`page` 是页面骨架自己的标题、卡片名、label 与 toast。
+   *
+   * ⚠ `languageZhCn` 与 `project.wizard.languageZhCn` 值相同但**不合并**：前者是设置页里
+   * `AppSettings.language`（**生成内容的语言**，P0-A 只有 `zh_cn` 一档）的唯一选项，
+   * 后者是建项向导第 4 步的项目语言字段。两个字段将来会各自演化。
+   */
+  page: {
+    title: '设置',
+    loadFailed: '读取设置失败',
+    saved: '设置已保存；代理与超时改动将在重启后生效',
+    modelCard: '模型服务商',
+    modelName: '模型名',
+    modelNamePlaceholder: '留空则使用默认模型',
+    temperature: '温度',
+    timeoutSeconds: '超时（秒）',
+    proxyCard: '网络代理',
+    crawlerCard: '采集并发与频控',
+    crawlerHint: '这些取值给 P0-B 的采集队列用。默认刻意保守：目标是别被引擎封，不是跑得快。',
+    maxParallel: '最大并发',
+    queueSize: '队列长度',
+    requestsPerMinute: '每分钟请求数',
+    minIntervalMs: '最小间隔（毫秒）',
+    retryMax: '重试次数',
+    languageCard: '语言与通知',
+    uiLanguage: '界面语言',
+    languageZhCn: '简体中文',
+    languageHint: 'P0-A 只做中文，多语言列 P1',
+    notifyOnFinish: '任务完成时通知',
+    notifyOnRisk: '发现风险时通知',
+    notifySound: '播放提示音',
+    save: '保存设置',
+    discard: '放弃修改',
+    unsaved: '有未保存的修改',
+  },
 };
 
 export default settings;

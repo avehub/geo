@@ -52,6 +52,36 @@ const settings: ResourceBundle['settings'] = {
       cost: 'Cost',
     },
   },
+
+  page: {
+    title: 'Settings',
+    loadFailed: 'Failed to read the settings',
+    saved: 'Settings saved. Proxy and timeout changes take effect after the app restarts.',
+    modelCard: 'Model provider',
+    modelName: 'Model name',
+    modelNamePlaceholder: 'Leave blank to use the default model',
+    temperature: 'Temperature',
+    timeoutSeconds: 'Timeout (seconds)',
+    proxyCard: 'Network proxy',
+    crawlerCard: 'Crawler concurrency and rate limits',
+    crawlerHint:
+      'These values feed the P0-B crawl queue. The defaults are deliberately conservative: the goal is to avoid being blocked by the engines, not to run fast.',
+    maxParallel: 'Max parallelism',
+    queueSize: 'Queue length',
+    requestsPerMinute: 'Requests per minute',
+    minIntervalMs: 'Minimum interval (ms)',
+    retryMax: 'Retries',
+    languageCard: 'Language and notifications',
+    uiLanguage: 'Interface language',
+    languageZhCn: 'Simplified Chinese',
+    languageHint: 'P0-A ships Chinese only; more languages are scheduled for P1',
+    notifyOnFinish: 'Notify when a task finishes',
+    notifyOnRisk: 'Notify when a risk is found',
+    notifySound: 'Play a sound',
+    save: 'Save settings',
+    discard: 'Discard changes',
+    unsaved: 'You have unsaved changes',
+  },
 };
 
 export default settings;

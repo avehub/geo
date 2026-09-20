@@ -140,4 +140,73 @@ describe('ProjectWizardPage', () => {
 
     await waitFor(() => expect(screen.getByLabelText('品牌名')).toHaveValue('草稿品牌'));
   });
+
+  /**
+   * 裁定 B-2：页面级冒烟（静态 chrome）。这一页在 Task 9 之前连 `useTranslation` 都没接，
+   * 所以这条用例同时钉住「页面拿到了 `t`」。步骤条与表单字段是 Task 8 的抽取面，不重复断言。
+   */
+  it('B-2 · 页面骨架文案在 en-US 下渲染成英文', () => {
+    renderWithProviders(<ProjectWizardPage />, { locale: 'en-US' });
+
+    expect(screen.getByRole('heading', { name: 'New project' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+  });
+
+  it('B-2 对照 · 同一批断言在 zh-CN 下渲染成中文', () => {
+    renderWithProviders(<ProjectWizardPage />);
+
+    expect(screen.getByRole('heading', { name: '新建项目' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /下一步/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /取消/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /上一步/ })).toBeDisabled();
+  });
+
+  /**
+   * 裁定 B-5：`IpcRequestError` 那一支改走 `describeIpcError(error, t)`。
+   * 原来是 `error.userMessage`——而它返回的就是**紧凑日志串**（那句文档注释早已失真），
+   * getter 本轮已删。判据是「词典渲染出的人话上屏」+「紧凑串不上屏」。
+   */
+  it('B-5 · 后端拒绝创建时按词典渲染原因，不再读已删除的 userMessage', async () => {
+    // `beforeEach` 已经 `stubAlways('project_create', …)`，而 invoke-mock 是 FIFO 取桩：
+    // 直接再 push 一条会先命中旧的成功桩。所以先 reset 再挂唯一一条 reject 桩。
+    mockInvoke.reset();
+    mockInvoke.stubAlways(
+      'project_create',
+      {
+        code: 'io/failed',
+        params: { reason: 'Permission denied (os error 13)' },
+        message: 'io/failed reason=Permission denied (os error 13)',
+      },
+      'reject',
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectWizardPage />);
+
+    await user.type(screen.getByLabelText('品牌名'), '宏宇泵业');
+    await gotoStep(user, 1);
+    await user.type(screen.getByLabelText('官网'), 'https://www.hongyu-pump.example');
+    await gotoStep(user, 2);
+    await user.click(screen.getByRole('button', { name: /添加产品/ }));
+    await user.type(screen.getByPlaceholderText('例如：离心泵'), '离心泵');
+    await gotoStep(user, 3);
+    await user.type(screen.getByLabelText('服务地域'), '浙江杭州');
+    await gotoStep(user, 4);
+    for (const name of ['南方泵业', '凯泉泵业', '格兰富']) {
+      await user.click(screen.getByRole('button', { name: /添加竞品/ }));
+      const inputs = screen.getAllByPlaceholderText('竞品名称');
+      await user.type(inputs[inputs.length - 1], name);
+    }
+    await user.click(screen.getByRole('button', { name: /创建项目/ }));
+
+    // 页面内的 <Alert message={submitError}> 与 antd 的 message.error toast 是同一句话，
+    // 所以用 findAllByText（两处都该出现），不用 findByText（会因多命中而抛）。
+    const rendered = await screen.findAllByText(
+      '文件或数据库读写失败：Permission denied (os error 13)',
+    );
+    expect(rendered.length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/io\/failed reason=/)).not.toBeInTheDocument();
+    expect(screen.queryByText('创建失败，请检查填写内容')).not.toBeInTheDocument();
+  });
 });

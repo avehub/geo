@@ -39,7 +39,9 @@ export default function ProjectListPage() {
     mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
       client.projectArchive(id, archived),
     onSuccess: (project) => {
-      message.success(project.status === 'archived' ? '已归档' : '已取消归档');
+      message.success(
+        project.status === 'archived' ? t('project.list.archived') : t('project.list.unarchived'),
+      );
       void invalidate();
     },
     onError: (error) => message.error(describeIpcError(error, t)),
@@ -48,7 +50,7 @@ export default function ProjectListPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => client.projectDelete(id),
     onSuccess: () => {
-      message.success('项目已删除');
+      message.success(t('project.list.deleted'));
       void invalidate();
     },
     onError: (error) => message.error(describeIpcError(error, t)),
@@ -58,7 +60,7 @@ export default function ProjectListPage() {
     mutationFn: ({ project, tags }: { project: Project; tags: string[] }) =>
       client.projectUpdate({ ...project, tags }),
     onSuccess: () => {
-      message.success('标签已更新');
+      message.success(t('project.list.tagsUpdated'));
       void invalidate();
     },
     onError: (error) => message.error(describeIpcError(error, t)),
@@ -69,20 +71,28 @@ export default function ProjectListPage() {
       if (kind === 'json') {
         const payload = await client.projectExport(project.id);
         const saved = await client.exportWriteFile(
-          `${project.brand_name}-geo-项目档案.json`,
+          t('project.list.exportJsonFileName', { brand: project.brand_name }),
           JSON.stringify(payload, null, 2),
           false,
         );
-        if (saved !== null) message.success('项目 JSON 已导出');
+        if (saved !== null) message.success(t('project.list.jsonExported'));
         return;
       }
       const csv =
         kind === 'competitors_csv'
           ? await client.projectExportCompetitorsCsv(project.id)
           : await client.projectExportAssetsCsv(project.id);
-      const label = kind === 'competitors_csv' ? '竞品' : '资产';
-      const saved = await client.exportWriteFile(`${project.brand_name}-${label}.csv`, csv, true);
-      if (saved !== null) message.success(`${label} CSV 已导出`);
+      // 文件名整份走词典：分隔符与语序在两种语言里不同，组件里不许再拼接（裁定 B-5 同族纪律）
+      const label =
+        kind === 'competitors_csv'
+          ? t('project.list.competitorsLabel')
+          : t('project.list.assetsLabel');
+      const saved = await client.exportWriteFile(
+        t('project.list.exportCsvFileName', { brand: project.brand_name, label }),
+        csv,
+        true,
+      );
+      if (saved !== null) message.success(t('project.list.csvExported', { label }));
     } catch (error) {
       message.error(describeIpcError(error, t));
     }
@@ -90,11 +100,11 @@ export default function ProjectListPage() {
 
   function confirmDelete(project: Project) {
     modal.confirm({
-      title: `删除项目「${project.name}」？`,
-      content: '项目下的实体卡、竞品、资产与 prompt 题库都会一并删除，且不可恢复。',
-      okText: '删除',
+      title: t('project.list.deleteConfirmTitle', { name: project.name }),
+      content: t('project.list.deleteConfirmContent'),
+      okText: t('common.delete'),
       okButtonProps: { danger: true },
-      cancelText: '取消',
+      cancelText: t('common.cancel'),
       onOk: () => deleteMutation.mutateAsync(project.id),
     });
   }
@@ -104,11 +114,11 @@ export default function ProjectListPage() {
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 16 }}>
         <Space>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            项目
+            {t('project.list.title')}
           </Typography.Title>
           <Input.Search
             allowClear
-            placeholder="搜索项目名或品牌名"
+            placeholder={t('project.list.searchPlaceholder')}
             style={{ width: 260 }}
             onSearch={(value) => setQuery(value)}
           />
@@ -116,7 +126,7 @@ export default function ProjectListPage() {
             checked={includeArchived}
             onChange={(event) => setIncludeArchived(event.target.checked)}
           >
-            显示已归档
+            {t('project.list.showArchived')}
           </Checkbox>
         </Space>
         <Space>
@@ -125,10 +135,10 @@ export default function ProjectListPage() {
             onClick={() => void listQuery.refetch()}
             loading={listQuery.isFetching}
           >
-            刷新
+            {t('project.list.refresh')}
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/projects/new/wizard')}>
-            新建项目
+            {t('project.list.newProject')}
           </Button>
         </Space>
       </Space>
@@ -138,7 +148,7 @@ export default function ProjectListPage() {
           type="error"
           showIcon
           style={{ marginBottom: 12 }}
-          message="加载项目失败"
+          message={t('project.list.loadFailed')}
           description={describeIpcError(listQuery.error, t)}
         />
       )}
@@ -157,7 +167,7 @@ export default function ProjectListPage() {
       />
 
       <Typography.Paragraph type="secondary" style={{ marginTop: 12, fontSize: 12 }}>
-        提示：标签列可直接输入后回车增删（最多 20 个）；每行「导出」可下载项目 JSON（含实体卡、竞品、资产与题库），或单独的竞品 / 资产 CSV。
+        {t('project.list.hint')}
       </Typography.Paragraph>
     </div>
   );

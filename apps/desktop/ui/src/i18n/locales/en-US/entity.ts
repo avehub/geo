@@ -42,6 +42,18 @@ const entity: ResourceBundle['entity'] = {
     emptyDomain: 'Enter the website domain to crawl, e.g. www.example.com',
     success: 'Auto-build finished; field completeness {{percent}}%',
   },
+
+  card: {
+    title: 'Brand Entity Card',
+    loadFailed: 'Failed to load the entity card',
+    fieldUpdated: 'Field updated and the revision was recorded',
+    empty: 'No entity card yet. Use “Auto-build from domain” above to crawl the website once, or fill in each field by hand.',
+    createBlank: 'Create a blank entity card by hand',
+    completeness: 'Field completeness',
+    sourceAi: 'AI-extracted: {{provider}} {{model}}',
+    sourceManual: 'Entered by hand',
+    revisions: 'Revision history',
+  },
 };
 
 export default entity;

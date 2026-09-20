@@ -344,7 +344,7 @@ export interface DedupeReport {
 }
 
 /**
- * CSV 导入结果。`errors[]` 与 Rust `geo_domain::csv_io::CsvRowError` 一一对应：
+ * 一条 CSV 行错误（**线格式**）。与 Rust `geo_domain::csv_io::CsvRowError` 一一对应：
  * **行号 + 目录 reason key + 语言中立 params**，不含任何自然语言，
  * 由前端按当前语言渲染（`src/api/errors.ts` 的 `describeCsvRowError`）。
  *
@@ -356,16 +356,28 @@ export interface DedupeReport {
  * 所以除该 reason 的配套参数外还会带 `field` 与 `reason` 两个基础键，
  * 且 `value` 装的是**命中的广告法红线词**——渲染侧必须容忍多出来的键，也绝不能回显 `value`。
  *
- * 类型仍是内联匿名形状（而不是抽一个具名 `CsvRowError` interface）：简报 §C 对本文件的
- * 写权限只到"`CsvRowError` 那一处补 `params`"。具名化留给 Task 9（`types.ts` 归它）。
+ * # 具名化（Task 9，裁定 B-6）
+ *
+ * 行错误抽成具名 `CsvRowError`，与 Rust 侧 `geo_domain::csv_io::CsvRowError` **同名同形**。
+ * Task 8 因写权限只到「补 `params`」，把它留成内联匿名形状并在注释里写明留给 Task 9。
+ *
+ * ⚠ 与 `src/api/errors.ts` 的 `CsvRowErrorLike` **刻意不合并、也不互相 import**：
+ * 那个是渲染函数的**入参契约**（刻意宽松，接受任何形状相同的对象，包括测试里手搓的），
+ * 这个是**线格式**（字段集由后端 serde 决定）。同名不同责，两边注释互相点名。
  */
+export interface CsvRowError {
+  /** CSV 物理行号（表头为第 1 行）。对应 Rust `CsvRowError.row: usize`。 */
+  row: number;
+  /** `crates/geo-domain/src/error.rs` 目录表里的 reason key。 */
+  reason: string;
+  /** 该 reason 的配套参数；旧载荷可能整份缺失，读取处一律兜底成空对象。 */
+  params?: Readonly<Record<string, string>>;
+}
+
+/** CSV 导入结果：成功的条目 + 逐行失败原因（不含任何自然语言，由前端按当前语言渲染）。 */
 export interface CsvImportResult {
   items: PromptItem[];
-  errors: {
-    row: number;
-    reason: string;
-    params?: Readonly<Record<string, string>>;
-  }[];
+  errors: CsvRowError[];
 }
 
 // ---------------------------------------------------------------------------

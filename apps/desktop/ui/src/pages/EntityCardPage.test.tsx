@@ -168,4 +168,30 @@ describe('EntityCardPage', () => {
 
     expect(await screen.findByText('项目不存在（ID：nope）')).toBeInTheDocument();
   });
+
+  /**
+   * 裁定 B-2：页面级冒烟（静态 chrome）。断言**精确点名**页面自己的文案，不写「整页无 CJK」——
+   * 字段卡的状态标签（`FIELD_STATUS_LABELS`）与实体卡字段里的示例数据仍含中文，前者归 Task 9b。
+   */
+  it('B-2 · 页面骨架文案在 en-US 下渲染成英文', async () => {
+    stub({ completeness: 0.8 });
+    renderAtRoute(<EntityCardPage />, '/projects/:id/entity-card', ROUTE, 'en-US');
+
+    // 先等 `entity_card_get` 落地：标题在 loading 期间就渲染了，等它等于没等，
+    // 而完整率那块只在 `card !== null` 之后才有（否则渲染的是 Empty 分支）。
+    expect(await screen.findByText('Field completeness')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Brand Entity Card' })).toBeInTheDocument();
+    expect(screen.getByText('Revision history')).toBeInTheDocument();
+    expect(screen.getByText(/^AI-extracted: deepseek/)).toBeInTheDocument();
+  });
+
+  it('B-2 对照 · 同一批断言在 zh-CN 下渲染成中文', async () => {
+    stub({ completeness: 0.8 });
+    renderPage();
+
+    expect(await screen.findByText('字段完整率')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '品牌实体卡' })).toBeInTheDocument();
+    expect(screen.getByText('修订历史')).toBeInTheDocument();
+    expect(screen.getByText(/^AI 抽取：deepseek/)).toBeInTheDocument();
+  });
 });

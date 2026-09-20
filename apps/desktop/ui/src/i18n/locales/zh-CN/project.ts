@@ -96,6 +96,65 @@ const project = {
     tags: '标签',
     tagsExtra: '输入后回车，便于多项目检索',
     tagsPlaceholder: '例如：水泵、市政',
+
+    // ---- Task 9：`pages/ProjectWizardPage.tsx` 自己的文案 ----
+    title: '新建项目',
+    created: '项目「{{name}}」已创建',
+    /**
+     * 非 `IpcRequestError` 那一支的兜底（裁定 B-5）。**刻意不共用** `common.unknownError`：
+     * 「请检查填写内容」是这一支唯一能给出的可操作提示，降级成通用文案会减少用户拿到的信息量。
+     */
+    createFailed: '创建失败，请检查填写内容',
+    incomplete: '请先补全必填项（品牌名必填，竞品官网需为合法 URL）',
+    /** `{{min}}` 由 `MIN_COMPETITORS` 插值，不许写死（既有「数字同源」做法）。 */
+    tooFewCompetitors:
+      '竞品不足：请补齐到 {{min}} 家后再创建，否则无法生成「品牌对比」类同框 prompt',
+    draftFound: '检测到上次未完成的建档草稿',
+    draftBrand: '品牌：{{brand}}',
+    draftBrandEmpty: '（未填写）',
+    draftRestored: '草稿已恢复',
+    restoreDraft: '恢复草稿',
+    discardDraft: '丢弃',
+    prev: '上一步',
+    next: '下一步',
+    submit: '创建项目',
+  },
+
+  /**
+   * 项目列表页（Task 9）。
+   *
+   * # 导出文件名也是文案
+   *
+   * `exportJsonFileName` / `exportCsvFileName` 走词典不是为了好看：原实现把
+   * `-geo-项目档案.json` 与 `${label}.csv` 拼在组件里，en locale 下会产出中文文件名。
+   * 语序与分隔符在两种语言里不同，所以整份文件名模板都进词典，组件只传插值。
+   *
+   * # `hint` 里的 `20`
+   *
+   * 它是 `crates/geo-domain/src/project.rs` 的 `MAX_TAGS`，前端**没有**对应常量
+   * （`src/api/constants.ts` 是它的镜像模块，但不在本轮写集内）⇒ 暂时留在文案里，
+   * 已在 task-9-report.md 里显式请求扩权，不要当成漏抽。
+   */
+  list: {
+    title: '项目',
+    searchPlaceholder: '搜索项目名或品牌名',
+    showArchived: '显示已归档',
+    refresh: '刷新',
+    newProject: '新建项目',
+    loadFailed: '加载项目失败',
+    hint: '提示：标签列可直接输入后回车增删（最多 20 个）；每行「导出」可下载项目 JSON（含实体卡、竞品、资产与题库），或单独的竞品 / 资产 CSV。',
+    archived: '已归档',
+    unarchived: '已取消归档',
+    deleted: '项目已删除',
+    tagsUpdated: '标签已更新',
+    jsonExported: '项目 JSON 已导出',
+    csvExported: '{{label}} CSV 已导出',
+    competitorsLabel: '竞品',
+    assetsLabel: '资产',
+    exportJsonFileName: '{{brand}}-geo-项目档案.json',
+    exportCsvFileName: '{{brand}}-{{label}}.csv',
+    deleteConfirmTitle: '删除项目「{{name}}」？',
+    deleteConfirmContent: '项目下的实体卡、竞品、资产与 prompt 题库都会一并删除，且不可恢复。',
   },
 
   table: {

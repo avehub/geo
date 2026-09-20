@@ -7,8 +7,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
 import * as client from '../api/client';
-import { IpcRequestError } from '../api/client';
-import { describeIpcError } from '../api/errors';
+import { describeErrorCode, describeIpcError } from '../api/errors';
 import type {
   GenerateOptions,
   IntentCategory,
@@ -25,8 +24,14 @@ import PromptTable from '../components/PromptTable';
 import SampleSizeAlert from '../components/SampleSizeAlert';
 
 type IntentFilter = IntentCategory | 'all';
-/** 没有分组的条目在筛选器里归到这一档。 */
-const NO_GROUP = '未分组';
+/**
+ * 没有分组的条目在筛选器里归到这一档。
+ *
+ * 值是**稳定 ASCII 记号**而不是展示文案（Task 9）：它同时充当分组 `Select` 的 `value`，
+ * 拿中文当 value 的话 en locale 下筛选状态里仍是一个中文串。展示文案走
+ * `prompt.promptSet.groupFilterNoGroup`，在 `groupOptions` 里映射。
+ */
+const NO_GROUP = '__ungrouped__';
 
 function groupOf(item: PromptItem): string {
   const name = item.group_name?.trim();
@@ -86,9 +91,10 @@ function describeNoteLine(line: string, t: TFunction): string {
   const stageText =
     typeof rendered === 'string' && rendered !== '' && rendered !== stageKey ? rendered : stage;
 
-  // `message` 填 code 本身：词典 miss 时 `describeIpcError` 会回落 `error.message`，
-  // 填稳定记号比填一句中文更利于排障，也不依赖 `client.ts` 里那句 Task 9 才处置的兜底。
-  const detail = describeIpcError(new IpcRequestError({ code, params: values, message: code }), t);
+  // `fallbackMessage` 填 code 本身：词典 miss 时阶梯第 ③ 级会回落它，露出稳定记号比露一句
+  // 中文更利于排障。裁定 B-7 选项 A：走导出的 `describeErrorCode`，不再合成假的
+  // `IpcRequestError`——机器行里本来就没有 Error 对象，造一个只为满足 `instanceof` 是噪音。
+  const detail = describeErrorCode(code, values, code, t);
 
   return t('prompt.promptSet.notes.degraded', { stage: stageText, detail });
 }
@@ -148,7 +154,12 @@ export default function PromptSetPage() {
       // 用户会以为点了没反应；setQueryData 也避免旧缓存伪装成「刚生成的新版本」
       queryClient.setQueryData(['prompt-set', promptSet.id], promptSet);
       void queryClient.invalidateQueries({ queryKey: ['prompt-sets', projectId] });
-      message.success(`已生成 ${promptSet.items.length} 条 prompt（第 ${promptSet.version} 版）`);
+      message.success(
+        t('prompt.promptSet.generated', {
+          total: promptSet.items.length,
+          version: promptSet.version,
+        }),
+      );
       setDedupeSummary(null);
       setSelectedKeys([]);
     },
@@ -170,7 +181,7 @@ export default function PromptSetPage() {
     mutationFn: (draft: PromptDraft) => client.promptItemAdd(activeId as string, [draft]),
     onSuccess: (updated) => {
       applySet(updated);
-      message.success(`已新增 1 条，当前共 ${updated.items.length} 条`);
+      message.success(t('prompt.promptSet.added', { total: updated.items.length }));
       setEditor(null);
     },
     onError: (error) => message.error(describeIpcError(error, t)),
@@ -181,7 +192,9 @@ export default function PromptSetPage() {
     onSuccess: (updated, ids) => {
       applySet(updated);
       setSelectedKeys([]);
-      message.success(`已删除 ${ids.length} 条，剩余 ${updated.items.length} 条`);
+      message.success(
+        t('prompt.promptSet.removed', { deleted: ids.length, total: updated.items.length }),
+      );
     },
     onError: (error) => message.error(describeIpcError(error, t)),
   });
@@ -190,7 +203,11 @@ export default function PromptSetPage() {
     mutationFn: () => client.promptSetDedupe(activeId as string),
     onSuccess: (report) => {
       setDedupeSummary(
-        `重复对：${report.duplicate_pairs}，合并移除：${report.removed.length}，保留：${report.kept.length}`,
+        t('prompt.promptSet.dedupeSummary', {
+          pairs: report.duplicate_pairs,
+          removed: report.removed.length,
+          kept: report.kept.length,
+        }),
       );
       setSelectedKeys([]);
       refresh();
@@ -211,32 +228,38 @@ export default function PromptSetPage() {
 
   const groupOptions = useMemo(() => {
     const groups = new Set((promptSet?.items ?? []).map(groupOf));
-    return [
-      { value: 'all', label: '全部分组' },
-      ...Array.from(groups)
-        .sort()
-        .map((group) => ({ value: group, label: group })),
-    ];
-  }, [promptSet]);
+    const options = Array.from(groups).map((group) => ({
+      value: group,
+      label: group === NO_GROUP ? t('prompt.promptSet.groupFilterNoGroup') : group,
+    }));
+    // 按**展示文案**排序而不是按 value：真实分组名两者逐字相同，只有「未分组」那一档不同，
+    // 所以 zh 下的顺序与抽取前完全一致，en 下 'Ungrouped' 也落在合理位置。
+    options.sort((left, right) =>
+      left.label < right.label ? -1 : left.label > right.label ? 1 : 0,
+    );
+    return [{ value: 'all', label: t('prompt.promptSet.groupFilterAll') }, ...options];
+  }, [promptSet, t]);
 
   const sourceOptions = useMemo(
     () => [
-      { value: 'all', label: '全部来源' },
+      { value: 'all', label: t('prompt.promptSet.sourceFilterAll') },
+      // ⚠ 其余选项的标签仍来自 `api/types.ts` 的 `PROMPT_SOURCE_LABELS`（zh 映射），
+      // 归紧随其后的 Task 9b——本轮的写权限不含那 6 张表与消费它们的 8 个组件。
       ...(Object.keys(PROMPT_SOURCE_LABELS) as PromptSource[]).map((value) => ({
         value,
         label: PROMPT_SOURCE_LABELS[value],
       })),
     ],
-    [],
+    [t],
   );
 
   function confirmDelete(ids: string[]) {
     modal.confirm({
-      title: `删除选中的 ${ids.length} 条 prompt？`,
-      content: '删除后内容哈希与样本量分级会重算，且不可恢复（可先导出 CSV 备份）。',
-      okText: '确认删除',
+      title: t('prompt.promptSet.deleteConfirmTitle', { total: ids.length }),
+      content: t('prompt.promptSet.deleteConfirmContent'),
+      okText: t('prompt.promptSet.deleteConfirmOk'),
       okButtonProps: { danger: true },
-      cancelText: '取消',
+      cancelText: t('common.cancel'),
       onOk: () => deleteMutation.mutateAsync(ids),
     });
   }
@@ -257,7 +280,7 @@ export default function PromptSetPage() {
         repeat_count: draft.repeat_count ?? current.repeat_count,
         tags: draft.tags ?? current.tags,
       },
-      notice: '已更新',
+      notice: t('prompt.promptSet.updated'),
     });
     setEditor(null);
   }
@@ -267,7 +290,7 @@ export default function PromptSetPage() {
       <Alert
         type="error"
         showIcon
-        message="加载题库失败"
+        message={t('prompt.promptSet.loadFailed')}
         description={describeIpcError(listQuery.error ?? setQuery.error, t)}
       />
     );
@@ -277,7 +300,7 @@ export default function PromptSetPage() {
     <div>
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          Prompt 题库
+          {t('prompt.promptSet.title')}
         </Typography.Title>
         <CsvToolbar
           setId={activeId ?? ''}
@@ -295,8 +318,7 @@ export default function PromptSetPage() {
       {promptSet === null ? (
         <Card>
           <Typography.Paragraph type="secondary">
-            还没有题库。设置好生成参数后点「生成题库」，系统会产出 60–100 条覆盖 7 类意图的
-            中文口语化 prompt，并保存为一个带内容哈希的版本快照。
+            {t('prompt.promptSet.empty')}
           </Typography.Paragraph>
         </Card>
       ) : (
@@ -304,13 +326,15 @@ export default function PromptSetPage() {
           <Card size="small" style={{ marginBottom: 12 }}>
             <Space size={16} wrap>
               <Typography.Text strong>{promptSet.label}</Typography.Text>
-              <Tag color="blue">第 {promptSet.version} 版</Tag>
-              <Typography.Text type="secondary">共 {promptSet.items.length} 条</Typography.Text>
+              <Tag color="blue">{t('prompt.promptSet.version', { version: promptSet.version })}</Tag>
+              <Typography.Text type="secondary">
+                {t('prompt.promptSet.itemCount', { total: promptSet.items.length })}
+              </Typography.Text>
               <Typography.Text type="secondary" copyable={{ text: promptSet.content_hash }}>
-                内容哈希 {promptSet.content_hash}
+                {t('prompt.promptSet.contentHash', { hash: promptSet.content_hash })}
               </Typography.Text>
               <Typography.Text type="secondary">
-                口径 {promptSet.metric_spec_version}
+                {t('prompt.promptSet.metricSpec', { spec: promptSet.metric_spec_version })}
               </Typography.Text>
               <Button
                 size="small"
@@ -318,7 +342,7 @@ export default function PromptSetPage() {
                 disabled={!activeId}
                 onClick={() => dedupeMutation.mutate()}
               >
-                去重检查
+                {t('prompt.promptSet.dedupe')}
               </Button>
             </Space>
             {promptSet.notes ? (
@@ -351,7 +375,11 @@ export default function PromptSetPage() {
                 value={intentFilter}
                 onChange={(event) => setIntentFilter(event.target.value as IntentFilter)}
                 options={[
-                  { value: 'all', label: `全部（${promptSet.items.length}）` },
+                  {
+                    value: 'all',
+                    label: t('prompt.promptSet.intentFilterAll', { total: promptSet.items.length }),
+                  },
+                  // ⚠ 其余选项的标签仍来自 `api/types.ts` 的 `INTENT_LABELS`（zh 映射），归 Task 9b。
                   ...(Object.keys(INTENT_LABELS) as IntentCategory[]).map((value) => ({
                     value,
                     label: INTENT_LABELS[value],
@@ -361,7 +389,7 @@ export default function PromptSetPage() {
               <Select
                 size="small"
                 style={{ width: 150 }}
-                aria-label="按分组筛选"
+                aria-label={t('prompt.promptSet.groupFilterAria')}
                 value={groupFilter}
                 options={groupOptions}
                 onChange={setGroupFilter}
@@ -369,7 +397,7 @@ export default function PromptSetPage() {
               <Select
                 size="small"
                 style={{ width: 140 }}
-                aria-label="按来源筛选"
+                aria-label={t('prompt.promptSet.sourceFilterAria')}
                 value={sourceFilter}
                 options={sourceOptions}
                 onChange={(value) => setSourceFilter(value as PromptSource | 'all')}
@@ -380,7 +408,7 @@ export default function PromptSetPage() {
                 disabled={!activeId}
                 onClick={() => setEditor({ item: null })}
               >
-                新增 prompt
+                {t('prompt.promptSet.addPrompt')}
               </Button>
               <Button
                 size="small"
@@ -390,10 +418,15 @@ export default function PromptSetPage() {
                 loading={deleteMutation.isPending}
                 onClick={() => confirmDelete(selectedKeys)}
               >
-                删除选中{selectedKeys.length > 0 ? `（${selectedKeys.length}）` : ''}
+                {selectedKeys.length > 0
+                  ? t('prompt.promptSet.deleteSelectedCount', { selected: selectedKeys.length })
+                  : t('prompt.promptSet.deleteSelected')}
               </Button>
               <Typography.Text type="secondary">
-                筛出 {items.length} / {promptSet.items.length} 条
+                {t('prompt.promptSet.filtered', {
+                  shown: items.length,
+                  total: promptSet.items.length,
+                })}
               </Typography.Text>
             </Space>
             <PromptTable

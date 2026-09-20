@@ -1,5 +1,6 @@
 /**
- * 组件层文案抽取的三道扫描守卫（Plan A Task 8；计划正文步骤 1 + 裁定 B-1 / B-4）。
+ * 存量文案抽取的三道扫描守卫（Plan A Task 8 建于组件层；Task 9 按裁定 B-1 把**抽取面**
+ * 从 `components/` 扩到 `pages/` + `App.tsx` + `main.tsx`。计划正文步骤 1 + 裁定 B-1 / B-4）。
  *
  * # 为什么是「扫源码的测试」而不是 i18next 的 `CustomTypeOptions` 模块增强
  *
@@ -39,13 +40,51 @@ import zhCN from './locales/zh-CN';
  * 测试文件由 Task 15 的口径另行处理（存量断言钉的是 zh-CN 渲染结果）。
  */
 const SOURCES = import.meta.glob(
-  ['../**/*.{ts,tsx}', '!../**/*.test.*', '!./locales/**', '!./resources.ts'],
+  [
+    '../**/*.{ts,tsx}',
+    // 入口层两个文件显式列出：要让 `../**/*.tsx` 匹配到它们，得靠 globstar 吃掉「零个目录段」，
+    // 这条语义不该只靠默认成立——写进 pattern 数组，再由下面那条 `toContain` 断言钉住。
+    '../App.tsx',
+    '../main.tsx',
+    '!../**/*.test.*',
+    '!./locales/**',
+    '!./resources.ts',
+  ],
   { query: '?raw', import: 'default', eager: true },
 ) as Record<string, string>;
 
-/** 本轮的抽取面：`src/components/` 下的 18 个文件（16 个 .tsx + 2 个数据模块）。 */
+/**
+ * **抽取面**（Task 9 裁定 B-1）：`components/` + `pages/` + 两个入口文件。
+ *
+ * 它比 `SOURCES`（glob 扫描面）**窄**，两者刻意不合一：
+ * - `SOURCES` 负责「字面量 key 的拼写保护」，覆盖 `src/**` 全部生产源码；
+ * - `EXTRACTION_SOURCES` 负责「注释之外不许有 CJK」，只覆盖已经抽过文案的那几层。
+ *
+ * 刻意**不含** `src/api/`：那里的中文是注释与诊断串（`problemsOf` 的问题标签只进
+ * `console.warn` 与断言消息，不上屏），由 Task 15 的残留口径单独处置。
+ *
+ * ⚠ 这四个前缀就是「扫描面缩小」变异自证的注入点：拿掉 `'../pages/'`，
+ * 下面 `pages/` 那条点名断言必须变红（防空跑的唯一非永真保障）。
+ */
+const EXTRACTION_ROOTS = ['../components/', '../pages/', '../App.tsx', '../main.tsx'] as const;
+
+const EXTRACTION_SOURCES = Object.fromEntries(
+  Object.entries(SOURCES).filter(([path]) => EXTRACTION_ROOTS.some((root) => path.startsWith(root))),
+);
+
+/**
+ * 两个子集都从 `EXTRACTION_SOURCES` 派生（而不是从 `SOURCES`）：这样「把某一层的 root 从
+ * `EXTRACTION_ROOTS` 里拿掉」会**同时**打红该层的点名断言与总量断言。
+ * 若从 `SOURCES` 派生，缩小抽取面时点名断言仍然数得出那 5 个页面文件 ⇒ 变异自证抓不到。
+ */
+/** Task 8 的抽取面：`src/components/` 下的 18 个文件（16 个 .tsx + 2 个数据模块）。 */
 const COMPONENT_SOURCES = Object.fromEntries(
-  Object.entries(SOURCES).filter(([path]) => path.includes('/components/')),
+  Object.entries(EXTRACTION_SOURCES).filter(([path]) => path.startsWith('../components/')),
+);
+
+/** Task 9 新纳入的抽取面：`src/pages/` 下的 5 个页面（页面测试已被 `SOURCES` 排除）。 */
+const PAGE_SOURCES = Object.fromEntries(
+  Object.entries(EXTRACTION_SOURCES).filter(([path]) => path.startsWith('../pages/')),
 );
 
 const CJK = /[\u4e00-\u9fa5]/;
@@ -62,18 +101,35 @@ const CJK = /[\u4e00-\u9fa5]/;
  *
  * 这台扫描器有 5 个状态（code / 行注释 / 块注释 / 单双引号 / 模板串），没有 regex 状态。
  * 错位条件是明确的：只有**内容里带引号或带行注释记号**的正则字面量才会让掩码跑偏
- * （扫描器把正则的收尾斜杠当普通字符、把它后面的引号当字符串起点），
- * 错位之后的真实代码会被整段当成字符串吃掉 ⇒ **漏报**（静默变弱，不会误报）。
+ * （扫描器把正则的收尾斜杠当普通字符、把它后面的引号当字符串起点）。
+ *
+ * ⚠ **错位之后两个方向都会出错**（fix1 复审 Minor B 的更正：这里原先只写了「不会误报」，是错的）：
+ * - **漏报**：正则里含 `//` 时扫描器进入幻影 line 状态，从错位点到行尾的**真实代码**被当注释丢掉；
+ * - **误报**：正则里含引号时扫描器进入幻影 quote 状态，而 quote / template 分支**只找终止引号、
+ *   不再剥注释**，于是从错位点到下一个同种引号之间的**注释中文会被当成代码原样输出**
+ *   ⇒ CJK 残留断言假红。
+ *
  * 内容不含引号也不含行注释记号的正则字面量则完全无害：扫描器把它的斜杠与元字符
  * 当普通代码字符逐个原样输出，状态始终停在 code。
  *
- * 实测（fix1，命令与输出见 fix1 报告 §B-5）：
- * - 本轮**抽取面**（`pages/` + `components/` + `App.tsx`，即控制器 A-1 那条命令的范围）
- *   **零正则字面量**——控制器结论复现，`rg` exit 1。
- * - 但 `SOURCES` 这张 **glob 扫描面**比抽取面宽（含 `src/api/`），那里今天有 **8 处**
- *   正则字面量（`api/error-text.ts` 5 处、`api/errors.ts` 3 处）。逐处核验其内容：
- *   **8/8 都不含引号、不含行注释记号 ⇒ 0 处错位风险**，所以今天判据没有变弱。
+ * 另一条结构性事实（复审席核过）：template 状态只对反引号退出、**不跟踪 `${`**，
+ * 所以写在模板插值里的正则字面量对这台扫描器是**惰性**的——整段被当模板串原样输出，
+ * 连「内容不含引号」这个前提都不需要。
+ *
+ * 实测（Task 9 扩面后重跑；命令与逐处核验见 task-9-report.md §B-1）：
+ * - 普查范围是**整张 glob 扫描面**（`src/**` 去掉测试文件、`locales/`、`resources.ts`），
+ *   而不是「本轮新加进来的目录」——fix1 就是在这里被写窄过一次。
+ * - 触发形式命中 **11 处**：`api/error-text.ts` 5、`api/errors.ts` 4、
+ *   `pages/PromptSetPage.tsx` 1、`components/CsvToolbar.tsx` 1。
+ * - 其中 **8 处是真正则字面量**（`error-text.ts` 5 + `errors.ts` 3）。逐处机械核验内容：
+ *   **8/8 既不含引号也不含 `//` ⇒ 0 处错位风险**，判据没有变弱。
  *   （其中 `api/errors.ts` 有一处写在模板串的插值里，核验脚本要能把反引号放行才看得见。）
+ * - 另外 **3 处是 `.split('\n')` / `.split(';')`**：入参是**普通字符串字面量**、不是正则，
+ *   quote 状态本来就正确处理它们 ⇒ 无害。
+ *   ⚠ 顺带更正 fix1 的一条实测记录：它写「抽取面零命中、`rg` exit 1」，但那两处
+ *   `.split('\n')` 确实在抽取面里、也确实匹配触发形式。**结论（0 处错位风险）不变，
+ *   变的是命中计数**——所以这里只写核验结果，不写「本目录零正则字面量」这种会过期的断言。
+ * - 本轮新写进 `pages/**` 与入口层的代码**没有引入任何正则字面量**。
  *
  * 为什么**不**现在就加 regex 状态：当前没有会让它出错的输入，加状态机只是增加复杂度与
  * 新的误判面（JSX 里的 `/`、除法、注释里的 URL 都要靠启发式区分）。
@@ -209,6 +265,10 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     expect(paths.filter((path) => path.includes('/locales/'))).toEqual([]);
     expect(paths.filter((path) => path.endsWith('resources.ts'))).toEqual([]);
     expect(paths.some((path) => path.endsWith('components/AppLayout.tsx'))).toBe(true);
+    // Task 9 把入口层纳进抽取面，先证明它们真的在 glob 里（`../**/*.tsx` 能否匹配到
+    // 上层同目录文件靠的是 globstar 吃掉零段，这条断言就是它的哨兵）。
+    expect(paths).toContain('../App.tsx');
+    expect(paths).toContain('../main.tsx');
   });
 
   it('components/ 下扫到了 18 个文件（16 个 .tsx + entity-fields.ts + wizard-steps.ts）', () => {
@@ -216,16 +276,37 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     expect(paths).toHaveLength(18);
     expect(paths.filter((path) => path.endsWith('.tsx'))).toHaveLength(16);
   });
+
+  // 裁定 B-1 要求的那条点名断言：抽取面里 `pages/` 恰好是 5 个页面文件。
+  // 用 `toEqual` 而不是 `toHaveLength`：多一个页面（或 glob 意外把测试文件放进来）同样要报。
+  it('B-1 · pages/ 下扫到的恰好是 5 个页面文件（把 pages 从抽取面拿掉，这条必须红）', () => {
+    expect(Object.keys(PAGE_SOURCES).sort()).toEqual([
+      '../pages/EntityCardPage.tsx',
+      '../pages/ProjectListPage.tsx',
+      '../pages/ProjectWizardPage.tsx',
+      '../pages/PromptSetPage.tsx',
+      '../pages/SettingsPage.tsx',
+    ]);
+  });
+
+  it('B-1 · 抽取面 = components(18) + pages(5) + App.tsx + main.tsx，且不含 api/', () => {
+    const paths = Object.keys(EXTRACTION_SOURCES);
+    expect(paths).toHaveLength(25);
+    expect(paths.filter((path) => path.startsWith('../api/'))).toEqual([]);
+    expect(paths.filter((path) => EXTRACTION_ROOTS.some((root) => !path.startsWith(root))).length)
+      .toBeGreaterThan(0);
+  });
 });
 
-describe('Task 15 的残留判据提前到本轮：components/ 下只剩注释含中文', () => {
-  it('组件层源码在注释之外不含任何 CJK 字符', () => {
-    const offenders = Object.entries(COMPONENT_SOURCES)
+describe('Task 15 的残留判据提前到本轮：抽取面下只剩注释含中文', () => {
+  it('components/ + pages/ + App.tsx + main.tsx 在注释之外不含任何 CJK 字符', () => {
+    const offenders = Object.entries(EXTRACTION_SOURCES)
       .map(([path, source]) => ({ path, lines: cjkLines(source) }))
       .filter((entry) => entry.lines.length > 0)
       .map((entry) => `${entry.path}: ${entry.lines.join(', ')}`);
 
-    expect(offenders, '这些行在注释之外仍含中文，必须迁进词典').toEqual([]);
+    expect(offenders, '这些行在注释之外仍含中文，必须迁进词典（Task 8 = components，Task 9 = pages + 入口层）')
+      .toEqual([]);
   });
 
   it('自证（对照组）：注释里的中文放过，字符串与裸 JSX 文本里的中文抓到', () => {
@@ -257,12 +338,20 @@ describe('B-1 · 字面量 i18n key 的拼写保护', () => {
    * 三道守卫：总量下界（抓整体失效）、覆盖面下界（抓「只在个别文件上还能工作」）、
    * 点名样本（一个具体的、可失败的断言）。
    *
-   * 实测（fix1，探针输出见报告 §B-4）：扫描面 40 个文件，其中 **16 个**抽出字面量 key，
-   * 共 **180 个**（`components/` 179 + `pages/PromptSetPage.tsx` 1）。
-   * 下界按裁定取「实测值下取整到十位」= **180**；判据用 `>=` 而不是 `toBe`，
-   * 所以以后加词条只会让它更宽松，不必回来改这里。
+ * 实测（Task 9 扩面后重跑探针，输出见 task-9-report.md §D-1）：扫描面 **40** 个文件，
+ * 其中 **20 个**抽出字面量 key，共 **278 个**（`components/` 179 + `pages/` 99）。
+ *
+ * 下界按裁定 B-10.3 取「实测值减 10 后向下取整到十位」：
+ * - **总量**：278 − 10 = 268 → **260**。
+ * - **覆盖面**：⚠ 这里**不能**照搬同一条算式——20 − 10 = 10，比 fix1 定的 `>= 16` 还低，
+ *   直接违反裁定 B-1 的「下界不许放宽」。B-10.3 对覆盖面的原话是「同理按扩面后的实测值
+ *   **重设并留余量**」，所以按总量那条的**同一相对余量**（260/278 ≈ 93.5%）折算：
+ *   20 × 0.935 ≈ 18.7 → 取 **18**（既高于旧下界 16，又留了 2 个文件的余量）。
+ *   这条取舍已在报告里点名请控制器复核。
+ *
+ * 判据用 `>=` 而不是 `toBe`，所以以后加词条只会让它更宽松，不必回来改这里。
    *
-   * ⚠ 已知覆盖边界（留给 Task 9，**不是**本条守卫能兜的）：`src/api/errors.ts` 与
+ * ⚠ 已知覆盖边界（Task 9 复核后依然如此，**不是**本条守卫能兜的）：`src/api/errors.ts` 与
    * `src/api/error-text.ts` 抽出 **0** 个 key——它们的键是 `REASONS_PREFIX` / `CSV_REASONS_PREFIX`
    * 这类**常量拼接**后经 `render(t, key, values)` 消费的，`T_LITERAL_CALL` 结构上抓不到
    * （这与「跳过模板串/变量入参」是同一条设计取舍：宁可漏抓也不误判 Task 7 的动态键）。
@@ -279,15 +368,19 @@ describe('B-1 · 字面量 i18n key 的拼写保护', () => {
     expect(
       total,
       '字面量 key 总数低于下界 ⇒ 抽取器可能整体失效，offenders 断言会变成永真',
-    ).toBeGreaterThanOrEqual(180);
+    ).toBeGreaterThanOrEqual(260);
     expect(
       withKeys.length,
       '抽出 key 的文件数低于下界 ⇒ 抽取器可能只在个别文件上还能工作',
-    ).toBeGreaterThanOrEqual(16);
+    ).toBeGreaterThanOrEqual(18);
 
     // 点名样本：先钉 glob 键路径（写错一个字符 ⇒ 下一行取到 undefined 直接抛），再钉一个具体 key
     expect(Object.keys(SOURCES)).toContain('../components/AppLayout.tsx');
     expect(literalTKeys(SOURCES['../components/AppLayout.tsx'])).toContain('nav.projects');
+    // Task 9 扩面后补一个**页面层**的点名样本：只钉 `components/` 的话，
+    // 「抽取器在 pages/ 上失效」这件事三条守卫一条都抓不到。
+    expect(Object.keys(SOURCES)).toContain('../pages/SettingsPage.tsx');
+    expect(literalTKeys(SOURCES['../pages/SettingsPage.tsx'])).toContain('settings.page.save');
   });
 
   it('自证（对照组）：只抓字面量，模板串与变量入参被跳过', () => {

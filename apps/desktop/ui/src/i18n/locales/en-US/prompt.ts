@@ -99,6 +99,34 @@ const prompt: ResourceBundle['prompt'] = {
   },
 
   promptSet: {
+    title: 'Prompt Library',
+    loadFailed: 'Failed to load the prompt library',
+    empty: 'No prompt library yet. Set the generation parameters and start a generation; the system produces 60–100 conversational Chinese prompts covering the 7 intent categories and saves them as a version snapshot with a content hash.',
+    version: 'Version {{version}}',
+    itemCount: '{{total}} items',
+    contentHash: 'Content hash {{hash}}',
+    metricSpec: 'Metric spec {{spec}}',
+    dedupe: 'Check duplicates',
+    dedupeSummary: 'Duplicate pairs: {{pairs}}; merged and removed: {{removed}}; kept: {{kept}}',
+    generated: 'Generated {{total}} prompts (version {{version}})',
+    added: 'Added 1 item; the library now has {{total}}',
+    removed: 'Deleted {{deleted}} items; {{total}} remain',
+    updated: 'Updated',
+    addPrompt: 'Add prompt',
+    deleteSelected: 'Delete selected',
+    deleteSelectedCount: 'Delete selected ({{selected}})',
+    deleteConfirmTitle: 'Delete the {{total}} selected prompts?',
+    deleteConfirmContent:
+      'The content hash and the sample-size grade are recomputed after deletion, and this cannot be undone (export a CSV backup first if you need one).',
+    deleteConfirmOk: 'Delete',
+    filtered: 'Showing {{shown}} of {{total}}',
+    intentFilterAll: 'All ({{total}})',
+    groupFilterAll: 'All groups',
+    groupFilterNoGroup: 'Ungrouped',
+    groupFilterAria: 'Filter by group',
+    sourceFilterAll: 'All sources',
+    sourceFilterAria: 'Filter by source',
+
     notes: {
       degraded:
         '{{stage}} did not succeed; this batch was filled in from industry templates and local rewriting ({{detail}})',

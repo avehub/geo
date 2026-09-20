@@ -75,6 +75,53 @@ const project: ResourceBundle['project'] = {
     tags: 'Tags',
     tagsExtra: 'Press Enter to add; helps searching across projects',
     tagsPlaceholder: 'e.g. pump, municipal',
+
+    title: 'New project',
+    created: 'The project “{{name}}” was created',
+    createFailed: 'Could not create the project. Check the details you filled in.',
+    incomplete:
+      'Fill in the required fields first (the brand name is required and each competitor website must be a valid URL)',
+    tooFewCompetitors:
+      'Not enough competitors: bring the list up to {{min}} before creating the project, otherwise the “brand comparison” side-by-side prompts cannot be generated',
+    draftFound: 'An unfinished draft from your last visit was found',
+    draftBrand: 'Brand: {{brand}}',
+    draftBrandEmpty: '(not filled in)',
+    draftRestored: 'Draft restored',
+    restoreDraft: 'Restore draft',
+    discardDraft: 'Discard',
+    prev: 'Back',
+    next: 'Next',
+    submit: 'Create project',
+  },
+
+  /**
+   * Project list page (Task 9). The exported file names live here too: they used to be
+   * assembled in the component, which produced Chinese file names under the en locale.
+   * `20` in `hint` is the backend `MAX_TAGS` (`crates/geo-domain/src/project.rs`); the
+   * frontend mirror module `src/api/constants.ts` is outside this task's write set, so the
+   * number stays in the copy for now (flagged in task-9-report.md).
+   */
+  list: {
+    title: 'Projects',
+    searchPlaceholder: 'Search by project or brand name',
+    showArchived: 'Show archived',
+    refresh: 'Refresh',
+    newProject: 'New project',
+    loadFailed: 'Failed to load the projects',
+    hint: 'Tip: type in the tags column and press Enter to add or remove tags (up to 20). “Export” on each row downloads the project JSON (entity card, competitors, assets and prompt library), or the competitors / assets CSV on its own.',
+    archived: 'Archived',
+    unarchived: 'Unarchived',
+    deleted: 'The project was deleted',
+    tagsUpdated: 'Tags updated',
+    jsonExported: 'The project JSON was exported',
+    csvExported: 'The {{label}} CSV was exported',
+    competitorsLabel: 'competitors',
+    assetsLabel: 'assets',
+    exportJsonFileName: '{{brand}}-geo-project.json',
+    exportCsvFileName: '{{brand}}-{{label}}.csv',
+    deleteConfirmTitle: 'Delete the project “{{name}}”?',
+    deleteConfirmContent:
+      'The entity card, competitors, assets and prompt library under this project are deleted with it. This cannot be undone.',
   },
 
   table: {

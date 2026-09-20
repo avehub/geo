@@ -24,9 +24,11 @@ import type { CsvRowErrorLike } from './errors';
 import {
   MAY_ECHO_VALUE,
   describeCsvRowError,
+  describeErrorCode,
   describeIpcError,
   mayEchoParamValue,
 } from './errors';
+import type { CsvImportResult, CsvRowError } from './types';
 
 const zh = () => i18n.getFixedT('zh-CN');
 const en = () => i18n.getFixedT('en-US');
@@ -201,8 +203,9 @@ describe('B-3 · upstream/* 只用一条共享包装键', () => {
   it('两个键都缺时按阶梯回退到 message；三者全空才 console.warn', () => {
     const warn = captureWarn();
 
-    // message 为空串时，client.ts 的构造子会兜成固定串（那句中文明文归 Task 9 收口），
-    // 所以这一级仍有内容可包装——不断言它的字面值，只断言阶梯走到了 message。
+    // message 为空串时，client.ts 的构造子会兜成**语言中立**的记号（Task 9 裁定 B-3.1 已收口：
+    // `payload.message || payload.code || 'ipc/unknown'`），所以这一级仍有内容可包装
+    // ——不断言它的字面值，只断言阶梯走到了 message。
     const noMessage = new IpcRequestError({ code: 'upstream/llm/server', params: {}, message: '' });
     expect(describeIpcError(noMessage, zh())).toBe(`上游服务返回错误：${noMessage.message}`);
     expect(warn).not.toHaveBeenCalled();
@@ -719,5 +722,81 @@ describe('Task 8 · describeCsvRowError（CSV 行错误）', () => {
     // 这条钉的是「① 的覆写层真的在起作用」，而不是恰好共享模板也能过。
     const shared = i18n.t('errors.reasons.required', { nsSeparator: false });
     expect(problemsOf(shared), '共享模板单独渲染就不合格，所以覆写层不是可有可无的').not.toEqual([]);
+  });
+});
+
+/**
+ * 裁定 B-7（**选项 A**）+ B-6。
+ *
+ * # 为什么选 A
+ * `PromptSetPage.describeNoteLine` 手上只有后端机器行里的 `{code, params}`，**没有**
+ * `IpcRequestError`；原先它合成一个假错误对象（`message: code`）去喂 `describeIpcError`。
+ * 选项 A 把阶梯的第 ②–⑤ 级**原样搬**进导出的 `describeErrorCode`，`describeIpcError` 只剩
+ * 第 ① 级分流 + 委托 ⇒ 假对象消失，而 4 级阶梯的语义逐字未动。
+ * 下面第一条用例就是「未动」的判据：两条入口对同一组 `(code, params)` 必须逐字同构。
+ */
+describe('B-7 · describeErrorCode（阶梯第 ②–⑤ 级的导出面）', () => {
+  /** 覆盖阶梯的每条出口：命中、upstream 包装键、miss 回落、以及 params 全空时的兜底。 */
+  const CASES: ReadonlyArray<readonly [code: string, params: Record<string, string>]> = [
+    ['io/failed', { reason: 'Permission denied (os error 13)' }],
+    ['project/not_found', { id: 'nope' }],
+    ['validation/failed', { field: 'competitors[0].name', reason: 'required' }],
+    ['llm/transport', { reason: 'http_status', status: '429' }],
+    ['upstream/llm', { upstream: 'rate limited', upstream_code: 'llm/server' }],
+    ['upstream/llm', {}],
+    ['brand_new/code', {}],
+  ];
+
+  it('与 describeIpcError 对同一个 (code, params) 逐字同构（zh 与 en 都是）', () => {
+    const warn = captureWarn();
+
+    for (const [code, params] of CASES) {
+      const message = `${code} k=v`;
+      for (const t of [zh(), en()]) {
+        const viaError = describeIpcError(new IpcRequestError({ code, params, message }), t);
+        expect(
+          describeErrorCode(code, params, message, t),
+          `${code} @ ${JSON.stringify(params)}`,
+        ).toBe(viaError);
+      }
+    }
+
+    // 防空跑：miss / upstream 缺值那几条路是要 warn 的。真的 warn 过 ⇒ 这组用例确实走到了
+    // 那些分支，而不是「7 条全命中」造成的假同构。
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('第 ① 级不在这一层：非 IpcRequestError 仍由 describeIpcError 兜住并留日志', () => {
+    const warn = captureWarn();
+
+    expect(describeIpcError(new TypeError('boom'), zh())).toBe('操作未成功，请稍后重试');
+    expect(warn.mock.calls[0].join(' ')).toContain('non-IpcRequestError');
+  });
+
+  it('B-6 · CsvImportResult.errors 的元素是具名 CsvRowError（与 Rust 侧同名，不再内联匿名）', () => {
+    const result: CsvImportResult = { items: [], errors: [{ row: 2, reason: 'required' }] };
+    const row: CsvRowError = result.errors[0];
+
+    expect(row).toEqual({ row: 2, reason: 'required' });
+    // 具名线格式直接喂得进渲染函数：`CsvRowErrorLike` 是**入参契约**，刻意不与线格式合并（B-6）
+    expect(describeCsvRowError(row, zh())).toBe('第 2 行：必填的 prompt 文本为空');
+  });
+});
+
+describe('B-10.1 · CSV 行错误的诊断串是 ASCII（fix1 复审 Minor A）', () => {
+  it('ROW_NOT_FINITE 的诊断串不含 CJK，与同一条 warn 的英文前缀一致', () => {
+    const warn = captureWarn();
+    const illegal = { row: NaN, reason: 'required', params: {} } as unknown as CsvRowErrorLike;
+
+    expect(describeCsvRowError(illegal, zh())).toBe('操作未成功，请稍后重试');
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    // `fallBack()` 把 problems 放在 warn 的**第二个实参**（一个对象）里，
+    // 所以不能像别处那样 `call.join(' ')`——那只会得到 `[object Object]`。
+    const payload = warn.mock.calls[0][1] as { problems: string[] };
+    expect(payload.problems).toEqual(['ROW_NOT_FINITE (got number: NaN)']);
+    for (const problem of payload.problems) {
+      expect(problem).not.toMatch(/[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/);
+    }
   });
 });

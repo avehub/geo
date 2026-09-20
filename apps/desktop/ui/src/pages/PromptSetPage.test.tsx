@@ -411,6 +411,49 @@ describe('PromptSetPage', () => {
     await waitFor(() => expect(mockInvoke.callsOf('prompt_set_dedupe')).toHaveLength(1));
     expect(await screen.findByText(/重复对：0/)).toBeInTheDocument();
   });
+  /**
+   * 裁定 B-2：页面级冒烟（静态 chrome）。
+   *
+   * ⚠ 断言**精确点名**页面自己的文案，刻意不写「整页无 CJK」（控制器预防性裁定 + 补充事实 ①）：
+   * 意图筛选按钮与来源下拉的标签来自 `api/types.ts` 的 `INTENT_LABELS` / `PROMPT_SOURCE_LABELS`，
+   * 本文件 `stub()` 里 `prompt_item_add` 的 mock 还用 `INTENT_LABELS[draft.intent]` 合成
+   * `group_name` ⇒ en locale 下这些都是中文。它们归 **Task 9b**，不是本页面的缺陷。
+   */
+  it('B-2 · 页面骨架文案在 en-US 下渲染成英文', async () => {
+    stub('sufficient');
+    renderAtRoute(<PromptSetPage />, '/projects/:id/prompts', ROUTE, 'en-US');
+
+    // 先等 `prompt_set_get` 落地：标题与 GeneratePanel 在 loading 期间就渲染了，
+    // 版本摘要那一排只在 `promptSet !== null` 之后才有。
+    expect(await screen.findByText('Version 1')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Prompt Library' })).toBeInTheDocument();
+    expect(screen.getByText('62 items')).toBeInTheDocument();
+    expect(screen.getByText('Content hash hash-abc123')).toBeInTheDocument();
+    expect(screen.getByText('Metric spec geo-metrics-v1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Check duplicates/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Add prompt/ })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Filter by group' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Filter by source' })).toBeInTheDocument();
+    expect(screen.getByText('Showing 62 of 62')).toBeInTheDocument();
+    expect(screen.getByText('All (62)')).toBeInTheDocument();
+  });
+
+  it('B-2 对照 · 同一批断言在 zh-CN 下渲染成中文', async () => {
+    stub('sufficient');
+    renderPage();
+
+    expect(await screen.findByText('第 1 版')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Prompt 题库' })).toBeInTheDocument();
+    expect(screen.getByText('共 62 条')).toBeInTheDocument();
+    expect(screen.getByText('内容哈希 hash-abc123')).toBeInTheDocument();
+    expect(screen.getByText('口径 geo-metrics-v1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /去重检查/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /新增 prompt/ })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '按分组筛选' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '按来源筛选' })).toBeInTheDocument();
+    expect(screen.getByText('筛出 62 / 62 条')).toBeInTheDocument();
+    expect(screen.getByText('全部（62）')).toBeInTheDocument();
+  });
 });
 
 /**
@@ -556,4 +599,5 @@ describe('PromptSetPage · notes 按行分派（机器行不许原样上屏）',
     expect(container.textContent).not.toContain('未成功');
     expect(screen.queryByText(EXPECTED_ZH)).not.toBeInTheDocument();
   });
+
 });

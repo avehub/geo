@@ -85,6 +85,10 @@ describe('api/client', () => {
     expect(error.params).toEqual({ cmd: 'settings_get', reason: 'boom' });
     // message 是语言中立的紧凑串，与后端 `IpcError::with_params` 同构（键按 BTreeMap 排序）
     expect(error.message).toBe('ipc/invoke_failed cmd=settings_get reason=boom');
+    // 计划正文 Task 9 那条 checkbox 点名要「`message` 不含 CJK」：上面那条是**逐字相等**，
+    // 已经严格强于它。这里再补一条显式字符类断言，让这条判据在字面值将来改动后仍独立成立
+    // （含 CJK 标点——`\u4e00-\u9fa5` 看不见 `、`/`：` 这类字符，Task 8 复审 #6 踩过）。
+    expect(error.message).not.toMatch(/[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/);
   });
 
   it('B-2 · 合成出来的错误经词典渲染后，命令名与真实原因都还在（信息量不回退）', async () => {
@@ -125,5 +129,48 @@ describe('api/client', () => {
     expect(client.IPC_COMMANDS.length).toBeGreaterThan(30);
     expect(new Set(client.IPC_COMMANDS).size).toBe(client.IPC_COMMANDS.length);
     expect(client.IPC_COMMANDS).toContain('entity_card_autobuild');
+  });
+
+  /**
+   * 裁定 B-3.1：`super(payload.message || '未知错误')` 的中文兜底改成语言中立记号。
+   *
+   * 为什么这条要紧：`message` 的既有定位是**紧凑诊断串**（`unwrapIpcError` 按
+   * `{code} {k}={v}…` 填），而 `describeIpcError` 的词典 miss 那一级会**回落 `error.message`**
+   * ⇒ 兜底填一句中文，等于让「后端发了合法 payload 但 message 是空串」这种契约破损
+   * 在界面上伪装成一句正常文案，排障线索也没了。
+   */
+  it('B-3 · 后端发空 message 时兜到 code 本身，且兜底记号语言中立', async () => {
+    mockInvoke.stub('project_list', { code: 'state/conflict', params: {}, message: '' }, 'reject');
+
+    const error = (await client.projectList({}).catch((cause: unknown) => cause)) as client.IpcRequestError;
+
+    expect(error).toBeInstanceOf(client.IpcRequestError);
+    expect(error.code).toBe('state/conflict');
+    expect(error.message).toBe('state/conflict');
+    // Task 15 的残留判据提前到运行期：兜底记号里一个 CJK 字符都不许有（含 CJK 标点）
+    expect(error.message).not.toMatch(/[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/);
+  });
+
+  it('B-3 · code 也是空串时兜到 ipc/unknown，message 与 code 同源（不新增第三种记号）', async () => {
+    mockInvoke.stub('project_get', { code: '', message: '' }, 'reject');
+
+    const error = (await client.projectGet('nope').catch((cause: unknown) => cause)) as client.IpcRequestError;
+
+    expect(error.code).toBe('ipc/unknown');
+    expect(error.message).toBe('ipc/unknown');
+  });
+
+  /**
+   * 裁定 B-3.2：删掉 `get userMessage()`。唯一读者（`pages/ProjectWizardPage.tsx`）改走
+   * `describeIpcError(error, t)`；`@ts-expect-error` 让「getter 又被人加回来」在 `tsc -b` 就红，
+   * 而运行期断言让「还没删」也红——两侧都是可失败的判据，不是注释。
+   * （`components/` 里那 3 处 `userMessage` 命中全是 Task 8 留下的说明性注释，不许删。）
+   */
+  it('B-3 · userMessage getter 已删除，类型层封死任何幸存读者', () => {
+    const error = new client.IpcRequestError({ code: 'io/failed', message: 'io/failed reason=x' });
+
+    // @ts-expect-error Task 9 删掉了这个 getter（连带它那句已经失真的文档注释）
+    expect(error.userMessage).toBeUndefined();
+    expect(error.message).toBe('io/failed reason=x');
   });
 });

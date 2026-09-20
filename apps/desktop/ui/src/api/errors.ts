@@ -347,16 +347,73 @@ function redactCompactMessage(message: string): string {
  *
  * **不要**拿里层 code 的模板渲染：两族 params 不相交（`upstream/*` 是
  * `upstream_code` + `upstream`，里层如 `llm/server` 是 `status`），套里层模板会留下空占位符。
- * 取值顺序：`upstream` → `upstream_code` → `error.message`；三者都空才 `console.warn` 回落。
+ * 取值顺序：`upstream` → `upstream_code` → `fallbackMessage`；三者都空才 `console.warn` 回落。
  */
-function describeUpstream(error: IpcRequestError, t: TFunction): string {
-  const params = error.params;
-  const upstream = firstNonEmpty(params.upstream, params.upstream_code, error.message);
+function describeUpstream(
+  code: string,
+  params: Readonly<Record<string, string>>,
+  fallbackMessage: string,
+  t: TFunction,
+): string {
+  const upstream = firstNonEmpty(params.upstream, params.upstream_code, fallbackMessage);
   if (upstream === '') {
-    console.warn('[geo-i18n] upstream error without upstream/upstream_code/message:', error.code);
-    return error.message;
+    console.warn('[geo-i18n] upstream error without upstream/upstream_code/message:', code);
+    return fallbackMessage;
   }
-  return render(t, UPSTREAM_WRAPPER_KEY, { upstream }) ?? error.message;
+  return render(t, UPSTREAM_WRAPPER_KEY, { upstream }) ?? fallbackMessage;
+}
+
+/**
+ * 拿「稳定 code + 语言中立 params」渲染一句人话——也就是回退阶梯的**第 ②–⑤ 级**。
+ *
+ * # 为什么导出（裁定 B-7 · 选项 A）
+ *
+ * `PromptSetPage.describeNoteLine` 要渲染的是后端 `degradation_note()` 机器行里的
+ * `{code, params}`，它手上**没有** `IpcRequestError`。原先它合成一个假错误对象
+ * （`new IpcRequestError({ code, params, message: code })`）去喂 `describeIpcError`；
+ * 把这一层导出之后假对象消失，与 CSV 那条路（`describeCsvRowError` 也是「拿 code + params 渲染」）
+ * 手法一致。
+ *
+ * ⚠ 这是**纯提取**：函数体逐字来自原 `describeIpcError`，4 级阶梯的顺序与语义一个字没动，
+ * `describeIpcError` 现在只剩第 ① 级 `instanceof` 分流 + 委托。同构断言在
+ * `src/api/errors.test.ts`（7 组 `(code, params)` × 两个 locale 逐字对账）。
+ *
+ * @param fallbackMessage 词典 miss（第 ③ 级）时回落的紧凑诊断串。`describeIpcError` 传
+ *   `error.message`；`describeNoteLine` 传 code 本身（机器行没有 message 字段，
+ *   而 miss 时露出稳定记号比露出一句中文更利于排障）。
+ */
+export function describeErrorCode(
+  code: string,
+  params: Readonly<Record<string, string>>,
+  fallbackMessage: string,
+  t: TFunction,
+): string {
+  if (code.startsWith(UPSTREAM_PREFIX)) return describeUpstream(code, params, fallbackMessage, t);
+
+  const values = composeValues(t, code, params);
+  const main = render(t, `errors.${code}`, values);
+  if (main === null) {
+    console.warn('[geo-i18n] no dictionary entry for error code:', code);
+    return redactCompactMessage(fallbackMessage);
+  }
+
+  const segments = CODE_SEGMENTS[code];
+  const text =
+    renderSegments(t, segments?.prefix, params, values) +
+    main +
+    renderSegments(t, segments?.suffix, params, values);
+
+  // 质量闸门（B-1③）：第 ③ 级的**出口**检查，不改上面 4 级的顺序与语义。
+  // 判据与 `src/i18n/dictionary.test.ts` 的门禁共用 `error-text.ts` 同一个函数。
+  const problems = problemsOf(text);
+  if (problems.length > 0) {
+    console.warn('[geo-i18n] rendered error text is not presentable, falling back:', {
+      code,
+      problems,
+    });
+    return render(t, UNKNOWN_ERROR_KEY, {}) ?? UNKNOWN_ERROR_KEY;
+  }
+  return text;
 }
 
 /**
@@ -375,33 +432,7 @@ export function describeIpcError(error: unknown, t: TFunction): string {
     // 词典里连这个键都没有属于不可能状态（index.test.ts 钉着），真发生就露 key 而不是空白
     return render(t, UNKNOWN_ERROR_KEY, {}) ?? UNKNOWN_ERROR_KEY;
   }
-  if (error.code.startsWith(UPSTREAM_PREFIX)) return describeUpstream(error, t);
-
-  const params = error.params;
-  const values = composeValues(t, error.code, params);
-  const main = render(t, `errors.${error.code}`, values);
-  if (main === null) {
-    console.warn('[geo-i18n] no dictionary entry for error code:', error.code);
-    return redactCompactMessage(error.message);
-  }
-
-  const segments = CODE_SEGMENTS[error.code];
-  const text =
-    renderSegments(t, segments?.prefix, params, values) +
-    main +
-    renderSegments(t, segments?.suffix, params, values);
-
-  // 质量闸门（B-1③）：第 ③ 级的**出口**检查，不改上面 4 级的顺序与语义。
-  // 判据与 `src/i18n/dictionary.test.ts` 的门禁共用 `error-text.ts` 同一个函数。
-  const problems = problemsOf(text);
-  if (problems.length > 0) {
-    console.warn('[geo-i18n] rendered error text is not presentable, falling back:', {
-      code: error.code,
-      problems,
-    });
-    return render(t, UNKNOWN_ERROR_KEY, {}) ?? UNKNOWN_ERROR_KEY;
-  }
-  return text;
+  return describeErrorCode(error.code, error.params, error.message, t);
 }
 
 
@@ -470,7 +501,9 @@ export function describeCsvRowError(error: CsvRowErrorLike, t: TFunction): strin
   // ⚠ 类型上 `CsvRowErrorLike.row` 仍是**必填 `number`**——运行期防御不该变成类型层的谎言，
   // 所以测试用 `as unknown as CsvRowErrorLike` 喂非法值，而不是把字段改成可选。
   if (!Number.isFinite(error.row)) {
-    return fallBack([`ROW_NOT_FINITE（收到 ${typeof error.row}: ${String(error.row)}）`]);
+    // 诊断串用 ASCII（fix1 复审 Minor A）：它只进 `console.warn`、不上屏，但同一条 warn 的
+    // 前缀是英文，中英混排不一致，而且 Task 15 把残留扫描扩到整个 `src/` 时会命中它。
+    return fallBack([`ROW_NOT_FINITE (got ${typeof error.row}: ${String(error.row)})`]);
   }
 
   // 顶层 `reason` 提升进 values：`CsvRowError.reason` 是**独立字段**，不在 params 里

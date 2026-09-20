@@ -53,6 +53,25 @@ const entity = {
     emptyDomain: '请输入要抓取的官网域名，例如 www.example.com',
     success: '自动建档完成，字段完整率 {{percent}}%',
   },
+
+  /**
+   * 页面自身的文案（Task 9，`pages/EntityCardPage.tsx`）。
+   *
+   * `sourceAi` 的两个槽位装的是**后端给的 provider id 与模型名**（该显示的数据，不是待抽的
+   * 文案）；`model` 为 `null` 时组件传空串，模板因此把它放在行末——渲染结果与抽取前逐字一致
+   * （含那个尾随空格），不给存量断言制造无谓的漂移。
+   */
+  card: {
+    title: '品牌实体卡',
+    loadFailed: '加载实体卡失败',
+    fieldUpdated: '字段已更新，修订已留痕',
+    empty: '还没有实体卡，先用上方「自动建档」抓一次官网，或手工逐字段填写',
+    createBlank: '手工新建空白实体卡',
+    completeness: '字段完整率',
+    sourceAi: 'AI 抽取：{{provider}} {{model}}',
+    sourceManual: '人工录入',
+    revisions: '修订历史',
+  },
 };
 
 export default entity;

@@ -1,8 +1,9 @@
 /**
  * 唯一 IPC 出口：组件只能经本文件调用后端，禁止直接 `invoke`。
  *
- * 每个 Tauri 命令对应一个导出函数；后端 `IpcError{code,message,detail}`
- * 统一转成 `IpcRequestError`（带稳定错误码），组件只需读 `message` 展示中文原因。
+ * 每个 Tauri 命令对应一个导出函数；后端 `IpcError{code,message,detail,params}` 统一转成
+ * `IpcRequestError`（带稳定错误码）。⚠ 组件**不要**把 `message` 直接端给用户：它是语言中立的
+ * 紧凑诊断串（`{code} {k}={v}…`），展示一律走 `src/api/errors.ts` 的 `describeIpcError(error, t)`。
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -93,16 +94,16 @@ export class IpcRequestError extends Error {
   readonly params: Readonly<Record<string, string>>;
 
   constructor(payload: IpcErrorPayload) {
-    super(payload.message || '未知错误');
+    // 兜底记号必须**语言中立**（裁定 B-3.1）：`message` 的定位是紧凑诊断串，而
+    // `describeIpcError` 的词典 miss 那一级会**回落 `error.message`**——填一句中文既让
+    // 「后端发了合法 payload 但 message 是空串」这种契约破损在界面上伪装成正常文案，
+    // 也把排障线索换成了一句废话。回落顺序 `message → code → 'ipc/unknown'`：
+    // code 与下面 `this.code` 的兜底同源，所以两者永远一致，不新增第三种记号。
+    super(payload.message || payload.code || 'ipc/unknown');
     this.name = 'IpcRequestError';
     this.code = payload.code || 'ipc/unknown';
     this.detail = payload.detail ?? null;
     this.params = payload.params ?? {};
-  }
-
-  /** 中文可展示原因（antd message 直接用）。 */
-  get userMessage(): string {
-    return this.message;
   }
 }
 

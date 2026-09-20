@@ -1,6 +1,11 @@
 import type { ResourceBundle } from '../../resources';
 
-/** 占位 namespace：由 Task 10（demo 横幅 `demo.banner`） 填入，键集必须与 zh-CN 侧完全一致（R-G / R-J）。 */
-const demo: ResourceBundle['demo'] = {};
+/**
+ * 演示模式（非 Tauri 运行时）的界面文案，由 Task 10 填入 `demo.banner`。
+ * 键集必须与 zh-CN 侧完全一致（R-G / R-J）：标注留着，缺键/多键在 `tsc -b` 就红。
+ */
+const demo: ResourceBundle['demo'] = {
+  banner: 'Demo mode: static seed data, resets on reload, and does not reflect real algorithm results.',
+};
 
 export default demo;

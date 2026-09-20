@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons';
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import DemoBanner from './DemoBanner';
 
 const { Header, Sider, Content } = Layout;
 
@@ -76,6 +77,7 @@ export default function AppLayout() {
           {t('common.tagline')}
         </Typography.Text>
       </Header>
+      <DemoBanner />
       <Layout>
         <Sider width={200} theme="light" style={{ borderRight: '1px solid #f0f0f0' }}>
           <Menu

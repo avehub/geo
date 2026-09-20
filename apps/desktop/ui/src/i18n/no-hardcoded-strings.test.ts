@@ -77,7 +77,7 @@ const EXTRACTION_SOURCES = Object.fromEntries(
  * `EXTRACTION_ROOTS` 里拿掉」会**同时**打红该层的点名断言与总量断言。
  * 若从 `SOURCES` 派生，缩小抽取面时点名断言仍然数得出那 5 个页面文件 ⇒ 变异自证抓不到。
  */
-/** Task 8 的抽取面：`src/components/` 下的 18 个文件（16 个 .tsx + 2 个数据模块）。 */
+/** Task 8 的抽取面：`src/components/` 下的 19 个文件（17 个 .tsx + 2 个数据模块）。 */
 const COMPONENT_SOURCES = Object.fromEntries(
   Object.entries(EXTRACTION_SOURCES).filter(([path]) => path.startsWith('../components/')),
 );
@@ -271,10 +271,10 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     expect(paths).toContain('../main.tsx');
   });
 
-  it('components/ 下扫到了 18 个文件（16 个 .tsx + entity-fields.ts + wizard-steps.ts）', () => {
+  it('components/ 下扫到了 19 个文件（17 个 .tsx + entity-fields.ts + wizard-steps.ts）', () => {
     const paths = Object.keys(COMPONENT_SOURCES);
-    expect(paths).toHaveLength(18);
-    expect(paths.filter((path) => path.endsWith('.tsx'))).toHaveLength(16);
+    expect(paths).toHaveLength(19);
+    expect(paths.filter((path) => path.endsWith('.tsx'))).toHaveLength(17);
   });
 
   // 裁定 B-1 要求的那条点名断言：抽取面里 `pages/` 恰好是 5 个页面文件。
@@ -289,9 +289,9 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     ]);
   });
 
-  it('B-1 · 抽取面 = components(18) + pages(5) + App.tsx + main.tsx，且不含 api/', () => {
+  it('B-1 · 抽取面 = components(19) + pages(5) + App.tsx + main.tsx，且不含 api/', () => {
     const paths = Object.keys(EXTRACTION_SOURCES);
-    expect(paths).toHaveLength(25);
+    expect(paths).toHaveLength(26);
     expect(paths.filter((path) => path.startsWith('../api/'))).toEqual([]);
     expect(paths.filter((path) => EXTRACTION_ROOTS.some((root) => !path.startsWith(root))).length)
       .toBeGreaterThan(0);
@@ -338,8 +338,11 @@ describe('B-1 · 字面量 i18n key 的拼写保护', () => {
    * 三道守卫：总量下界（抓整体失效）、覆盖面下界（抓「只在个别文件上还能工作」）、
    * 点名样本（一个具体的、可失败的断言）。
    *
- * 实测（Task 9 扩面后重跑探针，输出见 task-9-report.md §D-1）：扫描面 **40** 个文件，
- * 其中 **20 个**抽出字面量 key，共 **278 个**（`components/` 179 + `pages/` 99）。
+ * 实测（Task 10 重跑探针，输出见 task-10-report.md）：扫描面 **43** 个文件，
+ * 其中 **21 个**抽出字面量 key，共 **279 个**（`components/` 180 + `pages/` 99）。
+ * ⚠ 下面那 3 个 `toHaveLength` 是**扫描面精确计数**，不是可以放着不动的常量：
+ * **新增或删除任何生产文件都必须同步改这里**（Task 10 就是因为这句没写下来，
+ * 让实现者以为它属禁改范围、只能停下来请裁）。
  *
  * 下界按裁定 B-10.3 取「实测值减 10 后向下取整到十位」：
  * - **总量**：278 − 10 = 268 → **260**。

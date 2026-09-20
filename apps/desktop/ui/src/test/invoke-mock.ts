@@ -115,4 +115,24 @@ export function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>)
   return Promise.reject(new Error(`未预期的 IPC 调用：${cmd}`));
 }
 
+/**
+ * Tauri 全局的测试 shim（Task 10 · 控制器更正 #22 第 1 条）。
+ *
+ * `src/api/runtime.ts` 的判据是 `'__TAURI_INTERNALS__' in window`，而 `vite.config.ts` 的
+ * `test.alias` 把 `@tauri-apps/api/core` 整个换成了本文件 ⇒ jsdom 下真正的 `core.js` 从不执行，
+ * 也就没有任何东西设置那个全局，`runtime` 会在**每一个**存量测试里被判成 `'demo'`。
+ * 而存量测试桩的正是 `invoke`、测的正是 **Tauri 分派路径**，所以这里补上真实 WebView 会提供的
+ * 那个全局——语义上这也是更忠实的测试环境。它的 `invoke` 就是本文件导出的这一个实现：
+ * 两条取用路径必须同源，否则「检测说在 Tauri 里、实际调用走另一个函数」就成了新的失真。
+ *
+ * ⚠ 必须写在**模块作用域**、而且必须在**这个文件**里：`client.ts` 的
+ * `import { invoke } from '@tauri-apps/api/core'` 经别名指向本文件，导入图因此保证本模块体
+ * 先于 `client.ts` 的模块体执行，而 `runtime` 是模块级常量、在 `client.ts` 求值时就读定了。
+ * 不要改成依赖 `setup.ts` 的执行顺序（那是框架约定，不是导入图保证；本文件同时被 setup
+ * import，所以两条路径都装得上）。
+ *
+ * 只加这一段：`mockInvoke` 的行为与 API 一个字都没动。
+ */
+Object.assign(window, { __TAURI_INTERNALS__: { invoke } });
+
 export default invoke;

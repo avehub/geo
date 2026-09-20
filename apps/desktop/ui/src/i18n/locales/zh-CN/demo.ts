@@ -1,12 +1,17 @@
-import type { EmptyNamespace } from '../../resources';
-
 /**
- * 占位 namespace：本轮（Task 6）只建基座，文案由 Task 10（demo 横幅 `demo.banner`） 填入。
+ * 演示模式（非 Tauri 运行时，即 `mise run web` 打开的浏览器）的界面文案。
  *
- * 标注 `EmptyNamespace`（= `Record<string, never>`）意为「现在一个键都不许有」，
- * 因此**只填一侧**在 `tsc -b` 就会红（R-J）。填的时候把这个标注换成真实对象，
- * 并在 en-US 侧同步加同一批键。
+ * 原先这里的 `EmptyNamespace` 标注（= `Record<string, never>`，意为「一个键都不许有」）已按
+ * R-J 换成真实对象，en-US 侧在**同一次编辑**里加了同一批键（`ResourceBundle = typeof zhCN`，
+ * 只填一侧 `tsc -b` 就红）。`resources.ts` 的 `EmptyNamespace` 导出保留不删——它是 R-J 的
+ * 机制文档，Plan B/C 还可能用到（Task 10 简报 §A-4）。
+ *
+ * `banner` 的口径与 Task 15 要写进 README 的 demo 说明一致（AGENTS 规则 9）：
+ * **演示模式** / 数据是**静态种子、刷新即重置** / **不代表真实算法结果**。
+ * 横幅要一行读完，所以长文留给 README，不提前塞进来。
  */
-const demo: EmptyNamespace = {};
+const demo = {
+  banner: '演示模式：静态种子数据，刷新即重置，不代表真实算法结果。',
+};
 
 export default demo;

@@ -173,4 +173,42 @@ describe('api/client', () => {
     expect(error.userMessage).toBeUndefined();
     expect(error.message).toBe('io/failed reason=x');
   });
+
+  /**
+   * 裁定 B-2（Task 10）第 1 条：`callVia` 把「用哪个 invoker」变成参数。
+   *
+   * 这两条钉住注入语义本身：注入的 invoker 真的被调用、真 `invoke` 一次都没被碰到，
+   * 且 invoker 的拒绝仍走 `unwrapIpcError` 归一化（分派点搬家了，错误契约不变）。
+   * ⚠ 本文件**刻意不 mock** `./runtime`：这里的存量用例测的是 Tauri 分派路径
+   * （桩打在 `mockInvoke` 上），而 `vi.mock` 是文件作用域的——demo 分支的用例单独放在
+   * `client.demo-runtime.test.ts`。
+   */
+  it('B-2 · callVia 走注入的 invoker，真 invoke 一次都没被调用', async () => {
+    const seen: Array<[string, Record<string, unknown> | undefined]> = [];
+    const fakeInvoker = async <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
+      seen.push([cmd, args]);
+      return [{ id: 'from-injected-invoker' }] as T;
+    };
+
+    const result = await client.callVia<{ id: string }[]>('project_list', { filter: {} }, fakeInvoker);
+
+    expect(result).toEqual([{ id: 'from-injected-invoker' }]);
+    expect(seen).toEqual([['project_list', { filter: {} }]]);
+    // 注入点生效的判据：真 `invoke`（测试里就是 `mockInvoke`）一次都没被碰到
+    expect(mockInvoke.callsOf('project_list')).toHaveLength(0);
+  });
+
+  it('B-2 · callVia 仍把 invoker 的拒绝归一化成 IpcRequestError（错误契约不随分派点改变）', async () => {
+    const boom = async (): Promise<never> => {
+      throw new TypeError('boom');
+    };
+
+    const error = (await client
+      .callVia('settings_get', undefined, boom)
+      .catch((cause: unknown) => cause)) as client.IpcRequestError;
+
+    expect(error).toBeInstanceOf(client.IpcRequestError);
+    expect(error.code).toBe('ipc/invoke_failed');
+    expect(error.params).toEqual({ cmd: 'settings_get', reason: 'boom' });
+  });
 });

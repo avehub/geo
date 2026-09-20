@@ -20,7 +20,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { i18n } from '../i18n';
 import { IpcRequestError } from './client';
 import { problemsOf } from './error-text';
-import { MAY_ECHO_VALUE, describeIpcError, mayEchoParamValue } from './errors';
+import {
+  MAY_ECHO_VALUE,
+  describeCsvRowError,
+  describeIpcError,
+  mayEchoParamValue,
+} from './errors';
 
 const zh = () => i18n.getFixedT('zh-CN');
 const en = () => i18n.getFixedT('en-US');
@@ -536,5 +541,129 @@ describe('{kind}/not_found 家族', () => {
     const error = ipcError('prompt_set/not_found', { kind: 'mystery_kind', id: 'x' });
 
     expect(describeIpcError(error, zh())).toBe('mystery_kind不存在（ID：x）');
+  });
+});
+
+/**
+ * Task 8 · CSV 行错误的渲染（裁定 B-5 / G-2，复审 F-3a）。
+ *
+ * `CsvRowError` 与 `IpcRequestError` **不同构**：它是 `{row, reason, params}`，没有 `code`，
+ * 而 `describeIpcError` 第一件事就是 `instanceof` 分流 ⇒ 喂进去只会得到 `common.unknownError`。
+ * 同时 `renderReason` / `REASON_SCOPES` 都是模块私有的。于是 `CsvToolbar` 面前有条诱人的岔路：
+ * 在组件里重写一遍 reason 渲染 + passthrough + 红线守卫。**裁定禁止**——那会造出第二个、
+ * 更弱的泄漏面（allowlist 与回退阶梯各存两份，将来改一份忘另一份，漏掉的正是合规守卫）。
+ * 所以渲染逻辑住在本模块，组件只调 `describeCsvRowError`。下面钉住它的四条契约：
+ * ① CSV 族 code 级覆写优先 → `errors.reasons.*` 兜底；② 复用同一份 `mayEchoParamValue()`；
+ * ③ 出口过 Task 7b 那道质量闸门；④「第 N 行」这个外壳也走词典（不许组件拼接）。
+ */
+describe('Task 8 · describeCsvRowError（CSV 行错误）', () => {
+  /** 计划正文点名的两条断言之一：红线词永不上屏。 */
+  it('B-5① · not_allowed 的 params.value 是命中的红线词，渲染结果不含它', () => {
+    const warn = captureWarn();
+    // 形状逐字照 `crates/geo-domain/src/csv_io.rs` 的合规那一支：`RowFailure::from_geo`
+    // 原样透传 `compliance::check()` 的 params，所以除 `value` 外还带 `field` 与 `reason`
+    // 两个基础键（简报 A-5）——渲染必须容忍这两个多出来的键。
+    const error = {
+      row: 3,
+      reason: 'not_allowed',
+      params: { value: '国家级', field: 'content', reason: 'not_allowed' },
+    };
+
+    const zhText = describeCsvRowError(error, zh());
+    const enText = describeCsvRowError(error, en());
+
+    expect(zhText).not.toContain('国家级');
+    expect(enText).not.toContain('国家级');
+    expect(zhText).toBe('第 3 行：含广告法禁用表述，请改写后再提交');
+    expect(problemsOf(zhText)).toEqual([]);
+    expect(problemsOf(enText)).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  /** 计划正文点名的两条断言之二：不是一刀切把所有 value 都藏掉。 */
+  it('B-5② · too_long 的 limit 照常插值（证明 value 是被 allowlist 精确抑制，不是一刀切）', () => {
+    const warn = captureWarn();
+    const text = describeCsvRowError({ row: 7, reason: 'too_long', params: { limit: '120' } }, zh());
+
+    expect(text).toContain('120');
+    expect(text).toBe('第 7 行：prompt 文本超过 120 字上限');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('B-5②补 · invalid_format 在 allowlist 内，value 是该显示的数据，照常追加', () => {
+    const text = describeCsvRowError(
+      { row: 4, reason: 'invalid_format', params: { value: 'not_an_intent' } },
+      zh(),
+    );
+
+    expect(mayEchoParamValue('invalid_format')).toBe(true);
+    expect(text).toContain('not_an_intent');
+    expect(problemsOf(text)).toEqual([]);
+  });
+
+  it('① code 级覆写优先：required 的 params 是空的，走 CSV 专属模板而不是共享的谓语', () => {
+    // 共享的 `errors.reasons.required` 是「不能为空」——它是个**谓语**，为 `validation/failed`
+    // 的 `{{field}}{{reason}}` 槽位组合而写。单独渲染只有 4 个信息字符，会被质量闸门打回
+    // `common.unknownError`：CSV 导入里最常见的一种行错误（text 留空）会变成一句无信息的兜底。
+    const shared = i18n.t('errors.reasons.required', { nsSeparator: false });
+    const text = describeCsvRowError({ row: 2, reason: 'required', params: {} }, zh());
+
+    expect(shared).toBe('不能为空');
+    expect(text).not.toContain(shared);
+    expect(text).toBe('第 2 行：必填的 prompt 文本为空');
+    expect(problemsOf(text)).toEqual([]);
+  });
+
+  it('① 兜底：没有 CSV 专属模板的 reason 回落到共享的 errors.reasons.*', () => {
+    const text = describeCsvRowError(
+      { row: 9, reason: 'row_invalid', params: { value: 'CSV error: record 1' } },
+      zh(),
+    );
+
+    expect(i18n.exists('prompt.csv.reasons.row_invalid')).toBe(false);
+    expect(text).toBe('第 9 行：这一行无法读取（CSV error: record 1）');
+    expect(problemsOf(text)).toEqual([]);
+  });
+
+  it('① raw passthrough：词典两边都查不到的 reason 原样显示，不静默变成兜底文案', () => {
+    const warn = captureWarn();
+    const text = describeCsvRowError({ row: 5, reason: 'brand_new_reason', params: {} }, zh());
+
+    expect(text).toBe('第 5 行：brand_new_reason');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('④ 外壳走词典：zh 与 en 的语序不同，所以不许在组件里拼接', () => {
+    const error = { row: 12, reason: 'required', params: {} };
+
+    expect(describeCsvRowError(error, zh())).toBe('第 12 行：必填的 prompt 文本为空');
+    expect(describeCsvRowError(error, en())).toBe('Row 12: the required prompt text is empty');
+  });
+
+  it('③ 质量闸门：reason 为空 ⇒ 外壳会留下悬空标点，回落 common.unknownError 并 warn', () => {
+    const warn = captureWarn();
+
+    // `CsvRowError.reason` 是 String，理论上不会是空串；但 `from_geo` 用的是
+    // `params.get("reason").cloned().unwrap_or_default()`，空 params 就会给出空 reason。
+    const text = describeCsvRowError({ row: 3, reason: '', params: {} }, zh());
+
+    expect(text).toBe('操作未成功，请稍后重试');
+    expect(text).not.toBe('第 3 行：');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0].join(' ')).toContain('not presentable');
+  });
+
+  it('② params 是可选的：整份缺失（旧载荷形状）也不炸，且仍走同一套判定', () => {
+    expect(describeCsvRowError({ row: 1, reason: 'required' }, zh())).toBe(
+      '第 1 行：必填的 prompt 文本为空',
+    );
+    // 缺 params 的 not_allowed 同样不许回显——判定依据是 reason，不是 params 里有没有 value
+    expect(describeCsvRowError({ row: 1, reason: 'not_allowed' }, zh())).not.toContain('value');
+  });
+
+  it('自证（对照组）：把 CSV 专属模板删掉，required 就会被闸门打回兜底文案', () => {
+    // 这条钉的是「① 的覆写层真的在起作用」，而不是恰好共享模板也能过。
+    const shared = i18n.t('errors.reasons.required', { nsSeparator: false });
+    expect(problemsOf(shared), '共享模板单独渲染就不合格，所以覆写层不是可有可无的').not.toEqual([]);
   });
 });

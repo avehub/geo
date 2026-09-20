@@ -343,9 +343,29 @@ export interface DedupeReport {
   duplicate_pairs: number;
 }
 
+/**
+ * CSV 导入结果。`errors[]` 与 Rust `geo_domain::csv_io::CsvRowError` 一一对应：
+ * **行号 + 目录 reason key + 语言中立 params**，不含任何自然语言，
+ * 由前端按当前语言渲染（`src/api/errors.ts` 的 `describeCsvRowError`）。
+ *
+ * `params` 写成**可选**（裁定 B-5），读取处 `?? {}` 兜底，与上面 `IpcErrorPayload.params`
+ * 的口径一致：线上新载荷一定带 `params`（Rust 侧 `#[serde(default)]` 只影响反序列化，
+ * 且 `CsvRowError` 实测从不落库），但"可选 + 兜底"比"假定一定有"稳。
+ *
+ * ⚠ 合规那一支（`RowFailure::from_geo`）**原样透传** `compliance::check()` 的 params，
+ * 所以除该 reason 的配套参数外还会带 `field` 与 `reason` 两个基础键，
+ * 且 `value` 装的是**命中的广告法红线词**——渲染侧必须容忍多出来的键，也绝不能回显 `value`。
+ *
+ * 类型仍是内联匿名形状（而不是抽一个具名 `CsvRowError` interface）：简报 §C 对本文件的
+ * 写权限只到"`CsvRowError` 那一处补 `params`"。具名化留给 Task 9（`types.ts` 归它）。
+ */
 export interface CsvImportResult {
   items: PromptItem[];
-  errors: { reason: string; row: number }[];
+  errors: {
+    row: number;
+    reason: string;
+    params?: Readonly<Record<string, string>>;
+  }[];
 }
 
 // ---------------------------------------------------------------------------

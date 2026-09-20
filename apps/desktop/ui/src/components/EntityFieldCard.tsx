@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Alert, Button, Card, Input, InputNumber, Radio, Select, Space, Typography } from 'antd';
 import { EditOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 
 import type { FieldStatus } from '../api/types';
 import { FIELD_STATUS_LABELS } from '../api/types';
@@ -32,6 +33,11 @@ export interface EntityFieldCardProps {
  * 单个实体卡字段：展示值 + 可信状态，支持就地编辑并写修订留痕。
  *
  * `json` 类字段（产品、联系方式）用 JSON 文本编辑，解析失败就地报错、不提交。
+ *
+ * 标题渲染 `t(descriptor.labelKey)`：`FieldDescriptor` 装的是**词典 key** 而不是译文，
+ * 因为 `entity-fields.ts` 是模块级常量、求值时没有 React 上下文（裁定 B-2）。
+ * 状态单选（`STATUS_OPTIONS`）的标签仍来自 `api/types.ts` 的 `FIELD_STATUS_LABELS`，
+ * 那个文件归 Task 9 的写集，本任务不越界。
  */
 export default function EntityFieldCard({
   descriptor,
@@ -40,6 +46,7 @@ export default function EntityFieldCard({
   saving = false,
   onSave,
 }: EntityFieldCardProps) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draftStatus, setDraftStatus] = useState<FieldStatus>(status);
   const [lastStatus, setLastStatus] = useState<FieldStatus>(status);
@@ -75,7 +82,8 @@ export default function EntityFieldCard({
         try {
           return { ok: true, next: JSON.parse(text) as unknown };
         } catch (error) {
-          return { ok: false, reason: `JSON 解析失败：${(error as Error).message}` };
+          // `JSON.parse` 的原文是引擎给的英文诊断，属**该显示的数据**，照原样插进模板。
+          return { ok: false, reason: t('entity.fieldCard.jsonParseFailed', { detail: (error as Error).message }) };
         }
       }
       default:
@@ -100,15 +108,17 @@ export default function EntityFieldCard({
       data-testid={`entity-field-${descriptor.path}`}
       title={
         <Space size={8}>
-          <Typography.Text strong>{descriptor.label}</Typography.Text>
+          <Typography.Text strong>{t(descriptor.labelKey)}</Typography.Text>
           <FieldStatusTag status={status} />
-          {descriptor.required ? null : <Typography.Text type="secondary">（选填）</Typography.Text>}
+          {descriptor.required ? null : (
+            <Typography.Text type="secondary">{t('entity.fieldCard.optional')}</Typography.Text>
+          )}
         </Space>
       }
       extra={
         editing ? null : (
           <Button size="small" icon={<EditOutlined />} onClick={beginEdit}>
-            编辑
+            {t('common.edit')}
           </Button>
         )
       }
@@ -121,7 +131,7 @@ export default function EntityFieldCard({
               style={{ width: '100%' }}
               value={tags}
               onChange={setTags}
-              placeholder="输入后回车添加"
+              placeholder={t('entity.fieldCard.tagsPlaceholder')}
               tokenSeparators={[',', '，']}
               open={false}
               suffixIcon={null}
@@ -134,7 +144,7 @@ export default function EntityFieldCard({
               max={2100}
               value={year}
               onChange={(next) => setYear(next)}
-              placeholder="例如：2006"
+              placeholder={t('entity.fieldCard.yearPlaceholder')}
             />
           ) : null}
           {descriptor.kind === 'text' ? (
@@ -160,10 +170,10 @@ export default function EntityFieldCard({
 
           <Space>
             <Button type="primary" size="small" loading={saving} onClick={commit}>
-              保存
+              {t('common.save')}
             </Button>
             <Button size="small" onClick={() => setEditing(false)}>
-              取消
+              {t('common.cancel')}
             </Button>
           </Space>
         </Space>

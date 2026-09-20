@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button, Card, Checkbox, Form, InputNumber, Radio, Space, Typography } from 'antd';
 import { ThunderboltOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 
 import type { GenerateOptions, Industry, IntentCategory } from '../api/types';
 import { INDUSTRY_LABELS, INTENT_LABELS } from '../api/types';
@@ -22,21 +23,25 @@ export interface GeneratePanelProps {
  *
  * 目标条数下限取 60：这是「样本充足」的门槛（见 `SampleSizeAlert`），
  * 低于它生成的题库只能给方向性结论，不如一开始就拦住。
+ *
+ * 行业与意图的选项标签仍来自 `api/types.ts` 的 `INDUSTRY_LABELS` / `INTENT_LABELS`
+ * （后端产出自然语言的枚举映射），那个文件归 Task 9 的写集，本任务不越界。
  */
 export default function GeneratePanel({
   defaultIndustry,
   loading = false,
   onGenerate,
 }: GeneratePanelProps) {
+  const { t } = useTranslation();
   const [targetCount, setTargetCount] = useState<number>(DEFAULT_TARGET_COUNT);
   const [industry, setIndustry] = useState<Industry>(defaultIndustry);
   const [intents, setIntents] = useState<IntentCategory[]>(INTENTS);
   const [repeatCount, setRepeatCount] = useState<number>(1);
 
   return (
-    <Card size="small" title="生成题库" style={{ marginBottom: 16 }}>
+    <Card size="small" title={t('prompt.generate.title')} style={{ marginBottom: 16 }}>
       <Form layout="inline" style={{ rowGap: 12 }}>
-        <Form.Item label="目标条数">
+        <Form.Item label={t('prompt.generate.targetCount')}>
           <InputNumber
             min={MIN_TARGET_COUNT}
             max={200}
@@ -44,7 +49,7 @@ export default function GeneratePanel({
             onChange={(value) => setTargetCount(typeof value === 'number' ? value : MIN_TARGET_COUNT)}
           />
         </Form.Item>
-        <Form.Item label="重复采样">
+        <Form.Item label={t('prompt.generate.repeatCount')}>
           <InputNumber
             min={1}
             max={3}
@@ -52,7 +57,7 @@ export default function GeneratePanel({
             onChange={(value) => setRepeatCount(typeof value === 'number' ? value : 1)}
           />
         </Form.Item>
-        <Form.Item label="行业模板" style={{ width: '100%' }}>
+        <Form.Item label={t('prompt.generate.industry')} style={{ width: '100%' }}>
           <Radio.Group
             optionType="button"
             size="small"
@@ -61,7 +66,7 @@ export default function GeneratePanel({
             options={INDUSTRIES.map((value) => ({ value, label: INDUSTRY_LABELS[value] }))}
           />
         </Form.Item>
-        <Form.Item label="意图覆盖" style={{ width: '100%' }}>
+        <Form.Item label={t('prompt.generate.intents')} style={{ width: '100%' }}>
           <Checkbox.Group
             value={intents}
             onChange={(values) => setIntents(values as IntentCategory[])}
@@ -83,10 +88,10 @@ export default function GeneratePanel({
                 })
               }
             >
-              生成题库
+              {t('prompt.generate.submit')}
             </Button>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              管线：模板展开 → AI 扩写 → 口语化改写 → 竞品同框 → 去重 → 版本化快照
+              {t('prompt.generate.pipeline')}
             </Typography.Text>
           </Space>
         </Form.Item>

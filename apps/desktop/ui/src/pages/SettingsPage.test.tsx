@@ -55,7 +55,9 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />);
     await screen.findByText('https://api.deepseek.com/v1');
 
-    await user.click(screen.getByRole('radio', { name: 'Moonshot' }));
+    // Task 8：单选钮的名字改由 `settings.providers.<id>` 渲染，不再读 fixture 的
+    // `label_zh`（那是后端产出自然语言的泄漏面）。zh 值逐字取自 `LlmProvider::label_zh()`。
+    await user.click(screen.getByRole('radio', { name: 'Kimi（月之暗面）' }));
 
     expect(await screen.findByText('https://api.moonshot.cn/v1')).toBeInTheDocument();
     expect(screen.getByLabelText('默认模型')).toHaveValue('moonshot-v1-8k');
@@ -87,7 +89,9 @@ describe('SettingsPage', () => {
 
     await user.click(screen.getByRole('radio', { name: /自定义/ }));
     await user.type(await screen.findByLabelText('接口地址'), 'https://api.internal/v1');
-    await user.click(screen.getByRole('radio', { name: 'Moonshot' }));
+    // Task 8：单选钮的名字改由 `settings.providers.<id>` 渲染，不再读 fixture 的
+    // `label_zh`（那是后端产出自然语言的泄漏面）。zh 值逐字取自 `LlmProvider::label_zh()`。
+    await user.click(screen.getByRole('radio', { name: 'Kimi（月之暗面）' }));
 
     expect(await screen.findByText('https://api.moonshot.cn/v1')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /保存设置/ }));
@@ -125,7 +129,7 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(input).toHaveValue(''));
   });
 
-  it('测试连接在无 Key 时展示中文错误「未配置 API Key」', async () => {
+  it('测试连接在无 Key 时按词典渲染 llm/missing_secret（不回显后端 message）', async () => {
     stub({ configured: false });
     mockInvoke.stubAlways(
       'llm_provider_test',
@@ -138,7 +142,12 @@ describe('SettingsPage', () => {
 
     await user.click(screen.getByRole('button', { name: /测试连接/ }));
 
-    expect(await screen.findByText(/未配置 API Key/)).toBeInTheDocument();
+    // Task 8：`SecretStatus` 的本地 describeError 换成 `describeIpcError`，渲染依据从
+    // 后端的 `message`（`'未配置 API Key'`）变成稳定 `code` 的词典模板。
+    // 断言由正则收紧成**全字符串**——强度只增不减。
+    expect(
+      await screen.findByText('还没有配置 API Key，请先在「设置」里填写并保存'),
+    ).toBeInTheDocument();
   });
 
   it('测试连接成功时展示模型与成本', async () => {

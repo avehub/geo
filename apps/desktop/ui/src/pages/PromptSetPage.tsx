@@ -4,8 +4,10 @@ import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 
 import * as client from '../api/client';
+import { IpcRequestError } from '../api/client';
 import { describeIpcError } from '../api/errors';
 import type {
   GenerateOptions,
@@ -29,6 +31,66 @@ const NO_GROUP = '未分组';
 function groupOf(item: PromptItem): string {
   const name = item.group_name?.trim();
   return name === undefined || name === '' ? NO_GROUP : name;
+}
+
+/** 后端 `degradation_note()` 的机器行前缀（`prompt_service.rs` 的 `DEGRADED_PREFIX`）。 */
+const DEGRADED_PREFIX = 'degraded ';
+
+/**
+ * `notes` 按行分派（计划正文那条"控制器裁定"，简报 B-6）。
+ *
+ * 后端发的是 `degraded ` + **紧凑 JSON** 的单行 ASCII 机器行，字段是 `stage` / `code` / `params`
+ * （`apps/desktop/src-tauri/src/services/prompt_service.rs` 的 `degradation_note`）。
+ * **机器行不许原样显示给用户**，所以这里 `JSON.parse` 之后走词典：`stage` 取译文，
+ * `code` + `params` 交给 Task 7 的 `describeIpcError` 渲染。
+ *
+ * 其余行**原样渲染**——`notes` 里还并存着既存的中文散文行（配额不足、合规拦截那几条，
+ * 裁定 §H-2 明令不许顺手改），以及升级前落库的老数据。解析失败或形状不对同样原样渲染并
+ * `console.warn`：`notes` 是**持久化**字段，宁可见到一行难看的原文，也不要因为一次形状漂移
+ * 把整块提示静默吞掉。
+ */
+function describeNoteLine(line: string, t: TFunction): string {
+  if (!line.startsWith(DEGRADED_PREFIX)) return line;
+
+  let record: unknown;
+  try {
+    record = JSON.parse(line.slice(DEGRADED_PREFIX.length));
+  } catch {
+    console.warn('[geo-i18n] malformed degraded note line, rendering raw:', line);
+    return line;
+  }
+
+  if (typeof record !== 'object' || record === null) {
+    console.warn('[geo-i18n] degraded note is not an object, rendering raw:', line);
+    return line;
+  }
+
+  const { stage, code, params } = record as { stage?: unknown; code?: unknown; params?: unknown };
+  if (typeof code !== 'string' || code === '' || typeof stage !== 'string') {
+    console.warn('[geo-i18n] degraded note is missing stage/code, rendering raw:', line);
+    return line;
+  }
+
+  const values: Record<string, string> = {};
+  if (typeof params === 'object' && params !== null) {
+    for (const [key, value] of Object.entries(params as Record<string, unknown>)) {
+      if (typeof value === 'string') values[key] = value;
+    }
+  }
+
+  // stage 走 raw passthrough：后端将来加了第三种 stage，界面露出机器记号（显眼、可排查），
+  // 而不是静默渲染成半句话。两个 stage 键的覆盖断言在 no-hardcoded-strings.test.ts（B-4 同类问题：
+  // 扫描测试只看字面量，抓不到这种从数据里拼出来的 key）。
+  const stageKey = `prompt.promptSet.notes.stage.${stage}`;
+  const rendered = t(stageKey, { nsSeparator: false });
+  const stageText =
+    typeof rendered === 'string' && rendered !== '' && rendered !== stageKey ? rendered : stage;
+
+  // `message` 填 code 本身：词典 miss 时 `describeIpcError` 会回落 `error.message`，
+  // 填稳定记号比填一句中文更利于排障，也不依赖 `client.ts` 里那句 Task 9 才处置的兜底。
+  const detail = describeIpcError(new IpcRequestError({ code, params: values, message: code }), t);
+
+  return t('prompt.promptSet.notes.degraded', { stage: stageText, detail });
 }
 
 /** M2 Prompt 智能题库：生成、筛选、增删改、加权、去重检查与 CSV 往返。 */
@@ -260,7 +322,17 @@ export default function PromptSetPage() {
               </Button>
             </Space>
             {promptSet.notes ? (
-              <Alert type="info" showIcon style={{ marginTop: 8 }} message={promptSet.notes} />
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginTop: 8 }}
+                message={promptSet.notes
+                  .split('\n')
+                  .filter((line) => line.trim() !== '')
+                  .map((line, index) => (
+                    <div key={`${index}:${line.slice(0, 32)}`}>{describeNoteLine(line, t)}</div>
+                  ))}
+              />
             ) : null}
             {dedupeSummary ? (
               <Typography.Paragraph style={{ marginTop: 8, marginBottom: 0 }} type="secondary">

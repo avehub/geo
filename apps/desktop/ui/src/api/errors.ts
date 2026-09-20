@@ -75,12 +75,41 @@ const SKIP_TOKENS_PREFIX = 'errors.skip_tokens.';
 const FIELDS_PREFIX = 'fields.';
 
 /**
+ * CSV 行错误族的**合成 code**（Task 8 · 裁定 B-5 / G-2）。
+ *
+ * `CsvRowError` 不是 `IpcError`：它是 `{row, reason, params}`，**没有 code**，而
+ * `describeIpcError` 第一件事就是 `instanceof` 分流 ⇒ 直接喂进去只会得到 `common.unknownError`。
+ * 但它的 reason 词表需要的是**同一套**阶梯（code 级覆写优先 → 目录级兜底 → raw passthrough
+ * → allowlist 决定要不要追加 `value`），所以借 `REASON_SCOPES` 挂一个合成 code 复用
+ * `renderReason`，而不是在 `CsvToolbar.tsx` 里重写第二份——那会造出第二个、更弱的泄漏面
+ * （allowlist 与回退阶梯各存两份，将来改一份忘另一份，漏掉的正是广告法红线守卫）。
+ *
+ * `csv/row` **不在** `contracts/error-codes.json` 的 43 码里，后端也发不出来，
+ * 因此不可能与 `describeIpcError` 的主路撞上，既有 4 级阶梯语义一行未动。
+ */
+const CSV_ROW_CODE = 'csv/row';
+
+/**
+ * CSV 行错误的 code 级词表前缀。键住在 `prompt` namespace 而不是 `errors`：
+ * ① `locales/{zh-CN,en-US}/errors.ts` 不在 Task 8 的写集内（简报 §C）；
+ * ② `src/i18n/dictionary.test.ts` 的「结构闭合」用例把 `errors` 下的叶子钉成六类，
+ *    多一个 `errors.csv.*` 当场就是"不属于任何一类的键"。
+ * CSV 导入导出本来只有题库页这一个 surface，语义也更贴。
+ */
+const CSV_REASONS_PREFIX = 'prompt.csv.reasons.';
+
+/** 行错误的外壳（zh `第 {{row}} 行：{{detail}}` / en `Row {{row}}: {{detail}}`）。 */
+const CSV_ROW_KEY: TranslationKey = 'prompt.csv.rowError';
+
+/**
  * code 级的 reason 词表：`llm/transport` 的三条 reason（`network` / `timeout` / `other`）
  * **不在** `error.rs` 的目录表里，所以不能塞进 `errors.reasons.*`——那会让「reasons 键集
  * == 目录键集」这条守卫失真（B-1）。它们的文案要求见 B-7：必须是可操作指引。
  */
 const REASON_SCOPES: Record<string, string> = {
   'llm/transport': TRANSPORT_PREFIX,
+  // 见上面 CSV_ROW_CODE 的注释：合成 code，只被 describeCsvRowError 用到。
+  [CSV_ROW_CODE]: CSV_REASONS_PREFIX,
 };
 
 /**
@@ -368,6 +397,65 @@ export function describeIpcError(error: unknown, t: TFunction): string {
   if (problems.length > 0) {
     console.warn('[geo-i18n] rendered error text is not presentable, falling back:', {
       code: error.code,
+      problems,
+    });
+    return render(t, UNKNOWN_ERROR_KEY, {}) ?? UNKNOWN_ERROR_KEY;
+  }
+  return text;
+}
+
+
+/**
+ * `CsvRowError` 的结构子集（`src/api/types.ts` 里 `CsvImportResult['errors']` 的元素）。
+ *
+ * 刻意**不**复用 `IpcRequestError`：它是个 class，`describeIpcError` 靠 `instanceof` 分流，
+ * 而 CSV 行错误既没有 `code` 也不需要走那条阶梯。这里只认它真正有的三个字段。
+ */
+export interface CsvRowErrorLike {
+  /** CSV 物理行号（表头为第 1 行）。 */
+  row: number;
+  /** `crates/geo-domain/src/error.rs` 目录表里的 reason key。 */
+  reason: string;
+  /** 该 reason 的配套参数；旧载荷可能整份缺失，读取处一律兜底成空对象。 */
+  params?: Readonly<Record<string, string>>;
+}
+
+/**
+ * 把一条 CSV 行错误渲染成当前语言的**一整行**（含「第 N 行」这个外壳）。
+ *
+ * 阶梯与 `describeIpcError` 的第 ③ 级同构，只是入口形状不同：
+ *
+ * 1. **CSV 族 code 级覆写优先**：查 `prompt.csv.reasons.<reason>`；
+ * 2. **查不到才回落共享的 `errors.reasons.<reason>`**；
+ * 3. 两边都查不到 ⇒ **raw passthrough**（原样显示 reason 记号，不静默变成兜底文案）；
+ * 4. `params.value` 要不要追加由**同一份** `mayEchoParamValue()` allowlist 决定
+ *    （fail-closed）——`not_allowed` 不在表里，所以命中的广告法红线词永远上不了屏，
+ *    而 `invalid_format` 的 `value` 是用户填的原始单元格内容，照常显示；
+ * 5. 出口过 Task 7b 那道**质量闸门**：`problemsOf()` 不合格 ⇒ `console.warn` 后回落
+ *    `common.unknownError`，绝不把 `第 3 行：` 这种悬空外壳端给用户。
+ *
+ * 外壳也走词典（裁定 B-5）：zh 是「第 N 行：…」，en 是 `Row N: …`，语序不同，
+ * 所以**不许**在组件里做字符串拼接。
+ *
+ * @param t 组件里 `useTranslation()` 拿到的那个 `t`；不要把结果缓存到 state 之外。
+ */
+export function describeCsvRowError(error: CsvRowErrorLike, t: TFunction): string {
+  const reason = typeof error.reason === 'string' ? error.reason : '';
+
+  // 顶层 `reason` 提升进 values：`CsvRowError.reason` 是**独立字段**，不在 params 里
+  // （只有合规那一支因为原样透传 `GeoError::params()` 才恰好也带一个同名键）。
+  // 不提升就喂不进 `renderReason`——它读的是 `params.reason`，而 `required` 这类 reason
+  // 的 params 是**空 map**，照搬只会渲染成空串再被闸门打回兜底文案。
+  const values = composeValues(t, CSV_ROW_CODE, { ...error.params, reason });
+  const detail = values.reason;
+
+  const text = render(t, CSV_ROW_KEY, { row: String(error.row), detail }) ?? detail;
+
+  const problems = problemsOf(text);
+  if (problems.length > 0) {
+    console.warn('[geo-i18n] rendered CSV row error is not presentable, falling back:', {
+      row: error.row,
+      reason,
       problems,
     });
     return render(t, UNKNOWN_ERROR_KEY, {}) ?? UNKNOWN_ERROR_KEY;

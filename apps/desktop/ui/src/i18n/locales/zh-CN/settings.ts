@@ -1,12 +1,73 @@
-import type { EmptyNamespace } from '../../resources';
-
 /**
- * 占位 namespace：本轮（Task 6）只建基座，文案由 Task 8/9（设置页） 填入。
+ * 设置页（Task 8 填入组件层那部分；页面自身的文案归 Task 9）。
  *
- * 标注 `EmptyNamespace`（= `Record<string, never>`）意为「现在一个键都不许有」，
- * 因此**只填一侧**在 `tsc -b` 就会红（R-J）。填的时候把这个标注换成真实对象，
- * 并在 en-US 侧同步加同一批键。
+ * # `providers.*` 的键名 = 后端稳定 id，zh 值 = `LlmProvider::label_zh()` 逐字相同
+ *
+ * 计划正文那条"控制器裁定"点名了这条泄漏：`ProviderSelect` 原先直接渲染后端给的
+ * `ProviderInfo.label_zh`，英文 locale 下仍是中文——而组件扫描只查 CJK **字面量**，抓不到它。
+ * 改成查 `settings.providers.<id>`，7 个 id 逐字取自 `crates/geo-llm/src/provider.rs` 的
+ * `LlmProvider::as_str()`；查不到时回退 **provider id 本身**，**绝不回退 `label_zh`**
+ * （回退它就等于把泄漏面原地留着）。哨兵断言在 `src/components/ProviderSelect.test.tsx`。
+ *
+ * `ProviderInfo.label_zh` 字段本身**不删**（删它要连带改 demo 种子、`src/test/fixtures.ts`、
+ * Task 11/14），Park 到 Plan B/C；但 UI 侧任何代码都不再读它。
+ *
+ * # `providers`（复数）与 `providerForm` 刻意分开
+ *
+ * `providers.*` 的键名来自后端数据、集合被契约冻结；`providerForm.*` 是这个表单自己的
+ * label 与提示。混在一个 `provider` 对象里会让"哪些键是动态拼出来的"看不出来。
  */
-const settings: EmptyNamespace = {};
+const settings = {
+  providers: {
+    deep_seek: 'DeepSeek（深度求索）',
+    moonshot: 'Kimi（月之暗面）',
+    volcengine_ark: '火山方舟（豆包）',
+    ali_bailian: '阿里云百炼（通义千问）',
+    baidu_qianfan: '百度千帆（文心一言）',
+    tencent_hunyuan: '腾讯混元',
+    custom: '自定义（OpenAI 兼容）',
+  },
+
+  providerForm: {
+    baseUrl: '接口地址',
+    baseUrlHint: 'OpenAI 兼容服务，需以 http:// 或 https:// 开头；必填',
+    baseUrlReadonly: '接口地址：',
+    defaultModel: '默认模型',
+    defaultModelHint: '想换模型在下方「模型名」里填，留空即用默认模型',
+  },
+
+  proxy: {
+    enable: '启用代理',
+    invalidUrl: '代理地址需以 http:// / https:// / socks5:// 开头',
+    hint: '抓取官网与调用模型都会走这个代理；改动在应用重启后生效。',
+  },
+
+  /**
+   * API Key 管理（AGENTS.md 规则 3：Key 只进系统钥匙串，库里只留引用串）。
+   * `testFailed` 只是 `LlmTestResult.message` 为 null 时的兜底；后端给了 message 时仍原样显示
+   * ——那是**后端产出自然语言**的第三处泄漏（前两处是 `label_zh` 与 notes 散文行），
+   * 已记进 task-8-report.md 的 backlog，本任务不越界改契约。
+   */
+  secret: {
+    reading: '读取中',
+    configured: '已配置',
+    notConfigured: '未配置',
+    placeholder: '请输入 API Key',
+    emptyWarning: '请先输入 API Key',
+    save: '保存到钥匙串',
+    test: '测试连接',
+    delete: '删除 Key',
+    saved: 'API Key 已写入系统钥匙串',
+    deleted: 'API Key 已删除',
+    testFailed: '连接失败',
+    hint: 'Key 只保存在本机系统钥匙串，数据库里只留引用串；换机或重装需要重新填写。',
+    result: {
+      model: '模型',
+      latency: '耗时',
+      usage: '用量',
+      cost: '成本',
+    },
+  },
+};
 
 export default settings;

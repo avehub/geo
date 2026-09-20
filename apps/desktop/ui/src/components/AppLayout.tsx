@@ -8,6 +8,7 @@ import {
   SettingOutlined,
 } from '@ant-design/icons';
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 const { Header, Sider, Content } = Layout;
 
@@ -15,11 +16,15 @@ const { Header, Sider, Content } = Layout;
  * 全局框架：左侧导航 + 内容区。
  *
  * 选中项由当前路由推导；未选项目时只高亮「项目」，其余项目级入口置灰。
+ * 导航文案走 `nav.*` 词典（Task 6 就已建好，值与原先的硬编码中文逐字相同，UI 不漂移）；
+ * 品牌名与副标题走 `common.appName` / `common.tagline`（裁定 B-3：`appName` 的 en 值
+ * 就是同一个中文串，专有名词不译——留在组件里就得给 Task 15 的残留扫描开白名单）。
  */
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id: projectId } = useParams();
+  const { t } = useTranslation();
 
   const selectedKey = useMemo(() => {
     const path = location.pathname;
@@ -32,17 +37,18 @@ export default function AppLayout() {
 
   const items = useMemo(
     () => [
-      { key: 'projects', icon: <ProjectOutlined />, label: '项目' },
+      { key: 'projects', icon: <ProjectOutlined />, label: t('nav.projects') },
       {
         key: 'entity-card',
         icon: <IdcardOutlined />,
-        label: '品牌实体卡',
+        label: t('nav.entityCard'),
         disabled: !projectId,
       },
-      { key: 'prompts', icon: <ProfileOutlined />, label: 'Prompt 题库', disabled: !projectId },
-      { key: 'settings', icon: <SettingOutlined />, label: '设置' },
+      { key: 'prompts', icon: <ProfileOutlined />, label: t('nav.prompts'), disabled: !projectId },
+      { key: 'settings', icon: <SettingOutlined />, label: t('nav.settings') },
     ],
-    [projectId],
+    // `t` 的身份随语言切换而变，必须在依赖里，否则切语言后菜单不重渲染。
+    [projectId, t],
   );
 
   function onSelect(key: string) {
@@ -65,9 +71,9 @@ export default function AppLayout() {
         }}
       >
         <FileTextOutlined style={{ color: '#1677ff' }} />
-        <Typography.Text strong>稿得快 GEO</Typography.Text>
+        <Typography.Text strong>{t('common.appName')}</Typography.Text>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          生成式引擎优化 · 本地优先
+          {t('common.tagline')}
         </Typography.Text>
       </Header>
       <Layout>

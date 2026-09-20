@@ -1,4 +1,5 @@
 import { Input, Space, Switch, Typography } from 'antd';
+import { useTranslation } from 'react-i18next';
 
 import type { ProxyConfig } from '../api/types';
 
@@ -14,6 +15,7 @@ const PROTOCOLS = ['http://', 'https://', 'socks5://'];
  * 与后端 `validate_settings` 的口径一致，前端先拦一道省一次往返。
  */
 export default function ProxyForm({ value, onChange }: ProxyFormProps) {
+  const { t } = useTranslation();
   const enabled = value?.enabled ?? false;
   const url = value?.url ?? '';
   const invalid = enabled && url.trim() !== '' && !PROTOCOLS.some((prefix) => url.startsWith(prefix));
@@ -26,7 +28,7 @@ export default function ProxyForm({ value, onChange }: ProxyFormProps) {
           checked={enabled}
           onChange={(checked) => onChange({ enabled: checked, url: checked ? url : null })}
         />
-        <label htmlFor="settings-proxy-enabled">启用代理</label>
+        <label htmlFor="settings-proxy-enabled">{t('settings.proxy.enable')}</label>
       </Space>
 
       {enabled && (
@@ -39,9 +41,7 @@ export default function ProxyForm({ value, onChange }: ProxyFormProps) {
             onChange={(event) => onChange({ enabled: true, url: event.target.value })}
           />
           <Typography.Text type={invalid ? 'danger' : 'secondary'} style={{ fontSize: 12 }}>
-            {invalid
-              ? '代理地址需以 http:// / https:// / socks5:// 开头'
-              : '抓取官网与调用模型都会走这个代理；改动在应用重启后生效。'}
+            {invalid ? t('settings.proxy.invalidUrl') : t('settings.proxy.hint')}
           </Typography.Text>
         </>
       )}

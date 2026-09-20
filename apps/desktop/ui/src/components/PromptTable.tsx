@@ -1,5 +1,6 @@
 import { Button, InputNumber, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { useTranslation } from 'react-i18next';
 
 import type { PromptItem } from '../api/types';
 import { INTENT_LABELS, PROMPT_SOURCE_LABELS } from '../api/types';
@@ -19,6 +20,10 @@ export interface PromptTableProps {
 /**
  * Prompt 题库表格：文本、意图、权重（1–5 核心词加权）、分组、来源、采样次数与同框竞品数。
  * 所有写操作通过回调交给页面层，组件本身不直连 IPC。
+ *
+ * 意图与来源的标签仍来自 `api/types.ts` 的 `INTENT_LABELS` / `PROMPT_SOURCE_LABELS`
+ * （后端产出自然语言的枚举映射），那个文件归 Task 9 的写集，本任务不越界。
+ * `#` 与 `Prompt` 两个列头两种语言同形，刻意不建词条（建了只是多一份要同步的键）。
  */
 export default function PromptTable({
   items,
@@ -30,6 +35,8 @@ export default function PromptTable({
   onEdit,
   onDelete,
 }: PromptTableProps) {
+  const { t } = useTranslation();
+
   const columns: ColumnsType<PromptItem> = [
     {
       title: '#',
@@ -47,14 +54,14 @@ export default function PromptTable({
       ),
     },
     {
-      title: '意图',
+      title: t('prompt.table.intent'),
       dataIndex: 'intent',
       key: 'intent',
       width: 110,
       render: (_, item) => <Tag>{INTENT_LABELS[item.intent] ?? item.intent}</Tag>,
     },
     {
-      title: '权重',
+      title: t('prompt.table.weight'),
       dataIndex: 'weight',
       key: 'weight',
       width: 90,
@@ -64,16 +71,16 @@ export default function PromptTable({
           min={1}
           max={5}
           value={item.weight}
-          aria-label={`权重 ${item.text}`}
+          aria-label={t('prompt.table.weightAria', { text: item.text })}
           onChange={(value) => {
             if (typeof value === 'number' && value !== item.weight) onWeightChange(item, value);
           }}
         />
       ),
     },
-    { title: '分组', dataIndex: 'group_name', key: 'group_name', width: 110 },
+    { title: t('prompt.table.group'), dataIndex: 'group_name', key: 'group_name', width: 110 },
     {
-      title: '标签',
+      title: t('prompt.table.tags'),
       dataIndex: 'tags',
       key: 'tags',
       width: 150,
@@ -89,21 +96,21 @@ export default function PromptTable({
         ),
     },
     {
-      title: '来源',
+      title: t('prompt.table.source'),
       dataIndex: 'source',
       key: 'source',
       width: 100,
       render: (_, item) => PROMPT_SOURCE_LABELS[item.source] ?? item.source,
     },
     {
-      title: '同框竞品',
+      title: t('prompt.table.competitors'),
       dataIndex: 'competitor_ids',
       key: 'competitor_ids',
       width: 90,
       render: (_, item) => item.competitor_ids.length,
     },
     {
-      title: '采样',
+      title: t('prompt.table.repeatCount'),
       dataIndex: 'repeat_count',
       key: 'repeat_count',
       width: 90,
@@ -113,7 +120,7 @@ export default function PromptTable({
           min={1}
           max={3}
           value={item.repeat_count}
-          aria-label={`采样次数 ${item.text}`}
+          aria-label={t('prompt.table.repeatCountAria', { text: item.text })}
           onChange={(value) => {
             if (typeof value === 'number' && value !== item.repeat_count) {
               onRepeatCountChange(item, value);
@@ -123,17 +130,17 @@ export default function PromptTable({
       ),
     },
     {
-      title: '操作',
+      title: t('common.actions'),
       key: 'actions',
       width: 120,
       render: (_, item) => (
         <Space size={0}>
           <Button size="small" type="link" onClick={() => onEdit(item)}>
-            编辑
+            {t('common.edit')}
           </Button>
-          <Tooltip title="删除后不可恢复，可先导出 CSV 备份">
+          <Tooltip title={t('prompt.table.deleteHint')}>
             <Button size="small" type="link" danger onClick={() => onDelete(item)}>
-              删除
+              {t('common.delete')}
             </Button>
           </Tooltip>
         </Space>
@@ -154,7 +161,7 @@ export default function PromptTable({
         onChange: (keys) => onSelectionChange(keys.map(String)),
       }}
       pagination={{ pageSize: 20, showSizeChanger: true, size: 'small' }}
-      locale={{ emptyText: '题库为空，点上方「生成题库」开始' }}
+      locale={{ emptyText: t('prompt.table.empty') }}
     />
   );
 }

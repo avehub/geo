@@ -1,4 +1,5 @@
 import { Form, Input, InputNumber, Modal, Select, Space } from 'antd';
+import { useTranslation } from 'react-i18next';
 
 import type { IntentCategory, PromptDraft, PromptItem } from '../api/types';
 import { INTENT_LABELS } from '../api/types';
@@ -24,6 +25,8 @@ export interface PromptItemEditorProps {
  *
  * 只在需要时挂载（父组件条件渲染），因此 `initialValues` 每次都是干净的，
  * 不用手动 reset 表单。来源由后端固定为 `manual`，这里不给选择。
+ *
+ * 意图选项的标签仍来自 `api/types.ts` 的 `INTENT_LABELS`（归 Task 9 的写集）。
  */
 export default function PromptItemEditor({
   item,
@@ -31,15 +34,16 @@ export default function PromptItemEditor({
   onCancel,
   onSubmit,
 }: PromptItemEditorProps) {
+  const { t } = useTranslation();
   const [form] = Form.useForm<PromptDraft>();
 
   return (
     <Modal
       open
-      title={item === null ? '新增 prompt' : '编辑 prompt'}
+      title={item === null ? t('prompt.editor.addTitle') : t('prompt.editor.editTitle')}
       width={560}
-      okText="保存"
-      cancelText="取消"
+      okText={t('common.save')}
+      cancelText={t('common.cancel')}
       confirmLoading={saving}
       onCancel={onCancel}
       onOk={() => {
@@ -63,39 +67,39 @@ export default function PromptItemEditor({
       >
         <Form.Item
           name="text"
-          label="Prompt 文本"
+          label={t('prompt.editor.text')}
           rules={[
-            { required: true, whitespace: true, message: '请输入 prompt 文本' },
-            { max: MAX_PROMPT_CHARS, message: `不能超过 ${MAX_PROMPT_CHARS} 字` },
+            { required: true, whitespace: true, message: t('prompt.editor.textRequired') },
+            { max: MAX_PROMPT_CHARS, message: t('prompt.editor.textTooLong', { max: MAX_PROMPT_CHARS }) },
           ]}
         >
           <Input.TextArea rows={3} showCount maxLength={MAX_PROMPT_CHARS} />
         </Form.Item>
-        <Form.Item name="intent" label="意图" rules={[{ required: true, message: '请选择意图' }]}>
+        <Form.Item name="intent" label={t('prompt.editor.intent')} rules={[{ required: true, message: t('prompt.editor.intentRequired') }]}>
           <Select options={INTENT_OPTIONS} />
         </Form.Item>
         <Space size={16}>
-          <Form.Item name="weight" label="权重" tooltip="1–5，核心词加权，越高越先采集">
+          <Form.Item name="weight" label={t('prompt.editor.weight')} tooltip={t('prompt.editor.weightTooltip')}>
             <InputNumber min={1} max={5} />
           </Form.Item>
           <Form.Item
             name="repeat_count"
-            label="采样次数"
-            tooltip="1–3，P0-B 采集时这条 prompt 重复问几次"
+            label={t('prompt.editor.repeatCount')}
+            tooltip={t('prompt.editor.repeatCountTooltip')}
           >
             <InputNumber min={1} max={3} />
           </Form.Item>
         </Space>
-        <Form.Item name="group_name" label="分组" tooltip="留空则按意图自动归组">
-          <Input allowClear placeholder="留空按意图归组" />
+        <Form.Item name="group_name" label={t('prompt.editor.group')} tooltip={t('prompt.editor.groupTooltip')}>
+          <Input allowClear placeholder={t('prompt.editor.groupPlaceholder')} />
         </Form.Item>
-        <Form.Item name="tags" label="标签" tooltip="输入后回车添加；生成管线打的标签（如「竞品同框」）也在这里改">
+        <Form.Item name="tags" label={t('prompt.editor.tags')} tooltip={t('prompt.editor.tagsTooltip')}>
           <Select
             mode="tags"
             open={false}
             suffixIcon={null}
             tokenSeparators={[',', '，']}
-            placeholder="输入标签后回车"
+            placeholder={t('prompt.editor.tagsPlaceholder')}
           />
         </Form.Item>
       </Form>

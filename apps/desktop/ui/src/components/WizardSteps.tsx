@@ -2,15 +2,11 @@ import { Button, Form, Input, Radio, Select, Space, Steps, Typography } from 'an
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
-import type { Industry, Language } from '../api/types';
-import { INDUSTRY_LABELS } from '../api/types';
+import type { Language } from '../api/types';
+import { INDUSTRY_VALUES } from '../api/types';
+import { enumLabel } from '../i18n/enum-label';
 import CompetitorEditor from './CompetitorEditor';
 import { WIZARD_STEPS } from './wizard-steps';
-
-const industryOptions = (Object.keys(INDUSTRY_LABELS) as Industry[]).map((value) => ({
-  value,
-  label: INDUSTRY_LABELS[value],
-}));
 
 /** 各步表单的字符上限：规则的 `max` 与提示文案里的数字必须同源，故抽成常量。 */
 const MAX_BRAND_NAME_CHARS = 50;
@@ -54,8 +50,9 @@ export function WizardStepIndicator({ step }: { step: number }) {
  * 当前步的表单内容。只渲染当前步：antd Form 默认 `preserve`，
  * 未挂载步骤的值仍留在 form store 中，提交时统一取出。
  *
- * 行业选项的标签仍来自 `api/types.ts` 的 `INDUSTRY_LABELS`（后端产出自然语言的枚举映射），
- * 那个文件归 Task 9 的写集，本任务不越界。
+ * 行业选项的**运行时清单**是 `api/types.ts` 的 `INDUSTRY_VALUES`（语言中立的稳定 id）；
+ * 标签查词典 `project.industries.<id>`（`enumLabel`，查不到回退 id 本身）。选项在组件体内
+ * 就地构造：模块级常量求值时没有 React 上下文、拿不到 `t`（裁定 B-2 同族）。
  */
 export function WizardStepContent({ step }: { step: number }) {
   const { t } = useTranslation();
@@ -190,7 +187,13 @@ export function WizardStepContent({ step }: { step: number }) {
           />
         </Form.Item>
         <Form.Item name="industry" label={t('project.wizard.industry')} extra={t('project.wizard.industryExtra')}>
-          <Radio.Group optionType="button" options={industryOptions} />
+          <Radio.Group
+            optionType="button"
+            options={INDUSTRY_VALUES.map((value) => ({
+              value,
+              label: enumLabel(t, 'project.industries', value),
+            }))}
+          />
         </Form.Item>
         <Form.Item noStyle shouldUpdate={(prev, next) => prev.industry !== next.industry}>
           {({ getFieldValue }) =>

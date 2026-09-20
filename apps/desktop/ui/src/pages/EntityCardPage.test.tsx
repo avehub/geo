@@ -171,7 +171,8 @@ describe('EntityCardPage', () => {
 
   /**
    * 裁定 B-2：页面级冒烟（静态 chrome）。断言**精确点名**页面自己的文案，不写「整页无 CJK」——
-   * 字段卡的状态标签（`FIELD_STATUS_LABELS`）与实体卡字段里的示例数据仍含中文，前者归 Task 9b。
+   * 实体卡字段里的示例数据（标准名、别名、服务地域…）是**数据**，en locale 下照旧是中文；
+   * 字段卡的状态标签本身已查词典 `entity.fieldStatuses.<id>`（`FieldStatusTag`），en 下是英文。
    */
   it('B-2 · 页面骨架文案在 en-US 下渲染成英文', async () => {
     stub({ completeness: 0.8 });

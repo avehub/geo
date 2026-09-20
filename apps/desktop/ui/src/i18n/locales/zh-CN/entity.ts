@@ -26,7 +26,25 @@ const entity = {
     contact: '联系方式',
   },
 
-  /** `FieldStatus` 的 Tooltip 解释。状态标签本身仍来自 `api/types.ts`（归 Task 9）。 */
+  /**
+   * `FieldStatus` 的**标签本体**与 Tooltip 解释，两者都按枚举 id 建键、并排放在一起。
+   *
+   * `fieldStatuses.<id>` 的 zh 值逐字抄自被删掉的 `api/types.ts` `FIELD_STATUS_LABELS`；
+   * 运行时清单是语言中立的 `FIELD_STATUS_VALUES`，查标签走 `src/i18n/enum-label.ts` 的
+   * `enumLabel`（查不到回退 id 本身），哨兵在 `src/i18n/enum-label.test.tsx`。
+   * 两者刻意不合并：`fieldStatusHint` 是整句解释、显示在 Tooltip 里，
+   * `fieldStatuses` 是短标签、要塞进 `Tag` 与状态单选。
+   *
+   * ⚠ 都不许挪进 `fields.*`：`dictionary.test.ts` 那条「en 标签头名词必须单数」的守卫只遍历
+   * `fields.*`（那里的标签会被拼进 `errors.reasons.*` 的谓语句才有主谓一致问题），
+   * 而枚举标签是独立选项 / Tag、从不拼句。
+   */
+  fieldStatuses: {
+    official: '官方口径',
+    pending: '待确认',
+    disputed: '存疑',
+  },
+
   fieldStatusHint: {
     official: '与官方口径一致，可直接用于内容生产',
     pending: 'AI 抽取或人工待确认，使用前请核对',

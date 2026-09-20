@@ -67,63 +67,96 @@ export type IntentCategory =
 export type PromptSource = 'template' | 'generated' | 'rewritten' | 'manual' | 'imported';
 export type SampleSizeGrade = 'sufficient' | 'directional' | 'insufficient';
 
-export const INTENT_LABELS: Record<IntentCategory, string> = {
-  category_awareness: '品类认知',
-  purchase_recommendation: '选购推荐',
-  brand_comparison: '品牌对比',
-  pricing_plan: '价格方案',
-  local_service: '本地服务',
-  after_sales_reputation: '售后口碑',
-  professional_long_tail: '专业长尾',
-};
+// ---------------------------------------------------------------------------
+// 枚举的**语言中立**运行时清单（Task 9b §B-2）
+// ---------------------------------------------------------------------------
 
-export const PROMPT_SOURCE_LABELS: Record<PromptSource, string> = {
-  template: '模板',
-  generated: 'AI 生成',
-  rewritten: '口语化改写',
-  manual: '人工',
-  imported: 'CSV 导入',
-};
+/**
+ * 字面量联合在运行时不存在，而 6 处 `Select` / `Radio` / `Checkbox` 的选项要靠遍历拿到
+ * 全部枚举值。原先这个「运行时清单」职责由 5 张 zh 标签映射兼任
+ * （`Object.keys(INTENT_LABELS)` 这种写法）；标签迁进词典之后必须把它单独拆出来，
+ * 否则组件没有选项可渲染。
+ *
+ * 约定：
+ * - `as const` 保住窄元组类型，`satisfies` 保证每个元素都是合法成员（写错一个 id 当场红）；
+ * - **顺序即界面选项顺序**，逐字沿用被删掉的那几张映射的键顺序（`Object.keys` 的既有顺序
+ *   就是它），免得界面选项顺序悄悄变了；
+ * - 值是**稳定 id**——线上传的就是它（后端一律发 snake_case id、不发标签），展示文案一律查
+ *   词典（`src/i18n/enum-label.ts` 的 `enumLabel`），查不到回退 id 本身、绝不回退中文；
+ * - 五张清单各有一条**编译期完整性网**（见本段末尾），漏一个联合成员 `tsc -b` 就红。
+ *
+ * ⚠ `AssetKind` 刻意**没有**值清单：`ASSET_KIND_LABELS` 实测零消费者、资产 UI 还不存在，
+ * 加清单就是新的死代码（§B-3）。将来做资产 UI 的人按同一形状补 `ASSET_KIND_VALUES` +
+ * `entity.assetKinds.<id>`（两侧）+ 哨兵，zh 真值源是 `crates/geo-domain/src/asset.rs` 的
+ * `AssetKind::label_zh()`。
+ */
+export const INTENT_VALUES = [
+  'category_awareness',
+  'purchase_recommendation',
+  'brand_comparison',
+  'pricing_plan',
+  'local_service',
+  'after_sales_reputation',
+  'professional_long_tail',
+] as const satisfies readonly IntentCategory[];
 
-export const INDUSTRY_LABELS: Record<Industry, string> = {
-  b2b_manufacturing: 'B2B 制造与工业品',
-  enterprise_saas: '企业服务/SaaS',
-  local_service: '本地生活与专业服务',
-  cross_border_ecommerce: '跨境电商',
-  franchise: '招商加盟',
-  other: '其他行业',
-};
+export const PROMPT_SOURCE_VALUES = [
+  'template',
+  'generated',
+  'rewritten',
+  'manual',
+  'imported',
+] as const satisfies readonly PromptSource[];
 
-export const ASSET_KIND_LABELS: Record<AssetKind, string> = {
-  owned_page: '自有页面',
-  baike: '百科',
-  zhihu: '知乎',
-  xiaohongshu: '小红书',
-  baijiahao: '百家号',
-  industry_media: '行业媒体',
-  ecommerce: '电商平台',
-  social_account: '社媒账号',
-  other: '其他',
-};
+export const INDUSTRY_VALUES = [
+  'b2b_manufacturing',
+  'enterprise_saas',
+  'local_service',
+  'cross_border_ecommerce',
+  'franchise',
+  'other',
+] as const satisfies readonly Industry[];
 
-export const FIELD_STATUS_LABELS: Record<FieldStatus, string> = {
-  official: '官方口径',
-  pending: '待确认',
-  disputed: '存疑',
-};
+export const FIELD_STATUS_VALUES = [
+  'official',
+  'pending',
+  'disputed',
+] as const satisfies readonly FieldStatus[];
 
-/** 与后端 `SampleSizeGrade::label_zh()` 一致。 */
-export const SAMPLE_SIZE_LABELS: Record<SampleSizeGrade, string> = {
-  sufficient: '样本充足',
-  directional: '样本偏少',
-  insufficient: '样本不足',
-};
+export const SAMPLE_SIZE_GRADE_VALUES = [
+  'sufficient',
+  'directional',
+  'insufficient',
+] as const satisfies readonly SampleSizeGrade[];
 
-/** 与后端 `SampleSizeGrade::warning_zh()` 一致；`sufficient` 无警示文案。 */
-export const SAMPLE_SIZE_WARNINGS: Partial<Record<SampleSizeGrade, string>> = {
-  directional: '样本不足，仅供方向性参考：当前 prompt 数低于 60 条，波动区间较大。',
-  insufficient: '样本不足（<30 条），不提供精确分数，仅供方向性参考。',
-};
+/**
+ * 编译期完整性网（§B-2）：往联合里加一个成员而忘了加进值清单 ⇒ `tsc -b` 红。
+ *
+ * 用**类型层**断言而不是「`const _check: T = true`」那种值层写法：`tsconfig.app.json` 开了
+ * `noUnusedLocals`，值层的检查常量要么得导出（凭空多 5 个运行时噪音），要么就得指望下划线
+ * 前缀被豁免——而 TS 的 `noUnusedLocals` 并不像本仓 ESLint 的 `varsIgnorePattern: '^_'`
+ * 那样豁免 `_` 前缀。约束 `T extends true` 不成立时，错误就落在类型别名自身，不需要任何值。
+ */
+type ValuesAreComplete<Union extends string, Values extends readonly string[]> =
+  Exclude<Union, Values[number]> extends never ? true : false;
+
+type AssertComplete<T extends true> = T;
+
+export type IntentValuesComplete = AssertComplete<
+  ValuesAreComplete<IntentCategory, typeof INTENT_VALUES>
+>;
+export type PromptSourceValuesComplete = AssertComplete<
+  ValuesAreComplete<PromptSource, typeof PROMPT_SOURCE_VALUES>
+>;
+export type IndustryValuesComplete = AssertComplete<
+  ValuesAreComplete<Industry, typeof INDUSTRY_VALUES>
+>;
+export type FieldStatusValuesComplete = AssertComplete<
+  ValuesAreComplete<FieldStatus, typeof FIELD_STATUS_VALUES>
+>;
+export type SampleSizeGradeValuesComplete = AssertComplete<
+  ValuesAreComplete<SampleSizeGrade, typeof SAMPLE_SIZE_GRADE_VALUES>
+>;
 
 // ---------------------------------------------------------------------------
 // M1 项目 / 竞品 / 资产

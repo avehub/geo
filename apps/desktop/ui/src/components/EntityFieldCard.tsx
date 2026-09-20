@@ -4,14 +4,10 @@ import { EditOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import type { FieldStatus } from '../api/types';
-import { FIELD_STATUS_LABELS } from '../api/types';
+import { FIELD_STATUS_VALUES } from '../api/types';
+import { enumLabel } from '../i18n/enum-label';
 import { formatFieldValue, type FieldDescriptor } from './entity-fields';
 import FieldStatusTag from './FieldStatusTag';
-
-const STATUS_OPTIONS = (Object.keys(FIELD_STATUS_LABELS) as FieldStatus[]).map((value) => ({
-  value,
-  label: FIELD_STATUS_LABELS[value],
-}));
 
 function toEditable(descriptor: FieldDescriptor, value: unknown): string {
   if (descriptor.kind === 'json') return value == null ? '' : JSON.stringify(value, null, 2);
@@ -36,8 +32,9 @@ export interface EntityFieldCardProps {
  *
  * 标题渲染 `t(descriptor.labelKey)`：`FieldDescriptor` 装的是**词典 key** 而不是译文，
  * 因为 `entity-fields.ts` 是模块级常量、求值时没有 React 上下文（裁定 B-2）。
- * 状态单选（`STATUS_OPTIONS`）的标签仍来自 `api/types.ts` 的 `FIELD_STATUS_LABELS`，
- * 那个文件归 Task 9 的写集，本任务不越界。
+ * 状态单选的**运行时清单**是 `api/types.ts` 的 `FIELD_STATUS_VALUES`（语言中立的稳定 id）；
+ * 标签查词典 `entity.fieldStatuses.<id>`（`enumLabel`，查不到回退 id 本身）。选项在组件体内
+ * 就地构造：模块级常量求值时没有 React 上下文、拿不到 `t`（裁定 B-2 同族）。
  */
 export default function EntityFieldCard({
   descriptor,
@@ -163,7 +160,10 @@ export default function EntityFieldCard({
           <Radio.Group
             optionType="button"
             size="small"
-            options={STATUS_OPTIONS}
+            options={FIELD_STATUS_VALUES.map((value) => ({
+              value,
+              label: enumLabel(t, 'entity.fieldStatuses', value),
+            }))}
             value={draftStatus}
             onChange={(event) => setDraftStatus(event.target.value as FieldStatus)}
           />

@@ -16,12 +16,13 @@ import type {
   PromptSet,
   PromptSource,
 } from '../api/types';
-import { INTENT_LABELS, PROMPT_SOURCE_LABELS } from '../api/types';
+import { INTENT_VALUES, PROMPT_SOURCE_VALUES } from '../api/types';
 import CsvToolbar from '../components/CsvToolbar';
 import GeneratePanel from '../components/GeneratePanel';
 import PromptItemEditor from '../components/PromptItemEditor';
 import PromptTable from '../components/PromptTable';
 import SampleSizeAlert from '../components/SampleSizeAlert';
+import { enumLabel } from '../i18n/enum-label';
 
 type IntentFilter = IntentCategory | 'all';
 /**
@@ -243,11 +244,11 @@ export default function PromptSetPage() {
   const sourceOptions = useMemo(
     () => [
       { value: 'all', label: t('prompt.promptSet.sourceFilterAll') },
-      // ⚠ 其余选项的标签仍来自 `api/types.ts` 的 `PROMPT_SOURCE_LABELS`（zh 映射），
-      // 归紧随其后的 Task 9b——本轮的写权限不含那 6 张表与消费它们的 8 个组件。
-      ...(Object.keys(PROMPT_SOURCE_LABELS) as PromptSource[]).map((value) => ({
+      // 来源标签查 `prompt.sources.<id>`，查不到回退 id 本身（照 `ProviderSelect` 的先例）；
+      // 运行时枚举清单是 `api/types.ts` 的 `PROMPT_SOURCE_VALUES`，选项顺序 = 值清单顺序。
+      ...PROMPT_SOURCE_VALUES.map((value) => ({
         value,
-        label: PROMPT_SOURCE_LABELS[value],
+        label: enumLabel(t, 'prompt.sources', value),
       })),
     ],
     [t],
@@ -379,10 +380,11 @@ export default function PromptSetPage() {
                     value: 'all',
                     label: t('prompt.promptSet.intentFilterAll', { total: promptSet.items.length }),
                   },
-                  // ⚠ 其余选项的标签仍来自 `api/types.ts` 的 `INTENT_LABELS`（zh 映射），归 Task 9b。
-                  ...(Object.keys(INTENT_LABELS) as IntentCategory[]).map((value) => ({
+                  // 意图标签查 `prompt.intents.<id>`，查不到回退 id 本身；运行时枚举清单是
+                  // `api/types.ts` 的 `INTENT_VALUES`，选项顺序 = 值清单顺序。
+                  ...INTENT_VALUES.map((value) => ({
                     value,
-                    label: INTENT_LABELS[value],
+                    label: enumLabel(t, 'prompt.intents', value),
                   })),
                 ]}
               />

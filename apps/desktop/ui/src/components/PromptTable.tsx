@@ -3,7 +3,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
 
 import type { PromptItem } from '../api/types';
-import { INTENT_LABELS, PROMPT_SOURCE_LABELS } from '../api/types';
+import { enumLabel } from '../i18n/enum-label';
 
 export interface PromptTableProps {
   items: PromptItem[];
@@ -21,8 +21,9 @@ export interface PromptTableProps {
  * Prompt 题库表格：文本、意图、权重（1–5 核心词加权）、分组、来源、采样次数与同框竞品数。
  * 所有写操作通过回调交给页面层，组件本身不直连 IPC。
  *
- * 意图与来源的标签仍来自 `api/types.ts` 的 `INTENT_LABELS` / `PROMPT_SOURCE_LABELS`
- * （后端产出自然语言的枚举映射），那个文件归 Task 9 的写集，本任务不越界。
+ * 意图与来源的标签查词典 `prompt.intents.<id>` / `prompt.sources.<id>`
+ * （`src/i18n/enum-label.ts` 的 `enumLabel`），查不到回退 id 本身——原来那两张 zh 映射的
+ * `?? item.intent` 兜底就是这个语义，只是回退的中文标签本身即泄漏面。
  * `#` 与 `Prompt` 两个列头两种语言同形，刻意不建词条（建了只是多一份要同步的键）。
  */
 export default function PromptTable({
@@ -58,7 +59,7 @@ export default function PromptTable({
       dataIndex: 'intent',
       key: 'intent',
       width: 110,
-      render: (_, item) => <Tag>{INTENT_LABELS[item.intent] ?? item.intent}</Tag>,
+      render: (_, item) => <Tag>{enumLabel(t, 'prompt.intents', item.intent)}</Tag>,
     },
     {
       title: t('prompt.table.weight'),
@@ -100,7 +101,7 @@ export default function PromptTable({
       dataIndex: 'source',
       key: 'source',
       width: 100,
-      render: (_, item) => PROMPT_SOURCE_LABELS[item.source] ?? item.source,
+      render: (_, item) => enumLabel(t, 'prompt.sources', item.source),
     },
     {
       title: t('prompt.table.competitors'),

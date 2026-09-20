@@ -40,12 +40,58 @@ const prompt = {
   },
 
   /**
-   * 样本量纪律（产品文档第 4 节）。**告警标题本身**仍来自 `api/types.ts` 的
-   * `SAMPLE_SIZE_WARNINGS`（复用后端 `SampleSizeGrade::warning_zh()`），归 Task 9。
-   * 插值变量刻意不叫 `count`：i18next 见到 `count` 会走复数分支去找 `key_one`/`key_other`。
+   * 意图（`IntentCategory`）与来源（`PromptSource`）的枚举标签。
+   *
+   * 键名逐字 = 枚举值本身（snake_case 稳定 id），与 `settings.providers.<id>`、
+   * `entity.fieldStatusHint.<id>` 的既有风格一致；zh 值逐字抄自被删掉的 `api/types.ts`
+   * `INTENT_LABELS` / `PROMPT_SOURCE_LABELS`，一个字的措辞都没改。两者的**运行时清单**换成了
+   * 语言中立的 `INTENT_VALUES` / `PROMPT_SOURCE_VALUES`（选项顺序 = 值清单顺序 = 原映射键顺序）。
+   *
+   * 组件一律通过 `src/i18n/enum-label.ts` 的 `enumLabel` 查这里（查不到回退 id 本身）。
+   * 动态键对 `no-hardcoded-strings.test.ts` 结构性不可见 ⇒ 键集与 zh 真值由
+   * `src/i18n/enum-label.test.tsx` 的五段式哨兵钉住。
+   *
+   * ⚠ 不能挂在 `generate.intents` 下面：那个键已经是叶子字符串（`'意图覆盖'`），
+   * 叶子变子树会让 `ResourceBundle` 类型当场冲突。
+   */
+  intents: {
+    category_awareness: '品类认知',
+    purchase_recommendation: '选购推荐',
+    brand_comparison: '品牌对比',
+    pricing_plan: '价格方案',
+    local_service: '本地服务',
+    after_sales_reputation: '售后口碑',
+    professional_long_tail: '专业长尾',
+  },
+
+  sources: {
+    template: '模板',
+    generated: 'AI 生成',
+    rewritten: '口语化改写',
+    manual: '人工',
+    imported: 'CSV 导入',
+  },
+
+  /**
+   * 样本量纪律（产品文档第 4 节）。
+   *
+   * `warnings.*` 的键名逐字 = `SampleSizeGrade` 的稳定 id，zh 值逐字抄自被删掉的
+   * `SAMPLE_SIZE_WARNINGS`（它当初复用后端 `SampleSizeGrade::warning_zh()`），
+   * **只有写死的 60 / 30 换成了插值**：数字必须与 `api/constants.ts` 的
+   * `SUFFICIENT_SAMPLE_SIZE` / `MINIMUM_SAMPLE_SIZE` 同源，词典里不许再写死一遍。
+   *
+   * ⚠ 这是 `Partial`：`sufficient` **没有**告警键（`SampleSizeAlert` 对它渲染 `null`），
+   * 不要为了「键集相等」给它编一条空告警。
+   *
+   * ⚠ 插值变量刻意不叫 `count`：i18next 见到 `count` 会走复数分支去找 `key_one`/`key_other`
+   * （本词典没有这两条 ⇒ 静默回落）。`detail` 的 `{{total}}` 是同一条纪律。
    */
   sampleSize: {
     detail: '当前题库共 {{total}} 条 prompt。建议补齐到 {{target}} 条以上再对外汇报分数。',
+    warnings: {
+      directional: '样本不足，仅供方向性参考：当前 prompt 数低于 {{sufficient}} 条，波动区间较大。',
+      insufficient: '样本不足（<{{minimum}} 条），不提供精确分数，仅供方向性参考。',
+    },
   },
 
   table: {

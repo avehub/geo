@@ -179,6 +179,23 @@ const project = {
     empty: '还没有项目，点右上角「新建项目」开始',
   },
 
+  /**
+   * 行业枚举标签（`Industry`）。键名逐字 = 枚举值本身；zh 值逐字抄自被删掉的
+   * `api/types.ts` `INDUSTRY_LABELS`。运行时清单是语言中立的 `INDUSTRY_VALUES`，
+   * 查标签走 `src/i18n/enum-label.ts` 的 `enumLabel`，哨兵在 `enum-label.test.tsx`。
+   *
+   * ⚠ `ProjectTable` 的行业列在 `industry === 'other'` 且后端给了 `industry_label` 时，
+   * 优先显示**用户自己填的那个字符串**——那是数据不是标签，不查词典。
+   */
+  industries: {
+    b2b_manufacturing: 'B2B 制造与工业品',
+    enterprise_saas: '企业服务/SaaS',
+    local_service: '本地生活与专业服务',
+    cross_border_ecommerce: '跨境电商',
+    franchise: '招商加盟',
+    other: '其他行业',
+  },
+
   export: {
     json: '项目 JSON（全量）',
     competitorsCsv: '竞品 CSV',

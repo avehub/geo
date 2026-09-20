@@ -16,6 +16,12 @@ const entity: ResourceBundle['entity'] = {
     contact: 'Contact',
   },
 
+  fieldStatuses: {
+    official: 'Official',
+    pending: 'Unconfirmed',
+    disputed: 'Conflicting',
+  },
+
   fieldStatusHint: {
     official: 'Matches official messaging; ready to use for content production',
     pending: 'AI-extracted or awaiting human confirmation; verify before use',
@@ -47,7 +53,7 @@ const entity: ResourceBundle['entity'] = {
     title: 'Brand Entity Card',
     loadFailed: 'Failed to load the entity card',
     fieldUpdated: 'Field updated and the revision was recorded',
-    empty: 'No entity card yet. Use “Auto-build from domain” above to crawl the website once, or fill in each field by hand.',
+    empty: 'No entity card yet. Use “Auto-build” above to crawl the website once, or fill in each field by hand.',
     createBlank: 'Create a blank entity card by hand',
     completeness: 'Field completeness',
     sourceAi: 'AI-extracted: {{provider}} {{model}}',

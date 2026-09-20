@@ -19,9 +19,35 @@ const prompt: ResourceBundle['prompt'] = {
       'Pipeline: template expansion → AI expansion → colloquial rewriting → competitor pairing → dedupe → versioned snapshot',
   },
 
+  intents: {
+    category_awareness: 'Category awareness',
+    purchase_recommendation: 'Purchase recommendation',
+    brand_comparison: 'Brand comparison',
+    pricing_plan: 'Pricing and plans',
+    local_service: 'Local services',
+    after_sales_reputation: 'After-sales reputation',
+    professional_long_tail: 'Professional long tail',
+  },
+
+  sources: {
+    template: 'Template',
+    generated: 'AI-generated',
+    rewritten: 'Colloquial rewrite',
+    manual: 'Manual',
+    imported: 'CSV import',
+  },
+
   sampleSize: {
     detail:
       'This library has {{total}} prompts. Reach {{target}} or more before reporting scores externally.',
+    // Interpolation params are deliberately not named `count`: i18next would look for
+    // `key_one` / `key_other` plural forms, which this dictionary does not have.
+    warnings: {
+      directional:
+        'The sample is too small for precise scores, so treat it as directional only: the library has fewer than {{sufficient}} prompts and the variance is wide.',
+      insufficient:
+        'The sample is too small (fewer than {{minimum}} prompts); no precise score is given, for directional reference only.',
+    },
   },
 
   table: {

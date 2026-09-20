@@ -261,6 +261,56 @@ describe('ProjectListPage', () => {
     expect(screen.queryByText('标签已更新')).not.toBeInTheDocument();
   });
 
+  /**
+   * §B-11（Task 9 复审 Minor #7）：导出文件名模板整份走词典
+   * （`project.list.exportJsonFileName` / `exportCsvFileName`），**动机**就是「en locale 下
+   * 不许产出中文文件名」。zh 侧上面两条已有精确断言，en 侧此前一条都没有 ⇒ 这里补上，
+   * 形状照 zh 那两条，只换 locale 与期望值。
+   *
+   * ⚠ `{{brand}}` 装的是**品牌名数据**（中文），en 下照旧是中文；变的是模板本体：
+   * `-geo-项目档案.json` → `-geo-project.json`，`-{{label}}.csv` 的 `{{label}}` 取自
+   * `project.list.competitorsLabel`（zh「竞品」→ en `competitors`）。
+   *
+   * 两次导出刻意走**同一行**（与上面那条 zh 用例同形）：antd 的 Dropdown 关掉后菜单仍挂在
+   * DOM 里、只是 `pointer-events: none`，换一行再开就会有**两份**同名菜单项，
+   * `findByText` 会命中关闭的那份而点击失败。
+   */
+  it('en-US 下导出文件名走英文模板（品牌名是数据，仍为中文）', async () => {
+    stubList();
+    mockInvoke.stubAlways('project_export', () => ({ project: hongyu }));
+    mockInvoke.stubAlways(
+      'project_export_competitors_csv',
+      () => 'name,aliases,website,note,position',
+    );
+    mockInvoke.stubAlways('export_write_file', () => '/tmp/hongyu-geo-project.json');
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectListPage />, { locale: 'en-US' });
+    await screen.findByText('宏宇泵业 GEO');
+
+    const row = screen.getByText('宏宇泵业 GEO').closest('tr') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: /Export/ }));
+    await user.click(await screen.findByText('Project JSON (full)'));
+
+    await waitFor(() => expect(mockInvoke.callsOf('project_export')).toHaveLength(1));
+    expect(mockInvoke.lastArgsOf('project_export')).toEqual({ id: 'p-hongyu' });
+    expect(mockInvoke.lastArgsOf('export_write_file')).toMatchObject({
+      default_name: '宏宇泵业-geo-project.json',
+      with_bom: false,
+    });
+
+    await user.click(within(row).getByRole('button', { name: /Export/ }));
+    await user.click(await screen.findByText('Competitors CSV'));
+
+    await waitFor(() =>
+      expect(mockInvoke.callsOf('project_export_competitors_csv')).toHaveLength(1),
+    );
+    expect(mockInvoke.lastArgsOf('export_write_file')).toMatchObject({
+      default_name: '宏宇泵业-competitors.csv',
+      with_bom: true,
+    });
+    expect(await screen.findByText('The competitors CSV was exported')).toBeInTheDocument();
+  });
+
   it('新建项目按钮存在且可用', async () => {
     stubList();
     renderWithProviders(<ProjectListPage />);
@@ -273,8 +323,10 @@ describe('ProjectListPage', () => {
    * ——标题 / 搜索框 placeholder / 复选框 / 两个按钮 / 页脚提示都在 render 里直接求值，
    * 最容易「忘了接 `t`」，而单元级词典测试照样全绿。
    *
-   * ⚠ 刻意**不**写「整页无 CJK」：表格里的行业标签仍来自 `api/types.ts` 的 `INDUSTRY_LABELS`
-   * （归紧随其后的 Task 9b），en locale 下它们是中文，属**已知且已排期**，不是本页面的缺陷。
+   * ⚠ 刻意**不**写「整页无 CJK」：表格里的项目名 / 品牌名 / 别名 / 地域 / 标签都是**数据**
+   * （后端发什么就显示什么），en locale 下照旧是中文。行业标签本身已查词典
+   * `project.industries.<id>`（`ProjectTable` 的 `industryLabel`），en 下是英文；
+   * 「整页无 CJK」这类判据归 Task 15，得先把数据级泄漏面列清楚才写得对。
    */
   it('B-2 · 页面骨架文案在 en-US 下渲染成英文', async () => {
     stubList();

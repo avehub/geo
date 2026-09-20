@@ -205,7 +205,9 @@ describe('ProjectWizardPage', () => {
     const rendered = await screen.findAllByText(
       '文件或数据库读写失败：Permission denied (os error 13)',
     );
-    expect(rendered.length).toBeGreaterThanOrEqual(1);
+    // §B-12：既然就地注释已写明是**两个面**（页面内 <Alert> + antd toast），就该钉死 2，
+    // 少一个面（例如 Alert 被摘掉）也要红。这是新增断言的收紧，不是把精确匹配放宽。
+    expect(rendered.length).toBe(2);
     expect(screen.queryByText(/io\/failed reason=/)).not.toBeInTheDocument();
     expect(screen.queryByText('创建失败，请检查填写内容')).not.toBeInTheDocument();
   });

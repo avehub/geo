@@ -6,7 +6,6 @@ import PromptSetPage from './PromptSetPage';
 import { mockInvoke } from '../test/invoke-mock';
 import { renderAtRoute } from '../test/render';
 import { PROJECT_ID, SET_ID, makePromptItem, makePromptSet } from '../test/fixtures';
-import { INTENT_LABELS } from '../api/types';
 import type { PromptDraft, PromptItem, SampleSizeGrade } from '../api/types';
 
 const ROUTE = `/projects/${PROJECT_ID}/prompts`;
@@ -18,6 +17,16 @@ const ROUTE = `/projects/${PROJECT_ID}/prompts`;
 function pressEnter(element: HTMLElement) {
   fireEvent.keyDown(element, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 });
 }
+
+/**
+ * 建模后端 `IntentCategory::label_zh()` 填的默认分组名（`crates/geo-domain/src/prompt.rs`
+ * 在 `PromptItem` 构造时写进 `group_name`；`prompt_service.rs` 与 `csv_io.rs` 同样拿它兜底）。
+ *
+ * ⚠ 刻意写成**中文字面量**而不是查词典：`group_name` 是**落库 + CSV 往返的数据**，不是 UI 标签
+ * （Park，见 `task-9b-brief.md` §A-5 / §B-7）。查词典会让这个 mock 假装线路上传的是英文。
+ * 本文件的 `prompt_item_add` 只会收到 `intent: 'category_awareness'`（表单默认值），故取它的 zh 标签。
+ */
+const BACKEND_DEFAULT_GROUP_NAME = '品类认知';
 
 const CSV = [
   'text,intent,weight,group_name,tags,source,repeat_count',
@@ -100,7 +109,7 @@ function stub(
         text: draft.text,
         intent: draft.intent,
         weight: draft.weight ?? 3,
-        group_name: draft.group_name ?? INTENT_LABELS[draft.intent],
+        group_name: draft.group_name ?? BACKEND_DEFAULT_GROUP_NAME,
         source: 'manual',
         repeat_count: draft.repeat_count ?? 1,
       }),
@@ -414,10 +423,11 @@ describe('PromptSetPage', () => {
   /**
    * 裁定 B-2：页面级冒烟（静态 chrome）。
    *
-   * ⚠ 断言**精确点名**页面自己的文案，刻意不写「整页无 CJK」（控制器预防性裁定 + 补充事实 ①）：
-   * 意图筛选按钮与来源下拉的标签来自 `api/types.ts` 的 `INTENT_LABELS` / `PROMPT_SOURCE_LABELS`，
-   * 本文件 `stub()` 里 `prompt_item_add` 的 mock 还用 `INTENT_LABELS[draft.intent]` 合成
-   * `group_name` ⇒ en locale 下这些都是中文。它们归 **Task 9b**，不是本页面的缺陷。
+   * ⚠ 断言**精确点名**页面自己的文案，刻意不写「整页无 CJK」：意图筛选按钮与来源下拉的标签
+   * 查词典（`prompt.intents.<id>` / `prompt.sources.<id>`，哨兵在 `src/i18n/enum-label.test.tsx`），
+   * en locale 下它们是英文；但表格里 `group_name` 那一列仍是中文——那是**落库数据**
+   * （后端拿 `IntentCategory::label_zh()` 填的），不是标签，前端渲染期翻译会破坏 CSV 往返保真，
+   * 已 Park（`task-9b-brief.md` §A-5 / §B-7）。「整页无 CJK」这类判据因此归 Task 15。
    */
   it('B-2 · 页面骨架文案在 en-US 下渲染成英文', async () => {
     stub('sufficient');
@@ -600,4 +610,134 @@ describe('PromptSetPage · notes 按行分派（机器行不许原样上屏）',
     expect(screen.queryByText(EXPECTED_ZH)).not.toBeInTheDocument();
   });
 
+});
+
+/**
+ * 分组筛选哨兵 `NO_GROUP`（Task 9b §B-0：补 Task 9 复审的**唯一 Important 项**）。
+ *
+ * Task 9 把哨兵的**值**从 `'未分组'` 改成 `'__ungrouped__'`，并把下拉选项的排序键从 value
+ * 换成 label——那是 Task 9 唯一一处值层面的行为变更，却零测试覆盖。本轮**只补覆盖、不改实现**
+ * （现值与排序键是复审席判定「严格更安全」的落地形状）。
+ *
+ * 三条分别钉住：① zh 下那一档的 label 与选项顺序跟抽取前逐字一致；② en 下那一档是英文、
+ * 且筛选照样工作；③ 哨兵记号不外泄，并且与一个**真的叫「未分组」的分组**不再碰撞。
+ */
+describe('PromptSetPage · 分组筛选哨兵 NO_GROUP（§B-0）', () => {
+  beforeEach(() => mockInvoke.reset());
+
+  /**
+   * 四种分组形态：`null`、纯空白（`groupOf` 会 `trim`）、真实分组「品牌对比」，
+   * 以及一个**恰好叫「未分组」的真实分组**。最后这个是哨兵与数据不碰撞的证据——
+   * 旧写法（拿中文当 value）在这种数据下会把两者并成一档，筛选语义本来就是坏的。
+   */
+  function ungroupedItems(): PromptItem[] {
+    return [
+      makePromptItem(0, { id: 'item-nogroup-0', text: '没有分组的题目 A', group_name: null }),
+      makePromptItem(1, { id: 'item-nogroup-1', text: '没有分组的题目 B', group_name: '   ' }),
+      makePromptItem(2, {
+        id: 'item-cmp',
+        text: '品牌对比的题目',
+        group_name: '品牌对比',
+        intent: 'brand_comparison',
+      }),
+      makePromptItem(3, {
+        id: 'item-named-ungrouped',
+        text: '真的叫未分组的题目',
+        group_name: '未分组',
+      }),
+    ];
+  }
+
+  /**
+   * 只保留 rc-select 的**下拉选项**。
+   *
+   * 页面上带 `title` 的元素远不止选项（`Form.Item` 的 label、分页按钮、以及 Select 自己回显
+   * 选中项的 `.ant-select-selection-item`），而 `aria-selected` 恰好只出现在下拉选项上
+   * （实测：选项有、回显那条没有）⇒ 用它过滤既拿得到干净的 DOM 序，又不必写死 antd 的 class。
+   */
+  function dropdownOptions(elements: HTMLElement[]): HTMLElement[] {
+    return elements.filter((element) => element.hasAttribute('aria-selected'));
+  }
+
+  it('① zh：无分组那一档的 label 仍是「未分组」，且选项顺序与抽取前逐字一致', async () => {
+    stub('sufficient', ungroupedItems());
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('第 1 版题库');
+
+    await user.click(screen.getByRole('combobox', { name: '按分组筛选' }));
+    await screen.findAllByTitle('未分组');
+
+    // 哨兵档与那个真的叫「未分组」的分组是**两个**选项（旧写法会并成一档 ⇒ 这条会红）
+    expect(dropdownOptions(screen.getAllByTitle('未分组'))).toHaveLength(2);
+
+    // 排序键从 value 换成 label 之后 zh 顺序不变：真实分组名 `value === label`，哨兵的 zh label
+    // （`prompt.promptSet.groupFilterNoGroup`）恰等于它的旧 value；`Array.prototype.sort` 自
+    // ES2019 起稳定 ⇒ 两个「未分组」并列时按 `Set` 首现序保持（items[0] 无分组 ⇒ 哨兵在前）。
+    expect(
+      dropdownOptions(screen.getAllByTitle(/^(全部分组|品牌对比|未分组)$/)).map((element) =>
+        element.getAttribute('title'),
+      ),
+    ).toEqual(['全部分组', '品牌对比', '未分组', '未分组']);
+  });
+
+  it('② en：那一档渲染成 Ungrouped，且选中它真的能筛出无分组条目', async () => {
+    stub('sufficient', ungroupedItems());
+    const user = userEvent.setup();
+    renderAtRoute(<PromptSetPage />, '/projects/:id/prompts', ROUTE, 'en-US');
+    await screen.findByText('Version 1');
+
+    await user.click(screen.getByRole('combobox', { name: 'Filter by group' }));
+    // 真实分组名是数据、en 下照旧是中文（§B-7 Park），所以 'Ungrouped' 只可能命中哨兵那一条
+    await user.click(await screen.findByTitle('Ungrouped'));
+
+    const table = screen.getByRole('table');
+    await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(3)); // 表头 + 2 条
+    expect(within(table).getByText('没有分组的题目 A')).toBeInTheDocument();
+    expect(within(table).getByText('没有分组的题目 B')).toBeInTheDocument();
+    expect(within(table).queryByText('真的叫未分组的题目')).not.toBeInTheDocument();
+    expect(within(table).queryByText('品牌对比的题目')).not.toBeInTheDocument();
+  });
+
+  it('③ 哨兵记号不外泄：不进任何 client.* 入参、不进 CSV 导出，且不与真实「未分组」分组碰撞', async () => {
+    stub('sufficient', ungroupedItems());
+    mockInvoke.stubAlways('export_write_file', () => '/tmp/prompt-set-1-prompts.csv');
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('第 1 版题库');
+
+    await user.click(screen.getByRole('combobox', { name: '按分组筛选' }));
+    const ungrouped = dropdownOptions(await screen.findAllByTitle('未分组'));
+    expect(ungrouped).toHaveLength(2);
+    await user.click(ungrouped[0]); // 哨兵档在前（见①的首现序说明）
+
+    const table = screen.getByRole('table');
+    await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(3));
+    // 碰撞收益：只筛出**真的没有分组**的两条；那个叫「未分组」的真实分组不在其中
+    expect(within(table).queryByText('真的叫未分组的题目')).not.toBeInTheDocument();
+
+    // 走一遍导出（预览 → 系统对话框），把 CSV 那条链的入参也纳入扫描
+    await user.click(screen.getByRole('button', { name: /导出 CSV/ }));
+    await screen.findByDisplayValue(/text,intent,weight/);
+    await user.click(screen.getByRole('button', { name: /下载文件/ }));
+    await waitFor(() => expect(mockInvoke.callsOf('export_write_file')).toHaveLength(1));
+    // CSV 导出只传 setId，不带任何分组信息
+    // 简报 §B-0 散文里写的是「只传 setId」，实测 `client.promptSetExportCsv` 传的是 `{ id }`
+    expect(mockInvoke.lastArgsOf('prompt_set_export_csv')).toEqual({ id: SET_ID });
+
+    // 哨兵只活在组件内状态（`groupFilter`）里：任何一次 IPC 的入参都不许出现它
+    expect(
+      mockInvoke
+        .allCalls()
+        .filter((call) => JSON.stringify(call.args).includes('__ungrouped__'))
+        .map((call) => call.cmd),
+    ).toEqual([]);
+    // 正向对照：同一份扫描对**真的会出现在入参里的**记号是抓得到的（证明上面那条非永真）
+    expect(
+      mockInvoke
+        .allCalls()
+        .filter((call) => JSON.stringify(call.args).includes(SET_ID))
+        .map((call) => call.cmd),
+    ).not.toEqual([]);
+  });
 });

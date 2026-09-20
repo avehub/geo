@@ -2,7 +2,7 @@ import { Tag, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 import type { FieldStatus } from '../api/types';
-import { FIELD_STATUS_LABELS } from '../api/types';
+import { enumLabel } from '../i18n/enum-label';
 import type { TranslationKey } from '../i18n/resources';
 
 const COLOR: Record<FieldStatus, string> = {
@@ -15,9 +15,9 @@ const COLOR: Record<FieldStatus, string> = {
  * 状态**解释**的词典 key。装 key 而不是译文，因为这是模块级常量、求值时没有 React 上下文
  * （同 `entity-fields.ts` 的裁定 B-2）。
  *
- * 标签本身（`FIELD_STATUS_LABELS`）仍来自 `api/types.ts`：那是「后端产出自然语言」的
- * 枚举标签映射，`types.ts` 归 Task 9 的写集（简报 §C 只允许本任务改它的 `CsvRowError`），
- * 本任务不越界。接缝已记进 task-8-report.md 的 Task 9 交接段。
+ * 标签本体则查 `entity.fieldStatuses.<id>`（`src/i18n/enum-label.ts` 的 `enumLabel`），
+ * 查不到回退 id 本身、绝不回退中文；`FieldStatus` 的运行时清单是 `api/types.ts` 的
+ * `FIELD_STATUS_VALUES`（本组件只渲染传进来的那一个状态，不遍历清单）。
  */
 const HINT_KEY: Record<FieldStatus, TranslationKey> = {
   official: 'entity.fieldStatusHint.official',
@@ -32,7 +32,7 @@ export default function FieldStatusTag({ status }: { status: FieldStatus }) {
   return (
     <Tooltip title={t(HINT_KEY[status])}>
       <Tag color={COLOR[status]} style={{ marginInlineEnd: 0 }}>
-        {FIELD_STATUS_LABELS[status]}
+        {enumLabel(t, 'entity.fieldStatuses', status)}
       </Tag>
     </Tooltip>
   );

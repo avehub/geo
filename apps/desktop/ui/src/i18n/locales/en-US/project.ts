@@ -146,6 +146,15 @@ const project: ResourceBundle['project'] = {
     empty: 'No projects yet. Use “New project” in the top-right corner to start.',
   },
 
+  industries: {
+    b2b_manufacturing: 'B2B manufacturing and industrial goods',
+    enterprise_saas: 'Enterprise services / SaaS',
+    local_service: 'Local life and professional services',
+    cross_border_ecommerce: 'Cross-border e-commerce',
+    franchise: 'Franchising',
+    other: 'Other industries',
+  },
+
   export: {
     json: 'Project JSON (full)',
     competitorsCsv: 'Competitors CSV',

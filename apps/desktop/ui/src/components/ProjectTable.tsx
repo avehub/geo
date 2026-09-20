@@ -1,10 +1,11 @@
 import { Button, Dropdown, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import dayjs from 'dayjs';
 
 import type { Project } from '../api/types';
-import { INDUSTRY_LABELS } from '../api/types';
+import { enumLabel } from '../i18n/enum-label';
 import type { TranslationKey } from '../i18n/resources';
 
 /** 行内导出目标：项目全量 JSON、竞品 CSV、资产 CSV（spec FR-M1-6）。 */
@@ -31,16 +32,21 @@ export interface ProjectTableProps {
   onTagsChange: (project: Project, tags: string[]) => void;
 }
 
-function industryLabel(project: Project): string {
+/**
+ * 行业列。`industry === 'other'` 且后端给了 `industry_label` 时优先显示**用户自己填的那个
+ * 字符串**——那是数据不是标签，不查词典；其余情况查 `project.industries.<id>`，
+ * 查不到回退 id 本身（`enumLabel`，照 `ProviderSelect` 的先例）。
+ */
+function industryLabel(t: TFunction, project: Project): string {
   if (project.industry === 'other' && project.industry_label) return project.industry_label;
-  return INDUSTRY_LABELS[project.industry] ?? project.industry;
+  return enumLabel(t, 'project.industries', project.industry);
 }
 
 /**
  * 项目列表表格。所有写操作通过回调交给页面层，组件本身不直连 IPC。
  *
- * 行业标签仍来自 `api/types.ts` 的 `INDUSTRY_LABELS`（后端产出自然语言的枚举映射），
- * 那个文件归 Task 9 的写集，本任务不越界。
+ * 行业标签查词典 `project.industries.<id>`（见 `industryLabel`）；运行时清单是
+ * `api/types.ts` 的 `INDUSTRY_VALUES`（本组件不生成选项，只渲染后端发来的 id）。
  *
  * 别名列表用 `common.listSeparator` 连接而不是写死顿号：zh 用「、」、en 用「, 」，
  * 连接符本身就是需要翻译的文案。
@@ -81,7 +87,7 @@ export default function ProjectTable({
       dataIndex: 'industry',
       key: 'industry',
       width: 160,
-      render: (_, project) => industryLabel(project),
+      render: (_, project) => industryLabel(t, project),
     },
     { title: t('project.table.region'), dataIndex: 'region', key: 'region', width: 120 },
     {

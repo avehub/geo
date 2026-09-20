@@ -4,13 +4,11 @@ import { ThunderboltOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 import type { GenerateOptions, Industry, IntentCategory } from '../api/types';
-import { INDUSTRY_LABELS, INTENT_LABELS } from '../api/types';
+import { INDUSTRY_VALUES, INTENT_VALUES } from '../api/types';
+import { enumLabel } from '../i18n/enum-label';
 
 export const DEFAULT_TARGET_COUNT = 80;
 export const MIN_TARGET_COUNT = 60;
-
-const INTENTS = Object.keys(INTENT_LABELS) as IntentCategory[];
-const INDUSTRIES = Object.keys(INDUSTRY_LABELS) as Industry[];
 
 export interface GeneratePanelProps {
   defaultIndustry: Industry;
@@ -24,8 +22,10 @@ export interface GeneratePanelProps {
  * 目标条数下限取 60：这是「样本充足」的门槛（见 `SampleSizeAlert`），
  * 低于它生成的题库只能给方向性结论，不如一开始就拦住。
  *
- * 行业与意图的选项标签仍来自 `api/types.ts` 的 `INDUSTRY_LABELS` / `INTENT_LABELS`
- * （后端产出自然语言的枚举映射），那个文件归 Task 9 的写集，本任务不越界。
+ * 行业与意图的**运行时清单**是 `api/types.ts` 的 `INDUSTRY_VALUES` / `INTENT_VALUES`
+ * （语言中立的稳定 id）；标签查词典 `project.industries.<id>` / `prompt.intents.<id>`，
+ * 走 `src/i18n/enum-label.ts` 的 `enumLabel`，查不到回退 id 本身（照 `ProviderSelect` 的先例）。
+ * 选项顺序 = 值清单顺序，与被删掉的那两张标签映射的键顺序逐字一致。
  */
 export default function GeneratePanel({
   defaultIndustry,
@@ -35,7 +35,7 @@ export default function GeneratePanel({
   const { t } = useTranslation();
   const [targetCount, setTargetCount] = useState<number>(DEFAULT_TARGET_COUNT);
   const [industry, setIndustry] = useState<Industry>(defaultIndustry);
-  const [intents, setIntents] = useState<IntentCategory[]>(INTENTS);
+  const [intents, setIntents] = useState<IntentCategory[]>([...INTENT_VALUES]);
   const [repeatCount, setRepeatCount] = useState<number>(1);
 
   return (
@@ -63,14 +63,20 @@ export default function GeneratePanel({
             size="small"
             value={industry}
             onChange={(event) => setIndustry(event.target.value as Industry)}
-            options={INDUSTRIES.map((value) => ({ value, label: INDUSTRY_LABELS[value] }))}
+            options={INDUSTRY_VALUES.map((value) => ({
+              value,
+              label: enumLabel(t, 'project.industries', value),
+            }))}
           />
         </Form.Item>
         <Form.Item label={t('prompt.generate.intents')} style={{ width: '100%' }}>
           <Checkbox.Group
             value={intents}
             onChange={(values) => setIntents(values as IntentCategory[])}
-            options={INTENTS.map((value) => ({ value, label: INTENT_LABELS[value] }))}
+            options={INTENT_VALUES.map((value) => ({
+              value,
+              label: enumLabel(t, 'prompt.intents', value),
+            }))}
           />
         </Form.Item>
         <Form.Item>

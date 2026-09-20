@@ -1,16 +1,12 @@
 import { Form, Input, InputNumber, Modal, Select, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
 
-import type { IntentCategory, PromptDraft, PromptItem } from '../api/types';
-import { INTENT_LABELS } from '../api/types';
+import type { PromptDraft, PromptItem } from '../api/types';
+import { INTENT_VALUES } from '../api/types';
+import { enumLabel } from '../i18n/enum-label';
 
 /** 与后端 `geo_domain::prompt::MAX_PROMPT_CHARS` 对齐，超长在写库前就被挡下。 */
 const MAX_PROMPT_CHARS = 300;
-
-const INTENT_OPTIONS = (Object.keys(INTENT_LABELS) as IntentCategory[]).map((value) => ({
-  value,
-  label: INTENT_LABELS[value],
-}));
 
 export interface PromptItemEditorProps {
   /** 传条目即「编辑」，传 null 即「新增」。 */
@@ -26,7 +22,9 @@ export interface PromptItemEditorProps {
  * 只在需要时挂载（父组件条件渲染），因此 `initialValues` 每次都是干净的，
  * 不用手动 reset 表单。来源由后端固定为 `manual`，这里不给选择。
  *
- * 意图选项的标签仍来自 `api/types.ts` 的 `INTENT_LABELS`（归 Task 9 的写集）。
+ * 意图选项的**运行时清单**是 `api/types.ts` 的 `INTENT_VALUES`（语言中立的稳定 id）；
+ * 标签查词典 `prompt.intents.<id>`（`enumLabel`，查不到回退 id 本身）。选项在组件体内构造，
+ * 因为模块级常量求值时没有 React 上下文、拿不到 `t`（同 `entity-fields.ts` 装 key 的裁定 B-2）。
  */
 export default function PromptItemEditor({
   item,
@@ -36,6 +34,10 @@ export default function PromptItemEditor({
 }: PromptItemEditorProps) {
   const { t } = useTranslation();
   const [form] = Form.useForm<PromptDraft>();
+  const intentOptions = INTENT_VALUES.map((value) => ({
+    value,
+    label: enumLabel(t, 'prompt.intents', value),
+  }));
 
   return (
     <Modal
@@ -76,7 +78,7 @@ export default function PromptItemEditor({
           <Input.TextArea rows={3} showCount maxLength={MAX_PROMPT_CHARS} />
         </Form.Item>
         <Form.Item name="intent" label={t('prompt.editor.intent')} rules={[{ required: true, message: t('prompt.editor.intentRequired') }]}>
-          <Select options={INTENT_OPTIONS} />
+          <Select options={intentOptions} />
         </Form.Item>
         <Space size={16}>
           <Form.Item name="weight" label={t('prompt.editor.weight')} tooltip={t('prompt.editor.weightTooltip')}>

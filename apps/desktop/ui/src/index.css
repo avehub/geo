@@ -10,6 +10,12 @@
  * JS chunk 的 content hash，于是「改一行词典」能让 JS 产物哈希跟着变
  * （Task 7 报告 §9-3 / §9-4 的实测事故）。
  *
+ * ⚠ 反向代价（很容易踩，而且**不报错**）：工具类**必须写在 .tsx 里**。写在 .ts 里不会被扫到，
+ * 产物 CSS 里就是没有那条规则——界面静默掉样式，构建与测试全绿。最可能踩的姿势是 src/demo/**
+ * （Task 11–14 的静态数据）里放一张 class 映射表，或一个 cn() 之类的拼接结果。真要在数据文件里
+ * 存 class 名，就把它当纯字符串常量交给 .tsx 消费，并保证那个 class 在某个 .tsx 里以
+ * **字面量**出现过。
+ *
  * 证据（实测，不是理论）：白名单之前，产物 CSS 的整个 @layer utilities 块 562 字节**全是死
  * 规则**——.container 本体 + 5 个 @media 下的 .container、.flex、.inline、.table、.filter；
  * 而全项目实际用到的 Tailwind 工具类是 **0 个**（rg -n 'className' src 排掉测试文件后只有
@@ -17,6 +23,23 @@
  * table: 对象键（zh-CN 与 en-US 的 project.ts / prompt.ts 各一处）。
  * ⇒ 自动探测带来的只有污染，没有收益。白名单**保留了工具类可用性**（在 .tsx 里写 class
  *   照样生效），只是不再让数据文件参与。
+ *
+ * 改完之后的**实际现状**（别按上面那段预期 utilities 块会整块消失）：产物 CSS 里仍有约
+ * **541 字节** utilities 残留——.container（本体 + 5 个 @media 变体）、.flex、.inline、
+ * .filter。归因是**非测试 .tsx** 里的裸标识符与 antd prop 值：main.tsx 的 const container、
+ * AppLayout.tsx 的 display: 'flex' 与 mode="inline"、GeneratePanel.tsx 的 layout="inline"、
+ * ProjectListPage.tsx 的 const filter。这是白名单**有意保留**的扫描面，属预期，**不是待清项**。
+ * ⇒ 常驻判据是「产物 CSS 的**选择器集合不许新增**」，不是「CSS 逐字节不变」，也不是
+ *   「守卫证明了端到端排除」——守卫求的是 positive − negated 的**模型**，oxide 那一层由
+ *   build 产物自证。
+ *
+ * 顺带一条机制事实，省得下一个人再预测错：oxide 的候选提取**不是「每个英文单词都算」**。
+ * 会被提取的是**裸标识符**（main.tsx 的 const container）、**独立的字符串字面量**与
+ * **JSX 属性值**（AppLayout.tsx 的 mode="inline"）；**点分 / 斜杠路径里的片段不算**——
+ * ProjectTable.tsx 里满是 table 字样，但全是 t('project.table.name') 这类点分键与
+ * 'antd/es/table' 的导入路径，产物里因此没有 .table。反过来，测试文件里
+ * const table = screen.getByRole('table') 这种裸标识符**会**被提取，这正是测试 .tsx
+ * 必须继续排掉的原因。
  *
  * 下面两条指令的写法有硬约束（tailwindcss 4.3.3 实测）：路径**必须带引号**，不带引号直接抛
  * "`@source` paths must be quoted."；@source **不许有 body**、**不许嵌套**；相对路径按

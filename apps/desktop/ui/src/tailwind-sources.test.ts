@@ -141,8 +141,34 @@ function expand(source: { base: string; pattern: string }): string[] {
 
 const cssText = () => readFileSync(INDEX_CSS, 'utf8');
 
-/** 对照组 1：去掉 `source(none)`（自动探测重新打开）。 */
-const stripSourceNone = (css: string) => css.replace(/\s*source\(none\)/, '');
+/**
+ * B-1 规定的两个白名单 glob —— **单一来源**（复审 Minor 3）。
+ *
+ * 「断言里比对的 pattern」「对照组要删的那一行指令」「不带引号就抛错那条用例的输入」
+ * 全部由这两个常量拼出来，改一次 glob 只改一处。
+ *
+ * 这不会把断言变成「自己跟自己比」：常量是**规格文本**，断言拿它去比 Tailwind 解析
+ * `index.css` 得到的 `pattern`。两边不一致时对照组会先红（调用处的 `not.toBe(css)` 自检），
+ * 不会静默——三条对照组的可翻转性都保留。
+ */
+const POSITIVE_PATTERN = './**/*.tsx';
+const NEGATED_PATTERN = './**/*.test.tsx';
+const POSITIVE_DIRECTIVE = `@source "${POSITIVE_PATTERN}";`;
+const NEGATED_DIRECTIVE = `@source not "${NEGATED_PATTERN}";`;
+
+/**
+ * 对照组 1：去掉 `source(none)`（自动探测重新打开）。
+ *
+ * **必须锚定到 `@import` 那一行**（复审 Minor 1）：`source(none)` 这个字面量在 `index.css`
+ * 的注释里也出现，用「全文第一处匹配」的老写法时，只要有人把注释挪到 `@import` 之前，
+ * `replace` 就会去改注释、把真指令留着 ⇒ 对照组报出「root 应为 null 但收到 'none'」这种
+ * 误导性错误。CG1 是本守卫唯一的非永真证明，它的失效模式必须一眼可读。
+ *
+ * 锚不上（例如指令被缩进）时返回原串，由调用处「对照组必须真的删掉了东西」那条自检红，
+ * 不会静默变成 no-op。
+ */
+const stripSourceNone = (css: string) =>
+  css.replace(/^(@import\s+'tailwindcss')\s+source\(none\);/m, '$1;');
 
 /** 对照组 2 / 3：按整行文本删掉一条指令（删不掉时对照组自己会红，见调用处的 `not.toBe`）。 */
 const stripLine = (css: string, line: string) =>
@@ -150,10 +176,6 @@ const stripLine = (css: string, line: string) =>
     .split('\n')
     .filter((each) => each.trim() !== line)
     .join('\n');
-
-/** B-1 规定的三条指令里，写在 `index.css` 中的两条 `@source` 的字面文本。 */
-const POSITIVE_DIRECTIVE = '@source "./**/*.tsx";';
-const NEGATED_DIRECTIVE = '@source not "./**/*.test.tsx";';
 
 /**
  * 解析出「Tailwind 实际会扫的集合」= positive 展开 − negated 展开。
@@ -191,7 +213,7 @@ describe('Task 8b · Tailwind 扫描面是 fail-closed 白名单', () => {
     // 裁定 B-3②：扫描面是显式白名单，不多不少一条。
     expect(positive.length, '扫描面必须是显式白名单：恰有 1 条非 negated source').toBe(1);
     expect(positive[0].pattern, '白名单只允许扫 .tsx（工具类只可能出现在标记文件里）').toBe(
-      './**/*.tsx',
+      POSITIVE_PATTERN,
     );
     // 基准目录就是 CSS 文件所在目录（src/）：`@source` 的相对路径按它解析。
     // 钉住的是「基准目录搞错 ⇒ glob 匹配不到任何文件 ⇒ 守卫静默失效」。
@@ -239,7 +261,7 @@ describe('Task 8b · Tailwind 扫描面是 fail-closed 白名单', () => {
     expect(TEST_TSX.length, 'src 下测试 .tsx 至少有 8 个，否则「每一个都被覆盖」是永真的').toBeGreaterThanOrEqual(8);
 
     expect(negated.length, 'index.css 里必须恰有 1 条用 `@source not` 写的测试排除指令').toBe(1);
-    expect(negated[0].pattern).toBe('./**/*.test.tsx');
+    expect(negated[0].pattern).toBe(NEGATED_PATTERN);
     expect(negated[0].base, `排除指令的基准目录不是 ${SRC_DIR}`).toBe(SRC_DIR);
 
     const excluded = new Set(negated.flatMap((source) => expand(source)));
@@ -260,6 +282,32 @@ describe('Task 8b · Tailwind 扫描面是 fail-closed 白名单', () => {
 
     const compiler = await compileCss(stripped);
     expect(compiler.root, '去掉 source(none) 后自动探测应当重新打开').toBeNull();
+  });
+
+  it('剥离只动真指令：注释里的同名字面量排在 @import 之前也不会被误删（复审 Minor 1 自证）', async () => {
+    // 合成输入，**不改 index.css**：把一段含 `source(none)` 字面量的注释放到 @import 之前。
+    // 「全文第一处匹配」的老写法会去改注释、把真指令留着 ⇒ root 仍是 'none' ⇒ 本条红。
+    const commentFirst = [
+      '/* 这段注释里也写了 source(none) 这个字面量，用来检验剥离是否锚定到真指令行 */',
+      "@import 'tailwindcss' source(none);",
+      POSITIVE_DIRECTIVE,
+      '',
+    ].join('\n');
+
+    // 前提自检：合成输入里第一处 source(none) 确实在注释里、确实排在 @import 之前。
+    expect(
+      commentFirst.indexOf('source(none)'),
+      '合成输入失效：含字面量的注释必须排在 @import 之前，否则这一条证明不了「锚定」',
+    ).toBeLessThan(commentFirst.indexOf('@import'));
+
+    const stripped = stripSourceNone(commentFirst);
+    expect(stripped, '剥离必须真的删掉了东西').not.toBe(commentFirst);
+    expect(stripped, '只许改真指令，不许动注释里的同名字面量').toContain(
+      'source(none) 这个字面量',
+    );
+
+    const compiler = await compileCss(stripped);
+    expect(compiler.root, '锚定剥离之后自动探测必须重新打开').toBeNull();
   });
 
   it('对照组 2：去掉白名单那条 @source，非 negated source 数就归 0（证明展开断言非永真）', async () => {
@@ -290,8 +338,9 @@ describe('Task 8b · Tailwind 扫描面是 fail-closed 白名单', () => {
 
   it('路径不带引号时 Tailwind 直接抛错——写错的指令不可能静默通过', async () => {
     // 裁定 B-1 的写法硬约束之一。实测 4.3.3 的报错原文是 "`@source` paths must be quoted."
+    // 去掉引号即错例，glob 仍取自 POSITIVE_PATTERN（复审 Minor 3：字面量单一来源）。
     await expect(
-      compileCss(`@import 'tailwindcss' source(none);\n@source ./**/*.tsx;\n`),
+      compileCss(`@import 'tailwindcss' source(none);\n@source ${POSITIVE_PATTERN};\n`),
     ).rejects.toThrow(/quoted/);
   });
 });

@@ -1,24 +1,37 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
 
 /*
- * 把测试文件排除出 Tailwind v4 的自动内容探测（裁定 B-5 / 复审 F-3c）。
+ * Tailwind 的扫描面是**显式白名单**：自动内容探测已经关掉（上面那个 source(none)），
+ * 扫描面只由下面两条 @source 决定。
  *
- * 自动探测的默认范围是 vite root（apps/desktop/ui）下的所有文件，**包括** src 里递归的
- * 那些 .test.ts 与 .test.tsx。测试与注释里的散文单词只要长得像 class 名，就会生成一条死
- * CSS 规则并改变产物 CSS 的文件名哈希；Vite/Rolldown 又把关联 CSS 计进 JS chunk 的
- * content hash，于是「改一行测试注释」能让 JS 产物哈希跟着变
- * （Task 7 报告 §9-3 / §9-4 的实测事故，Task 8/9 抽文案时会反复踩）。
+ * 为什么白名单只到 .tsx：工具类只可能写在标记文件里。词典（src/i18n/locales）、数据 .ts、
+ * 测试文件里装的是英文散文和对象键名，扫进来只会把散文单词当成 class 名、凭空生成一条死
+ * CSS 规则，一条都用不上；而产物 CSS 的文件名哈希一变，Vite/Rolldown 又把关联 CSS 计进
+ * JS chunk 的 content hash，于是「改一行词典」能让 JS 产物哈希跟着变
+ * （Task 7 报告 §9-3 / §9-4 的实测事故）。
  *
- * 下面两条指令的写法有硬约束（tailwindcss 4.3.3 实测）：路径**必须带引号**，不带引号
- * 直接抛 "`@source` paths must be quoted."；相对路径按**本文件所在目录**解析，
- * 所以那两条以点开头、匹配 src 下递归的 .test.ts / .test.tsx。
- * 另：这两行的注释刻意不写出完整 glob——glob 里的星号斜杠组合会提前闭合 CSS 块注释。
+ * 证据（实测，不是理论）：白名单之前，产物 CSS 的整个 @layer utilities 块 562 字节**全是死
+ * 规则**——.container 本体 + 5 个 @media 下的 .container、.flex、.inline、.table、.filter；
+ * 而全项目实际用到的 Tailwind 工具类是 **0 个**（rg -n 'className' src 排掉测试文件后只有
+ * 2 处命中，都是本文件手写的 .geo-titlebar / .geo-page）。其中 .table 来自词典里 4 个
+ * table: 对象键（zh-CN 与 en-US 的 project.ts / prompt.ts 各一处）。
+ * ⇒ 自动探测带来的只有污染，没有收益。白名单**保留了工具类可用性**（在 .tsx 里写 class
+ *   照样生效），只是不再让数据文件参与。
  *
- * 守卫在 src/tailwind-sources.test.ts：它直接调 tailwindcss 的 compile() 断言这两条指令
- * 真的被解析成 negated source、基准目录就是 src、且展开后覆盖到仓库里每一个测试文件，
- * 并带一个「删掉指令 ⇒ negated source 消失」的对照组，免得守卫自己变成永真断言。
+ * 下面两条指令的写法有硬约束（tailwindcss 4.3.3 实测）：路径**必须带引号**，不带引号直接抛
+ * "`@source` paths must be quoted."；@source **不许有 body**、**不许嵌套**；相对路径按
+ * **本文件所在目录**（src/）解析。另：这段注释刻意不写出完整 glob——glob 里的星号斜杠组合
+ * 会提前闭合 CSS 块注释。
+ *
+ * 守卫在 src/tailwind-sources.test.ts：它调 tailwindcss 的公开 compile()（loadStylesheet 加载
+ * **真**样式内容，否则 source(none) 不可观测）断言 root === 'none'、白名单恰 1 条且展开后
+ * 全是 .tsx、词典与任何 .ts 都不在里面、测试 .tsx 被 negated source 覆盖，并带 3 个对照组
+ * 证明这些断言不是永真的。
+ *
+ * 要扩大扫描面就改这里的白名单，**不要**改用「再加一条 @source not 排掉某个目录」的姿势：
+ * denylist 是 fail-open 的，每新增一个装英文散文的文件都会重新开一个洞。
  */
-@source not "./**/*.test.ts";
+@source "./**/*.tsx";
 @source not "./**/*.test.tsx";
 
 :root {

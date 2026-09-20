@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -54,9 +54,20 @@ function mixedItems(): PromptItem[] {
  * 必须这样，否则页面刷新缓存时会把用户刚改的值又变回旧值——那既测不出真实
  * 行为，还会让 antd 的数字输入框在失焦时把旧值再提交一次（重复调用 IPC）。
  */
-function stub(grade: SampleSizeGrade = 'sufficient', itemsOverride?: PromptItem[]) {
+function stub(
+  grade: SampleSizeGrade = 'sufficient',
+  itemsOverride?: PromptItem[],
+  notes?: string | null,
+) {
   let items = itemsOverride ?? (grade === 'sufficient' ? mixedItems() : mixedItems().slice(0, 45));
-  const snapshot = () => makePromptSet({ items, sample_size_grade: grade });
+  // `notes` 默认**不传**（保持 fixture 的 `null`），只有 notes 那组用例才局部覆写。
+  // 这样既不必改 `src/test/fixtures.ts`（它被十几个用例共用），也不会让存量用例的行为漂移。
+  const snapshot = () =>
+    makePromptSet({
+      items,
+      sample_size_grade: grade,
+      ...(notes === undefined ? {} : { notes }),
+    });
 
   mockInvoke.stubAlways('prompt_set_list', () => {
     const set = snapshot();
@@ -399,5 +410,150 @@ describe('PromptSetPage', () => {
 
     await waitFor(() => expect(mockInvoke.callsOf('prompt_set_dedupe')).toHaveLength(1));
     expect(await screen.findByText(/重复对：0/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * `notes` 按行分派（Task 8 fix1 · 复审 Important #1 / 裁定 1）。
+ *
+ * # 为什么必须在这一层测
+ *
+ * 计划正文那条 Produces 的判据是一句**行为禁令**：「**不许**把机器行原样显示给用户」。
+ * Task 8 落地了 `describeNoteLine` 与按行渲染的 `<Alert>`，但 fixture 的 `notes` 是 `null`
+ * ⇒ 整个分支在测试里从不渲染，禁令零覆盖：将来谁把调用点改回 `message={promptSet.notes}`，
+ * 198 条用例全绿。本组用例就是堵这个回归洞（fix1 §D-9 的变异自证打的正是它）。
+ *
+ * `src/i18n/no-hardcoded-strings.test.ts` 里那几条 notes 断言是**静态键集**（键存在、
+ * 模板有 `{{stage}}`/`{{detail}}` 两个槽位），不证明「机器行会被解析并走词典」——两者不重叠。
+ *
+ * # fixture 形状取自后端真值，不是编的
+ *
+ * `apps/desktop/src-tauri/src/services/prompt_service.rs` 的 `degradation_note()`：
+ * `DEGRADED_PREFIX = "degraded "` + `ascii_json(&json!({"stage","code","params"}))`。
+ * `serde_json` 的 Map 是 BTreeMap ⇒ **键按字典序**输出（`code` / `params` / `stage`），
+ * 该行自带测试 `degradation_note_is_a_single_line_ascii_machine_record` 钉住了这个形状。
+ * 散文行取自同文件 `report_quota_shortfall()` 的真实格式串（竞品同框配额不足那条）。
+ *
+ * ⚠ 复审举例用的 `"code":"llm/timeout"` **不在** `contracts/error-codes.json` 的 43 码里
+ * （超时是 `llm/transport` 的 `reason`，不是独立 code）。这里用契约内真实存在的
+ * `llm/transport` + `reason:"timeout"`，另有一条用例专门钉「契约外的 code 走 raw passthrough」。
+ */
+describe('PromptSetPage · notes 按行分派（机器行不许原样上屏）', () => {
+  /** 后端 `degradation_note("expansion", IpcError::with_params("llm/transport", [("reason","timeout")]))` 的输出。 */
+  const MACHINE_LINE =
+    'degraded {"code":"llm/transport","params":{"reason":"timeout"},"stage":"expansion"}';
+  /** 后端 `report_quota_shortfall()` 的散文行（既存中文，裁定 §H-2 明令不许顺手改）。 */
+  const PROSE_LINE = '竞品「宏宇泵业」的同框 prompt 只有 1 条，低于配额 3 条，其 SOV 仅供参考。';
+
+  /**
+   * 整行**恰好**等于词典译文：`{{stage}}` 填 `prompt.promptSet.notes.stage.expansion`，
+   * `{{detail}}` 填 `describeIpcError` 对 `llm/transport` + `reason=timeout` 的渲染。
+   * 写成字面量而不是在测试里重算一遍——重算等于把生产逻辑抄进测试，判据会跟着实现一起漂。
+   */
+  const EXPECTED_ZH =
+    'AI 扩写未成功，本轮题目改由行业模板与本地改写补足（连接模型服务失败：上游响应超时，请稍后重试，或调低并发与频控设置）';
+  const EXPECTED_EN =
+    'AI expansion did not succeed; this batch was filled in from industry templates and local rewriting (Could not reach the model provider: the upstream provider timed out, so retry later or lower the concurrency and rate limit settings)';
+
+  /** 静音并计数 console.warn：判据必须是结构化的，不能靠「输出里没有某行」（vitest 5 默认拦 console）。 */
+  function captureWarn() {
+    return vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  }
+
+  beforeEach(() => mockInvoke.reset());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('机器行走词典：整行恰好是 degraded 模板的译文，stage 与 detail 都填对', async () => {
+    const warn = captureWarn();
+    stub('sufficient', undefined, MACHINE_LINE);
+    renderPage();
+
+    const line = await screen.findByText(EXPECTED_ZH);
+
+    // `toBe` 而不是 `toContain`：这一行**不允许**有任何多余字符（前缀、花括号、裸 code 都不行）
+    expect(line.textContent).toBe(EXPECTED_ZH);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('机器行的机器记号一个都不上屏（degraded 前缀 / JSON 花括号 / 裸 code / stage 记号）', async () => {
+    stub('sufficient', undefined, MACHINE_LINE);
+    const { container } = renderPage();
+    await screen.findByText(EXPECTED_ZH);
+
+    // 这就是那条**行为禁令**本身：机器行不许原样显示给用户
+    expect(container.textContent).not.toContain('degraded ');
+    expect(container.textContent).not.toContain('{');
+    expect(container.textContent).not.toContain('llm/transport');
+    expect(container.textContent).not.toContain('"stage"');
+    expect(container.textContent).not.toContain('expansion');
+  });
+
+  it('既存中文散文行逐字原样渲染（老数据与配额/合规那几行不许被吞）', async () => {
+    const warn = captureWarn();
+    stub('sufficient', undefined, PROSE_LINE);
+    renderPage();
+
+    const line = await screen.findByText(PROSE_LINE);
+
+    expect(line.textContent).toBe(PROSE_LINE);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('解析失败（degraded not-json）⇒ 原样渲染 + console.warn 恰好 1 次', async () => {
+    const warn = captureWarn();
+    stub('sufficient', undefined, 'degraded not-json');
+    renderPage();
+
+    const line = await screen.findByText('degraded not-json');
+
+    expect(line.textContent).toBe('degraded not-json');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0].join(' ')).toContain('malformed degraded note line');
+  });
+
+  it('多行 notes 逐行分派：机器行走词典、散文行原样，互不干扰', async () => {
+    const warn = captureWarn();
+    stub('sufficient', undefined, [PROSE_LINE, MACHINE_LINE].join('\n'));
+    renderPage();
+
+    expect((await screen.findByText(EXPECTED_ZH)).textContent).toBe(EXPECTED_ZH);
+    expect(screen.getByText(PROSE_LINE).textContent).toBe(PROSE_LINE);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('契约外的 code 走 raw passthrough：露出稳定记号而不是静默半句话', async () => {
+    stub(
+      'sufficient',
+      undefined,
+      'degraded {"code":"brand_new/code","params":{},"stage":"rewrite"}',
+    );
+    renderPage();
+
+    // stage 记号 `rewrite` 有词条 ⇒ 译成「口语化改写」；code 查不到 ⇒ 原样露出（可排查）
+    const line = await screen.findByText(/口语化改写未成功/);
+
+    expect(line.textContent).toContain('brand_new/code');
+    expect(line.textContent).not.toContain('{');
+  });
+
+  it('en-US 下机器行走英文模板（证明 detail 不是硬编码中文）', async () => {
+    stub('sufficient', undefined, MACHINE_LINE);
+    renderAtRoute(<PromptSetPage />, '/projects/:id/prompts', ROUTE, 'en-US');
+
+    const line = await screen.findByText(EXPECTED_EN);
+
+    expect(line.textContent).toBe(EXPECTED_EN);
+    expect(line.textContent).not.toContain('扩写');
+  });
+
+  it('自证（对照组）：notes 为空时这一组判据不会假绿——分支确实被渲染过', async () => {
+    // `notes: null`（fixture 默认值）⇒ 整个 <Alert> 不渲染。少了这条，上面几条
+    // 「findByText 拿到了节点」就有可能被误读成「反正页面里总有这段文字」。
+    stub('sufficient', undefined, null);
+    const { container } = renderPage();
+    await screen.findByText('第 1 版题库');
+
+    expect(container.textContent).not.toContain('未成功');
+    expect(screen.queryByText(EXPECTED_ZH)).not.toBeInTheDocument();
   });
 });

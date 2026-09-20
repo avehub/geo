@@ -179,7 +179,7 @@ export default function EntityFieldCard({
         </Space>
       ) : (
         <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>
-          {formatFieldValue(value)}
+          {formatFieldValue(value, t('common.listSeparator'))}
         </Typography.Paragraph>
       )}
     </Card>

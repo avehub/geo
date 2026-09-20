@@ -21,6 +21,9 @@ function fieldLabelKey(path: string): string | null {
 /** 实体卡字段级修订留痕，最新在前。 */
 export default function RevisionTimeline({ revisions }: { revisions: EntityCardRevision[] }) {
   const { t } = useTranslation();
+  // 语言相关的列表连接符（fix1 复审 #6）：作为**参数**送进数据层函数，
+  // 而不是把 `t` 渗进 `entity-fields.ts`（裁定 B-2）。
+  const listSeparator = t('common.listSeparator');
 
   if (revisions.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('entity.revisions.empty')} />;
@@ -44,7 +47,8 @@ export default function RevisionTimeline({ revisions }: { revisions: EntityCardR
                 </Typography.Text>
               </div>
               <Typography.Text style={{ fontSize: 12 }}>
-                {formatFieldValue(revision.old_value)} → {formatFieldValue(revision.new_value)}
+                {formatFieldValue(revision.old_value, listSeparator)} →{' '}
+                {formatFieldValue(revision.new_value, listSeparator)}
               </Typography.Text>
               {revision.note ? <div>{revision.note}</div> : null}
             </div>

@@ -442,6 +442,37 @@ export interface CsvRowErrorLike {
 export function describeCsvRowError(error: CsvRowErrorLike, t: TFunction): string {
   const reason = typeof error.reason === 'string' ? error.reason : '';
 
+  /**
+   * 第 ⑤ 级回落的**唯一**实现（warn + `common.unknownError`）。
+   *
+   * 下面的 `row` 守卫与出口质量闸门**共用这一份**，所以「不写第二份回落」是结构上保证的，
+   * 不是靠自觉。两条路的 warn 前缀也因此完全一致，测试可以用同一句诊断断言两者。
+   */
+  const fallBack = (problems: string[]): string => {
+    console.warn('[geo-i18n] rendered CSV row error is not presentable, falling back:', {
+      row: error.row,
+      reason,
+      problems,
+    });
+    return render(t, UNKNOWN_ERROR_KEY, {}) ?? UNKNOWN_ERROR_KEY;
+  };
+
+  // `row` 与 `reason` 一样要守（fix1 裁定 7）。`Number.isFinite` **不做隐式转换**，
+  // 所以 `undefined` / `null` / `NaN` / `Infinity` / 字符串 `'3'` 全部不合格。
+  //
+  // 为什么不能只靠出口那道质量闸门：`problemsOf` 确实有 `\bundefined\b` 与 `\bnull\b`
+  // 两条字面量检查（所以那两种形状今天碰巧会被拦下），但「第 NaN 行：…」与
+  // 「第 Infinity 行：…」信息字符够、无悬空标点，闸门**放行**，于是把机器记号端给用户
+  // （fix1 的红测试实测到这一条：`Received: "第 NaN 行：必填的 prompt 文本为空"`）。
+  //
+  // 真实后端一定带 `row`（`csv_io.rs` 的 `CsvRowError.row: usize`），这里防的是 §G-6 那个
+  // 已知风险：demo 后端（Task 11-14）手写静态 payload 时形状可能不完整。
+  // ⚠ 类型上 `CsvRowErrorLike.row` 仍是**必填 `number`**——运行期防御不该变成类型层的谎言，
+  // 所以测试用 `as unknown as CsvRowErrorLike` 喂非法值，而不是把字段改成可选。
+  if (!Number.isFinite(error.row)) {
+    return fallBack([`ROW_NOT_FINITE（收到 ${typeof error.row}: ${String(error.row)}）`]);
+  }
+
   // 顶层 `reason` 提升进 values：`CsvRowError.reason` 是**独立字段**，不在 params 里
   // （只有合规那一支因为原样透传 `GeoError::params()` 才恰好也带一个同名键）。
   // 不提升就喂不进 `renderReason`——它读的是 `params.reason`，而 `required` 这类 reason
@@ -452,13 +483,6 @@ export function describeCsvRowError(error: CsvRowErrorLike, t: TFunction): strin
   const text = render(t, CSV_ROW_KEY, { row: String(error.row), detail }) ?? detail;
 
   const problems = problemsOf(text);
-  if (problems.length > 0) {
-    console.warn('[geo-i18n] rendered CSV row error is not presentable, falling back:', {
-      row: error.row,
-      reason,
-      problems,
-    });
-    return render(t, UNKNOWN_ERROR_KEY, {}) ?? UNKNOWN_ERROR_KEY;
-  }
+  if (problems.length > 0) return fallBack(problems);
   return text;
 }

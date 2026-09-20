@@ -20,6 +20,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { i18n } from '../i18n';
 import { IpcRequestError } from './client';
 import { problemsOf } from './error-text';
+import type { CsvRowErrorLike } from './errors';
 import {
   MAY_ECHO_VALUE,
   describeCsvRowError,
@@ -653,6 +654,59 @@ describe('Task 8 · describeCsvRowError（CSV 行错误）', () => {
     expect(warn.mock.calls[0].join(' ')).toContain('not presentable');
   });
 
+  /**
+   * ⑤ `row` 不是有限数 ⇒ 走**同一条**第 ⑤ 级回落（warn + `common.unknownError`）。
+   *
+   * 为什么不能靠质量闸门兜住：`String(undefined)` 会渲染成「第 undefined 行：…」，
+   * 信息字符数够、也没有悬空标点，`problemsOf` 拦不住，于是把 `undefined` 端给用户。
+   * 同一个函数上两行已经在守 `typeof error.reason === 'string'`，不守 `row` 是姿态不一致。
+   * 真实后端一定带 `row`（`csv_io.rs` 的 `CsvRowError.row: usize`），但 §G-6 已把
+   * 「demo 后端手写静态 payload 可能不完整」列为已知风险（Task 11-14）。
+   *
+   * `Number.isFinite` **不做隐式转换**，所以字符串 `'3'` 同样不合格——契约里 `row` 是
+   * `number`，收到别的形状就说明 payload 漂了，宁可回落兜底文案也不要猜。
+   * ⚠ 类型上 `CsvRowErrorLike.row` 是**必填 `number`**，所以这里用
+   * `as unknown as CsvRowErrorLike` 喂非法值：**不许为了测试把类型改成可选**
+   * （那会把运行期防御变成类型层的谎言）。
+   */
+  it('⑤ row 不是有限数（NaN / Infinity / 字符串 / 缺失）⇒ 回落兜底文案并 warn', () => {
+    const warn = captureWarn();
+    // `undefined` / `null` 今天**已经**会回落，但那是 `problemsOf` 碰巧拦住的（它有
+    // `\bundefined\b` / `\bnull\b` 两条字面量检查）；`NaN` / `Infinity` / `'3'` **拦不住**——
+    // 它们信息字符够、无悬空标点，会被原样端上屏。本用例把五种非法形状一起钉住，
+    // 不依赖那两条字面量检查的偶然覆盖。
+    const illegal = [NaN, Infinity, '3', undefined, null] as const;
+
+    for (const row of illegal) {
+      const error = { row, reason: 'required', params: {} } as unknown as CsvRowErrorLike;
+      const label = `row=${typeof row}:${String(row)}`;
+
+      expect(describeCsvRowError(error, zh()), label).toBe('操作未成功，请稍后重试');
+      expect(describeCsvRowError(error, en()), label).toBe(
+        'Something went wrong. Please try again later.',
+      );
+    }
+
+    // 走的是**同一条**回落（warn + `common.unknownError`），不是第二份：
+    // warn 次数 = 非法值个数 × 两个 locale，且每次都是同一句诊断前缀。
+    expect(warn).toHaveBeenCalledTimes(illegal.length * 2);
+    for (const call of warn.mock.calls) {
+      expect(call.join(' ')).toContain('not presentable');
+    }
+  });
+
+  it('⑤补 · row 合法时不误伤：0 与负数也是有限数，照常渲染', () => {
+    const warn = captureWarn();
+
+    expect(describeCsvRowError({ row: 0, reason: 'required', params: {} }, zh())).toBe(
+      '第 0 行：必填的 prompt 文本为空',
+    );
+    expect(describeCsvRowError({ row: -1, reason: 'required', params: {} }, zh())).toBe(
+      '第 -1 行：必填的 prompt 文本为空',
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('② params 是可选的：整份缺失（旧载荷形状）也不炸，且仍走同一套判定', () => {
     expect(describeCsvRowError({ row: 1, reason: 'required' }, zh())).toBe(
       '第 1 行：必填的 prompt 文本为空',
@@ -661,7 +715,7 @@ describe('Task 8 · describeCsvRowError（CSV 行错误）', () => {
     expect(describeCsvRowError({ row: 1, reason: 'not_allowed' }, zh())).not.toContain('value');
   });
 
-  it('自证（对照组）：把 CSV 专属模板删掉，required 就会被闸门打回兜底文案', () => {
+  it('自证（对照组）：共享模板单独渲染就不合格 ⇒ 覆写层必要', () => {
     // 这条钉的是「① 的覆写层真的在起作用」，而不是恰好共享模板也能过。
     const shared = i18n.t('errors.reasons.required', { nsSeparator: false });
     expect(problemsOf(shared), '共享模板单独渲染就不合格，所以覆写层不是可有可无的').not.toEqual([]);

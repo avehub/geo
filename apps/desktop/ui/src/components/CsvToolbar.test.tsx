@@ -83,16 +83,19 @@ describe('CsvToolbar · 行错误经词典渲染', () => {
       '第 2 行：必填的 prompt 文本为空',
       '第 4 行：这一格的内容格式不正确（not_an_intent）',
     ]);
-    // 用 findAllByText 而不是 findByText：antd 的确认弹窗把标题渲染**两遍**
+    // 用 findAllByText 而不是 findByText：antd 的确认弹窗把标题渲染**多份**
     // （一份 `.ant-modal-title` 供 `aria-labelledby` 指、一份可见的 `.ant-modal-confirm-title`），
-    // 实测 DOM dump 里两个节点的文本逐字相同。断言"每一个匹配都等于这句"，
-    // 强度不低于 findByText，且不把 antd 的内部渲染份数写进断言。
-    const titles = await screen.findAllByText('导入 0 条，失败 2 行');
+    // 实测 DOM dump 里各节点文本逐字相同。
+    //
+    // fix1 复审 #2：这里的**份数是 antd 的内部实现**，不该进断言。上一版写成
+    // `toEqual([summary, summary])`，注释却自称「不把 antd 的内部渲染份数写进断言」——
+    // 自相矛盾，且 antd 升级改渲染份数时本用例会为无关原因红。改成「至少一份，
+    // 且**每一份**都全等于这句」：与份数无关，强度不降（仍是全字符串精确相等，
+    // 不是 toContain / toBeTruthy），与本文件下面 en-US 那条用例的写法一致。
+    const summary = '导入 0 条，失败 2 行';
+    const titles = await screen.findAllByText(summary);
     expect(titles.length).toBeGreaterThan(0);
-    expect(titles.map((node) => node.textContent)).toEqual([
-      '导入 0 条，失败 2 行',
-      '导入 0 条，失败 2 行',
-    ]);
+    for (const node of titles) expect(node.textContent).toBe(summary);
   });
 
   it('en-US 下外壳语序正确（证明「第 N 行」不是组件里拼出来的）', async () => {

@@ -45,14 +45,33 @@ export const ENTITY_FIELDS: FieldDescriptor[] = [
   { path: 'contact', labelKey: 'entity.fields.contact', kind: 'json', required: true },
 ];
 
-/** 把任意字段值渲染成人能读的文本。 */
-export function formatFieldValue(value: unknown): string {
+/**
+ * 把任意字段值渲染成人能读的文本。
+ *
+ * # `listSeparator` 是**必填**参数（fix1 复审 #6 / 裁定 6）
+ *
+ * 字符串数组的连接符是**语言相关**的：zh 用顿号 `、`，en 用 `, `。原先这里写死 `join('、')`，
+ * en locale 下实体卡的 `aliases` / `qualifications` / `service_regions` / `cases` /
+ * `differentiators` 与 `RevisionTimeline` 的新旧值都会渲染成 `A、B`——用户可见的错误，
+ * 而且两道扫描都看不见它（`、` 是 U+3001，不在 `[\u4e00-\u9fa5]` 区间里）。
+ *
+ * **必填而不是给默认值**：默认值会让新增调用点静默用回顿号，缺陷重新变成隐形的。
+ * 调用点一律传 `t('common.listSeparator')`（该键本轮已存在，**不新建词典键**）。
+ *
+ * 数据层因此仍然**不 import `t`**（裁定 B-2 原样有效）：`t` 不进数据层，
+ * 语言相关的值由调用方作为**参数**送进来。这也是 `labelKey` 那条裁定的同一套姿态。
+ *
+ * @param listSeparator 语言相关的列表连接符，例如 zh `、` / en `, `。
+ */
+export function formatFieldValue(value: unknown, listSeparator: string): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'string') return value.trim() === '' ? '—' : value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) {
     if (value.length === 0) return '—';
-    if (value.every((item) => typeof item === 'string')) return (value as string[]).join('、');
+    if (value.every((item) => typeof item === 'string')) {
+      return (value as string[]).join(listSeparator);
+    }
     return JSON.stringify(value, null, 2);
   }
   return JSON.stringify(value, null, 2);

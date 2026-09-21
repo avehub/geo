@@ -1,6 +1,6 @@
 /**
  * `secret_set` / `secret_status` / `secret_delete` 三条的内存实现（Task 14 · 简报 §A-5）。
- * 真值源 `apps/desktop/src-tauri/src/services/settings_service.rs:151-194`（下称 service）。
+ * 真值源 `apps/desktop/src-tauri/src/services/settings_service.rs:151-190`（下称 service）。
  *
  * # 🔴 AGENTS 规则 3 在 demo 里的落法：**比真后端更强**
  * 真后端把 Key 写进系统钥匙串，库里只存 `secret_ref` 引用串；demo 的库形状就是
@@ -46,7 +46,7 @@ export const secretSet: DemoHandler = (args) => {
   const db = getDemoDb();
   const provider = requireKnownProvider(db, asString(args.provider));
 
-  // service:152-159：先 trim，空白就拒。🔴 这个 `value` 到这一行为止，往下不留一个字符。
+  // service:153-158：先 trim，空白就拒。🔴 这个 `value` 到这一行为止，往下不留一个字符。
   if (asString(args.value).trim() === '') {
     throw demoError('validation/failed', { field: 'api_key', reason: 'required' });
   }
@@ -71,7 +71,7 @@ export const secretStatus: DemoHandler = (args) => {
   // 交出去的是**新造的对象**（真值源也是现构造 `SecretStatus`），不是库里那一行。
   const status: SecretStatus = {
     provider,
-    // service:170-175：存在且非空白才算已配；demo 不存值 ⇒ 「非空白」由 set 那一侧的 trim 保证。
+    // service:170-174：存在且非空白才算已配；demo 不存值 ⇒ 「非空白」由 set 那一侧的 trim 保证。
     configured: row?.configured === true,
     secret_ref: demoSecretRef(provider),
   };

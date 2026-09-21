@@ -66,7 +66,7 @@ const VALIDATION_4 = ['expected', 'field', 'reason', 'value'];
 /** `prompt_set/empty_import` 在契约里登记的 params 是**空数组** ⇒ 一个键都不许加。 */
 const VALIDATION_0: string[] = [];
 /**
- * `llm/config` 的「认不出的服务商」那一支（`settings_service.rs:270-279` 的 `parse_provider`）：
+ * `llm/config` 的「认不出的服务商」那一支（`settings_service.rs:270-277` 的 `parse_provider`）：
  * 契约给这条码登记了两个键，发射点也是两个 ⇒ 与 `validation/failed` 的三键形态**不能混**。
  */
 const LLM_CONFIG_2 = ['reason', 'value'];

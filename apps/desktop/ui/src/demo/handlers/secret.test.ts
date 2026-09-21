@@ -1,7 +1,7 @@
 /**
  * `secret_set` / `secret_status` / `secret_delete` 三条的行为测试（Task 14 · 简报 §B）。
  *
- * 真值源 `apps/desktop/src-tauri/src/services/settings_service.rs:151-194`（下称 service）。
+ * 真值源 `apps/desktop/src-tauri/src/services/settings_service.rs:151-190`（下称 service）。
  * 本文件的**主判据**是 AGENTS 规则 3（密钥永不落库）在 demo 里的落法：
  * `DemoDb.secrets` 的形状就是 `SecretStatus[]`（`{provider, configured, secret_ref}`，**没有值字段**）
  * ⇒ `secret_set` 校验完就把用户填的 Key **丢掉**，只把那条的 `configured` 翻成 `true`。

@@ -1,8 +1,8 @@
 /**
  * 设置 / 厂商预设 / 连通性测试这 4 条命令的内存实现（Task 14 · 简报 §A-7）。
  * 真值源 `apps/desktop/src-tauri/src/services/settings_service.rs`（下称 service）：
- * `settings_get` ← `get()`(:111-118)、`settings_update` ← `update()`(:124-141)、
- * `llm_providers` ← `providers()`(:143-149)、`llm_provider_test` ← `provider_test()`(:196-245)
+ * `settings_get` ← `get()`(:111-117)、`settings_update` ← `update()`(:124-140)、
+ * `llm_providers` ← `providers()`(:143-148)、`llm_provider_test` ← `provider_test()`(:196-245)
  * 与 `client_for()`(:248-263)。
  *
  * # 为什么 `llm_*` 两条也在这个文件（简报 §A-7）
@@ -11,21 +11,21 @@
  * `provider_test` 本来就是 `SettingsService` 的方法、与 `get()/update()` 同一个模块 ⇒ 放一起。
  * `secret.ts` 只 import 本文件的 `requireKnownProvider`（`parse_provider` 的替身），依赖单向。
  *
- * # 🔴 读写不对称是**故意的**（简报 A-3 · service:111-141）
+ * # 🔴 读写不对称是**故意的**（简报 A-3 · service:111-140）
  * - **读宽容**：`get()` 一律归一化 `model.provider`，注释逐字「库里存了认不出的值就
  *   **回落默认厂商**，不让应用起不来」；回落只发生在**返回值**上，不回写库。
  * - **写严格**：`update()` 先体检后落库，任何一项越界就**整批拒绝**。
  *
  * # 🔴 只镜像两条体检（简报 A-4；其余每条都进了报告的异常表）
- * `validate_settings()`(:292-386) 一共 12 项判据，demo 只镜像两项：
+ * `validate_settings()`(:292-384) 一共 12 项判据，demo 只镜像两项：
  * ① `model.provider` 认不出（成员清单**直接读 `db.settings.providers`**，不新造任何常量）；
  * ② `language` 空白。
  * 不镜像的：7 个数值区间(:30-36) + `MAX_MODEL_NAME_CHARS`(:41)（要在前端另造镜像常量，必漂）、
- * `model.base_url` 的 `invalid_format`/`invalid_url`(:355-362) 与 `proxy.url` 的
- * `required`/`invalid_format`(:369-386)（前两条属 spec G5，那条链路要重新设计）。
+ * `model.base_url` 的 `invalid_format`/`invalid_url`(:357-364) 与 `proxy.url` 的
+ * `required`/`invalid_format`(:367-382)（前两条属 spec G5，那条链路要重新设计）。
  * demo 演的是**错误契约**，不当校验器（§B-2③ 的口径）⇒ 越界值一律放行。
  *
- * # 🔴 两级错误模型不许合并（简报 A-2 · service:196-245 的文档注释逐字）
+ * # 🔴 两级错误模型不许合并（简报 A-2 · service:192-195 的文档注释逐字）
  * 「没配 Key / 配置不全属于**用户要修的问题**，返回错误让前端引导；
  *   网络不通、限流、5xx 属于**测试结果**，用 `ok=false` + 中文原因回给界面」
  * ⇒ `Err`(reject) 与 `ok=false`(resolve) 是两条不同的路。本轮只演 `Err` 那一支
@@ -35,7 +35,7 @@
  *
  * # 🔴 用户 bug #5 在这里**原样复现**，刻意不修（简报 A-2 末段）
  * `client_for`(:248-263) 读的是 `self.get().await?`——**已落库**的设置；而设置页是草稿式
- * （`SettingsPage.tsx:87` 的 `settings = draft ?? settingsQuery.data`，点「保存设置」才落库）
+ * （`SettingsPage.tsx:86` 的 `settings = draft ?? settingsQuery.data`，点「保存设置」才落库）
  * ⇒「不先保存就测」测的是旧值。demo 的 `llm_provider_test` 读的正是 `settings_update` 写的
  * 那同一份库，行为与桌面端一致；在 demo 里"修好"它会造成两侧分歧（违反 AGENTS 规则 8 的初衷）。
  * 修它归 spec G5。复现步骤写在报告 §F-4。
@@ -55,7 +55,7 @@ import { asBoolean, asNumber, asRecord, asString, cleanOptional } from './shared
 /**
  * `LlmProvider::default()` 的 `as_str()`：`crates/geo-llm/src/provider.rs:67` 的 `#[default]`
  * 落在 `DeepSeek` 上，`#[serde(rename_all = "snake_case")]` ⇒ 稳定 id **带下划线**。
- * 读设置时认不出的值一律回落它（service:111-118）。
+ * 读设置时认不出的值一律回落它（service:111-117）。
  */
 const DEFAULT_PROVIDER = 'deep_seek';
 
@@ -180,7 +180,7 @@ export const settingsUpdate: DemoHandler = (args) => {
 
   // ①+② 体检与归一化。真值源这里是**两步同一个判据**：`validate_settings` 的
   // `canonical_provider(...).is_none()`(:330-332) 与 `update()` 的
-  // `canonical_provider(...).ok_or_else(|| unknown_provider_validation(...))`(:127-129)，
+  // `canonical_provider(...).ok_or_else(|| unknown_provider_validation(...))`(:126-128)，
   // 两者的 code 与 params 逐字相同 ⇒ demo 合成一次调用（第二道在真值源里同样不可达）。
   const canonical = canonicalProvider(db, next.model.provider);
   if (canonical === null) {
@@ -198,7 +198,7 @@ export const settingsUpdate: DemoHandler = (args) => {
     throw demoError('validation/failed', { field: 'language', reason: 'required' });
   }
 
-  // ③④ 落库前的两处 trim（:130-133）。
+  // ③④ 落库前的两处 trim（:129-132）。
   if (next.proxy !== null) {
     next.proxy.url = next.proxy.url === null ? null : next.proxy.url.trim();
   }
@@ -209,11 +209,11 @@ export const settingsUpdate: DemoHandler = (args) => {
   return structuredClone(next);
 };
 
-/** `llm_providers`：直接端种子那 7 条预设（service:143-149 的 `LlmProvider::all()` 映射）。 */
+/** `llm_providers`：直接端种子那 7 条预设（service:143-148 的 `LlmProvider::all()` 映射）。 */
 export const llmProviders: DemoHandler = () => structuredClone(getDemoDb().settings.providers);
 
 /**
- * 被测厂商用哪个模型名（`client_for`:248-263 + `state.rs:72-101` 的 `config_from_settings`）：
+ * 被测厂商用哪个模型名（`client_for`:248-263 + `state.rs:84-91` 的 `config_from_settings`）：
  * 被测厂商**就是**当前默认厂商且库里存了非空模型名 ⇒ 用那个值（trim 后）；
  * 否则 `client_for` 会把 `model.model` 置 `None` ⇒ 回落该厂商预设里的 `default_model`。
  */
@@ -233,10 +233,10 @@ function modelUnderTest(db: DemoDb, saved: AppSettings, provider: string): strin
  */
 export const llmProviderTest: DemoHandler = async (args) => {
   const db = getDemoDb();
-  // 命令入参那条路 ⇒ `llm/config`（service:270-279）。
+  // 命令入参那条路 ⇒ `llm/config`（service:270-277）。
   const provider = requireKnownProvider(db, asString(args.provider));
 
-  // service:256-262：Key 不存在/空白 ⇒ `LlmError::MissingSecret`。demo 的库里只有
+  // service:256-261：Key 不存在/空白 ⇒ `LlmError::MissingSecret`。demo 的库里只有
   // `configured` 这个布尔（**没有值字段**，AGENTS 规则 3），「空白串算未配」由 `secret_set`
   // 那一侧的 trim 保证 ⇒ 这里读布尔就是等价判据。
   if (!db.secrets.some((row) => row.provider === provider && row.configured)) {

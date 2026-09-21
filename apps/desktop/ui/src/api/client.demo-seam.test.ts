@@ -40,7 +40,7 @@ import { SEED_SETTINGS } from '../demo/seed/settings';
 
 const INTERNALS = '__TAURI_INTERNALS__';
 const INVOKE_FAILED = 'ipc/invoke_failed';
-/** demo handler 在命令入参认不出时发的那条码（`settings_service.rs:270-279` 的 `parse_provider`）。 */
+/** demo handler 在命令入参认不出时发的那条码（`settings_service.rs:270-277` 的 `parse_provider`）。 */
 const LLM_CONFIG = 'llm/config';
 const UNKNOWN_PROVIDER = 'no_such_provider';
 const CJK = /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/;

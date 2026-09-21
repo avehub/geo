@@ -98,7 +98,7 @@ describe('demo/handlers/settings · settings_get（读是宽容的）', () => {
     const settings = await demoInvoke<AppSettings>('settings_get');
 
     expect(settings.model.provider).toBe(DEFAULT_PROVIDER);
-    // service:111-118 的 `get()` 只在**返回值**上归一化，不落库 ⇒ 库里那个坏值原样还在。
+    // service:111-117 的 `get()` 只在**返回值**上归一化，不落库 ⇒ 库里那个坏值原样还在。
     expect(getDemoDb().settings.app.model.provider).toBe(UNKNOWN_PROVIDER);
   });
 });
@@ -125,7 +125,7 @@ describe('demo/handlers/settings · settings_update（写是严格的）', () =>
     expect((await demoInvoke<AppSettings>('settings_get')).language).toBe('zh_cn');
   });
 
-  it('trim 那两步照抄：language 与 proxy.url 落库前各自 trim（service:129-133）', async () => {
+  it('trim 那两步照抄：language 与 proxy.url 落库前各自 trim（service:129-132）', async () => {
     const saved = await demoInvoke<AppSettings>('settings_update', {
       settings: validSettings({
         language: '  zh_cn  ',
@@ -163,7 +163,7 @@ describe('demo/handlers/settings · settings_update（写是严格的）', () =>
       code: 'validation/failed',
       params: { field: 'model.provider', reason: 'unknown_provider', value: UNKNOWN_PROVIDER },
     });
-    // 先体检后落库：任何一项越界就整批拒绝（service:124-141）。
+    // 先体检后落库：任何一项越界就整批拒绝（service:124-140）。
     expect(getDemoDb().settings.app).toStrictEqual(before);
     expect((await demoInvoke<AppSettings>('settings_get')).concurrency).toEqual(
       SEED_SETTINGS.app.concurrency,

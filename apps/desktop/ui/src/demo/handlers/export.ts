@@ -4,7 +4,7 @@
  *
  * # 🔴 这是一处**有意的运行时分叉**（计划正文逐字要求在本文件顶部写明原因）
  * 两侧约束**相反**：
- * - **桌面端**（`api/client.ts:330-341` 的注释逐字）：「导出**不能**用 `<a download href="blob:">`：
+ * - **桌面端**（`api/client.ts:330-336` 的注释逐字）：「导出**不能**用 `<a download href="blob:">`：
  *   macOS 的 WKWebView **不实现** blob 下载，点击后**静默失败**（spec FR-B2 因此要求走 dialog 插件）。
  *   CSV 传 `withBom = true`，Excel 打开中文才不乱码」⇒ 真后端弹「另存为」对话框、
  *   `tokio::fs::write` 落盘，返回**最终路径**（用户取消返回 `null`）。

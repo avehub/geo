@@ -33,6 +33,15 @@
  * 也因此 `LlmTestResult.message` 在 demo 里**恒为 null**——它装的是中文原因，
  * 写进来就踩门禁 7（本目录非注释 CJK 必须为 0）。
  *
+ * # 🔴 `llm_provider_test` 的失败顺序照抄 `state.rs:72-119`（Task 14 复审 Minor 2）
+ * ① `unknown_provider`（`value` = 用户填的非法串）→ ② **仅当**被测厂商是 `custom`：
+ * `base_url` 空白 ⇒ `missing_base_url`、`model` 空白 ⇒ `missing_model`（两者 `value` 都是
+ * `provider.as_str()`，即字符串 `"custom"`）→ ③ 取 Key，不存在/空白 ⇒ `MissingSecret`。
+ * ② 是**纯配置推导**（`config_from_settings` 里两条空白检查），发生在取 Key **之前** ⇒ 先于 ③；
+ * 它与 A-4 已授权的 `language` 空白检查**同形**，不是领域算法（AGENTS 规则 9 不涉及）。
+ * 预设厂商的 `model` 仍回落 `default_model`（A-6/§B-11 不变）；`custom` 的 `default_model`
+ * 本来就是空串（`provider.rs:178` 的 `Custom => ""`，种子 `seed/settings.ts:99` 镜像）⇒ 不回落。
+ *
  * # 🔴 用户 bug #5 在这里**原样复现**，刻意不修（简报 A-2 末段）
  * `client_for`(:248-263) 读的是 `self.get().await?`——**已落库**的设置；而设置页是草稿式
  * （`SettingsPage.tsx:86` 的 `settings = draft ?? settingsQuery.data`，点「保存设置」才落库）
@@ -58,6 +67,11 @@ import { asBoolean, asNumber, asRecord, asString, cleanOptional } from './shared
  * 读设置时认不出的值一律回落它（service:111-117）。
  */
 const DEFAULT_PROVIDER = 'deep_seek';
+/**
+ * `LlmProvider::Custom` 的 `as_str()`（`provider.rs:116`）。只有它需要 ② 那两条配置检查
+ * （`state.rs:104` 的 `if provider == LlmProvider::Custom`），预设厂商的 base_url/model 都有回落。
+ */
+const CUSTOM_PROVIDER = 'custom';
 
 /** 计划正文逐字的那套连通性测试假象：600ms 延迟 + 固定用量，成本恒 0（理由见文件头）。 */
 const LLM_TEST_LATENCY_MS = 600;
@@ -226,17 +240,36 @@ function modelUnderTest(db: DemoDb, saved: AppSettings, provider: string): strin
 }
 
 /**
- * `llm_provider_test`：demo 不发请求，600ms 后回一套固定的成功假象；未配 Key 则 reject。
+ * `llm_provider_test`：demo 不发请求，600ms 后回一套固定的成功假象；失败顺序照抄
+ * `state.rs:72-119`（① `unknown_provider` → ② `custom` 的 `missing_base_url`/`missing_model`
+ * → ③ `missing_secret`），三条都是 reject，绝不混进 `ok=false` 那一支。
  *
  * 🔴 缺 Key 的判定按**被测那个厂商**算（`client_for` 用的是 `config.secret_ref`，
  * 而 `secret_ref` 由被测 provider 推出），不看当前默认厂商配没配。
  */
 export const llmProviderTest: DemoHandler = async (args) => {
   const db = getDemoDb();
-  // 命令入参那条路 ⇒ `llm/config`（service:270-277）。
+  // ① 命令入参那条路 ⇒ `llm/config` + reason=unknown_provider（service:270-277）。
   const provider = requireKnownProvider(db, asString(args.provider));
+  const saved = storedSettings(db);
 
-  // service:256-261：Key 不存在/空白 ⇒ `LlmError::MissingSecret`。demo 的库里只有
+  // ② `custom` 的配置推导（`state.rs:104-118`）。读的是**库里那份**设置经 `client_for`
+  // (`service:249-254`) 之后的形状：被测厂商不是当前默认厂商时 `model.model` 被清成 None，
+  // 而 `base_url` **原样保留**（这个不对称由 `settings.test.ts` 的一条用例钉住）。
+  if (provider === CUSTOM_PROVIDER) {
+    const preset = db.settings.providers.find((info) => info.provider === provider);
+    // `config.base_url` = 库里的覆盖值（trim 后非空才生效），否则回落厂商预设（custom 是空串）。
+    const baseUrl = (saved.model.base_url ?? '').trim() || (preset?.base_url ?? '').trim();
+    if (baseUrl === '') {
+      throw demoError('llm/config', { reason: 'missing_base_url', value: provider });
+    }
+    // `config.model` = 库里那份（只有被测厂商就是默认厂商时才留得住），否则回落 `default_model`。
+    if (modelUnderTest(db, saved, provider).trim() === '') {
+      throw demoError('llm/config', { reason: 'missing_model', value: provider });
+    }
+  }
+
+  // ③ service:256-261：Key 不存在/空白 ⇒ `LlmError::MissingSecret`。demo 的库里只有
   // `configured` 这个布尔（**没有值字段**，AGENTS 规则 3），「空白串算未配」由 `secret_set`
   // 那一侧的 trim 保证 ⇒ 这里读布尔就是等价判据。
   if (!db.secrets.some((row) => row.provider === provider && row.configured)) {
@@ -244,7 +277,6 @@ export const llmProviderTest: DemoHandler = async (args) => {
     throw demoError('llm/missing_secret');
   }
 
-  const saved = storedSettings(db);
   await withLatency(LLM_TEST_LATENCY_MS);
 
   const result: LlmTestResult = {

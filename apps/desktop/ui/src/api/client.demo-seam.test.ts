@@ -32,6 +32,11 @@
  * 归一化成 `ipc/invoke_failed`）；命令面全部接线之后它无处可移 ⇒ 退休。退休不算强度下降：
  * 「分派真的到了假后端」由 ① 接管（严格更强：不仅证明"到了"，还证明"读到了内存库"），
  * 「错误穿过接缝不降级」这一维由 ② 接管（它钉的是**契约码原样透传**，比 `ipc/invoke_failed` 更细）。
+ *
+ * 🔴 但「普通 `Error` → `ipc/invoke_failed`」这一维**不能没人钉**（Task 14 复审 Minor 1）：
+ * 那条归一化路径是**活的**——`demo/handlers/export.ts:77-80` 在运行环境不支持 blob 下载时抛的
+ * 就是普通 `Error`（`demo/backend.ts:34-35` 明写了 handler 仍然可以这么抛）。所以本文件留了一条
+ * **永久探针**：它不随命令面变化而失效，钉的是「非契约类失败也不许裸奔到调用方」。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,6 +49,19 @@ const INVOKE_FAILED = 'ipc/invoke_failed';
 const LLM_CONFIG = 'llm/config';
 const UNKNOWN_PROVIDER = 'no_such_provider';
 const CJK = /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/;
+/** 导出文件名与内容（纯数据，demo 不发请求也不落盘）。 */
+const EXPORT_NAME = 'demo-export.csv';
+const EXPORT_BODY = 'brand,intent\nDemo Brand,pricing_plan\n';
+
+/**
+ * 只含可选成员的 `URL` 视图：永久探针要把 `createObjectURL` **摘掉**来造「运行环境不支持
+ * blob 下载」这个前提（手法与 `demo/handlers/export.test.ts` 里那条守卫用例一致）。
+ */
+interface BlobUrlApi {
+  createObjectURL?: (blob: unknown) => string;
+}
+
+const urlApi = URL as unknown as BlobUrlApi;
 
 type WindowBag = Record<string, unknown>;
 
@@ -122,6 +140,42 @@ describe('api/client · demo 接缝（真检测 + 真分派，不 mock runtime�
     expect(error.code).not.toBe(INVOKE_FAILED);
     expect(error.params).toEqual({ reason: 'unknown_provider', value: UNKNOWN_PROVIDER });
     expect(error.message).not.toMatch(CJK);
+  });
+
+  // 🔴 永久探针（Task 14 复审 Minor 1）：`ipc/invoke_failed` 这一维必须**一直有人钉**。
+  // 它钉的是「handler 抛的**普通 Error**（不是契约 payload）穿过同一条接缝后被归一化」，
+  // 活的走这条路的代码是 `demo/handlers/export.ts:77-80`（运行环境不支持 blob 下载）。
+  it('永久探针：handler 抛的普通 Error 归一化成 ipc/invoke_failed，零调用不变量照样成立', async () => {
+    const { client, mockInvoke } = await loadDemoSeam();
+
+    // 🔴 **白盒造前提**（窄桩；复审 Minor 1 要求「先实测再定」，实测结论写在下面）：
+    // 不装桩时这条命令在本环境里是**成功**的——`URL.createObjectURL` 与 jsdom 的 `Blob` 配套可用，
+    // `client.exportWriteFile(...)` 直接 resolve 出文件名（红输出 `/tmp/t14r1/red.txt:23` 留了证据：
+    // `expected 'demo-export.csv' to be an instance of IpcRequestError`）⇒ `export.ts:78` 那道守卫
+    // 自然走不到。所以这里只摘掉**这一个**静态方法（不桩 `Blob`、不桩 `document`、不碰分派链），
+    // 让「运行环境不支持 blob 下载」这一支如实触发；它在真浏览器里是活的（老 WebView 没有 blob 下载，
+    // `backend.ts:34-35` 明写了 handler 仍然可以抛普通 `Error`）。`finally` 原样还回去，不泄漏。
+    const savedCreateObjectURL = urlApi.createObjectURL;
+    urlApi.createObjectURL = undefined;
+    try {
+      const error: unknown = await client
+        .exportWriteFile(EXPORT_NAME, EXPORT_BODY, true)
+        .catch((cause: unknown) => cause);
+
+      // 不变量在这条路上也必须成立：一次都没碰 Tauri shim，而且**不是** TypeError
+      // （用户 bug #1/#2 的判据；守卫抛的是普通 `Error`，本来就不该是 TypeError）。
+      expect(mockInvoke.callsOf('export_write_file')).toHaveLength(0);
+      expect(error).not.toBeInstanceOf(TypeError);
+      expect(error).toBeInstanceOf(client.IpcRequestError);
+      if (!(error instanceof client.IpcRequestError)) throw new Error('expected IpcRequestError');
+      expect(error.code).toBe(INVOKE_FAILED);
+      expect(error.params).toMatchObject({ cmd: 'export_write_file' });
+      // 判据锁定「是 `export.ts:77-80` 那一支抛的」，而不是别处的意外（不逐字复制生产串，免得自我印证）。
+      expect(String(error.params?.reason ?? '')).toContain('createObjectURL');
+      expect(error.message).not.toMatch(CJK);
+    } finally {
+      urlApi.createObjectURL = savedCreateObjectURL;
+    }
   });
 
   it('正向对照：同一个计数器数得到直接调用 shim 的那一次（证明「零调用」不是读错了实例）', async () => {

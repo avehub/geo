@@ -33,6 +33,10 @@ const REQUESTED_LATENCY_MS = 600;
 const DEFAULT_PROVIDER = 'deep_seek';
 const UNKNOWN_PROVIDER = 'no_such_provider';
 const API_KEY = 'sk-demo-not-a-real-key';
+/** `LlmProvider::Custom` 的 `as_str()`（`crates/geo-llm/src/provider.rs:116`）：它就在种子那 7 条预设里。 */
+const CUSTOM_PROVIDER = 'custom';
+/** 造「custom 填了接口地址」这个前提用的假网关地址（demo 不发请求，它只是数据）。 */
+const GATEWAY_BASE_URL = 'https://gateway.example.com/v1';
 
 async function capture(thunk: () => unknown): Promise<unknown> {
   return Promise.resolve()
@@ -64,6 +68,13 @@ function validSettings(overrides: Record<string, unknown> = {}): AppSettings {
 /** 把某个厂商标成「已配 Key」：走真命令，顺带证明 settings 与 secret 两侧读的是同一份库。 */
 async function configureSecret(provider: string): Promise<void> {
   await demoInvoke('secret_set', { provider, value: API_KEY });
+}
+
+/** 走真命令改库里那份设置的 `model` 段（页面是整包提交的，这里也整包提交）。 */
+async function saveModel(model: Record<string, unknown>): Promise<void> {
+  await demoInvoke('settings_update', {
+    settings: validSettings({ model: { ...SEED_SETTINGS.app.model, ...model } }),
+  });
 }
 
 beforeEach(() => {
@@ -351,6 +362,112 @@ describe('demo/handlers/settings · llm_provider_test', () => {
     const cause = await capture(() => demoInvoke('llm_provider_test', { provider: 'moonshot' }));
 
     expect(expectPayload(cause).code).toBe('llm/missing_secret');
+  });
+
+  // ---- Task 14 复审 Minor 2：`custom` 的配置推导，顺序照 `state.rs:72-119` ----
+  // 真值源的失败顺序是：① `unknown_provider` → ② 仅当 `provider == Custom`：`base_url` 空 ⇒
+  // `missing_base_url`、`model` 空 ⇒ `missing_model`（两者 `value` 都是 `provider.as_str()`）
+  // → ③ 取 Key，空白 ⇒ `MissingSecret`。② 是**纯配置推导**、发生在取 Key **之前**，
+  // 所以下面第一条用例（base_url 空 + Key 也没配 ⇒ 报 `missing_base_url`）是唯一能判别顺序的那条。
+  it('custom 且 base_url 空且未配 Key ⇒ 报 missing_base_url 而**不是** missing_secret（顺序判据）', async () => {
+    const cause = await capture(() =>
+      demoInvoke('llm_provider_test', { provider: CUSTOM_PROVIDER }),
+    );
+
+    expect(expectPayload(cause)).toEqual({
+      code: 'llm/config',
+      params: { reason: 'missing_base_url', value: CUSTOM_PROVIDER },
+    });
+  });
+
+  it('custom 且库里的 base_url 只是空白 ⇒ 仍报 missing_base_url（读侧 trim 镜像 state.rs:99）', async () => {
+    // 🔴 **白盒造前提**（先例：本文件 bug #5 那条直接改 `getDemoDb()`）。走 `settings_update` 造不出来：
+    // demo 的写侧用 `cleanOptional`（`handlers/shared.ts:103-107`）把空白收窄成 `null`；而真后端的
+    // `update()` 只 trim `proxy.url` 与 `language`（service:129-132），**不 trim `base_url`**
+    // ⇒ 库里真可能存着一串空白，读侧那句 `.map(str::trim)`（state.rs:99）就是为它准备的。
+    // 这条断言就是「命令路径造不出这个前提」的证据：写侧把空白收窄成了 `null`。
+    await saveModel({ provider: CUSTOM_PROVIDER, base_url: '   ', model: 'gateway-model' });
+    expect(getDemoDb().settings.app.model.base_url).toBe(null);
+    getDemoDb().settings.app.model.base_url = '   ';
+
+    const cause = await capture(() =>
+      demoInvoke('llm_provider_test', { provider: CUSTOM_PROVIDER }),
+    );
+
+    expect(expectPayload(cause)).toEqual({
+      code: 'llm/config',
+      params: { reason: 'missing_base_url', value: CUSTOM_PROVIDER },
+    });
+  });
+
+  it('custom 且 base_url 填了、模型名空 ⇒ missing_model（value 仍是厂商 id，不是模型名）', async () => {
+    // `custom` 没有默认模型名（`state.rs:111` 注释逐字，判据在 `:112-117`）⇒ 不填就没有回落可用。
+    await saveModel({ provider: CUSTOM_PROVIDER, base_url: GATEWAY_BASE_URL, model: null });
+
+    const cause = await capture(() =>
+      demoInvoke('llm_provider_test', { provider: CUSTOM_PROVIDER }),
+    );
+
+    expect(expectPayload(cause)).toEqual({
+      code: 'llm/config',
+      params: { reason: 'missing_model', value: CUSTOM_PROVIDER },
+    });
+  });
+
+  it('custom 且 base_url 与模型名都填了、未配 Key ⇒ 才轮到 missing_secret（② 在 ③ 之前）', async () => {
+    await saveModel({
+      provider: CUSTOM_PROVIDER,
+      base_url: GATEWAY_BASE_URL,
+      model: 'gateway-model',
+    });
+
+    const cause = await capture(() =>
+      demoInvoke('llm_provider_test', { provider: CUSTOM_PROVIDER }),
+    );
+
+    expect(expectPayload(cause)).toEqual({ code: 'llm/missing_secret', params: {} });
+  });
+
+  it('custom 且都填了、配了 Key ⇒ 成功，model 用填的那个（custom 不回落 default_model）', async () => {
+    await saveModel({
+      provider: CUSTOM_PROVIDER,
+      base_url: GATEWAY_BASE_URL,
+      model: 'gateway-model',
+    });
+    await configureSecret(CUSTOM_PROVIDER);
+
+    const result = await demoInvoke<LlmTestResult>('llm_provider_test', {
+      provider: CUSTOM_PROVIDER,
+    });
+
+    expect(result.model).toBe('gateway-model');
+    // 回落目标本来就是空串（`provider.rs:178` 的 `Custom => ""`，种子在 `seed/settings.ts:99` 镜像）
+    // ⇒ 「custom 不回落」不是一句口号，是这条断言的对照面。
+    expect(seedProvider(CUSTOM_PROVIDER).default_model).toBe('');
+  });
+
+  it('预设厂商 base_url 空也**不**报 missing_base_url：那两条判据只对 custom（state.rs:104）', async () => {
+    // 种子里 deep_seek 的 base_url 是 null（用户没填覆盖），照样不该撞配置推导那两条。
+    const cause = await capture(() =>
+      demoInvoke('llm_provider_test', { provider: DEFAULT_PROVIDER }),
+    );
+
+    expect(expectPayload(cause).code).toBe('llm/missing_secret');
+  });
+
+  it('被测厂商不是默认厂商时只清 model、不清 base_url（client_for:250-254 的不对称）', async () => {
+    // 库里默认厂商仍是 deep_seek，但 base_url 与 model 都填了 ⇒ 测 custom 时
+    // `client_for` 只把 `model.model` 置 None（base_url 原样保留）⇒ 顺序推进到 missing_model。
+    await saveModel({ base_url: GATEWAY_BASE_URL, model: 'saved-model' });
+
+    const cause = await capture(() =>
+      demoInvoke('llm_provider_test', { provider: CUSTOM_PROVIDER }),
+    );
+
+    expect(expectPayload(cause)).toEqual({
+      code: 'llm/config',
+      params: { reason: 'missing_model', value: CUSTOM_PROVIDER },
+    });
   });
 });
 

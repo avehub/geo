@@ -15,7 +15,7 @@
  * # 怎么收集「demo 发出的每个 code」（非空洞的关键）
  * **不**正则扫源码（脆）。把 demo 已接线的每条错误路径都**真的触发一遍**，catch 到 payload 后逐条比对
  * ⇒「发出去的」与「被钉的」是同一批对象。最后那条总扫用例还会断言收集到的 code 集合
- * **正好是** `SCENARIOS` 里那 45 条路径会发出的那 9 个码，证明触发面没有漏。
+ * **正好是** `SCENARIOS` 里那 47 条路径会发出的那 9 个码，证明触发面没有漏。
  *
  * ⚠ 本文件**不许**降级成「只断言 code 存在」，也**不许**为了过测试去改 `contracts/**`（禁改）。
  */
@@ -43,6 +43,10 @@ const catalog: { codes: ErrorCodeEntry[] } = catalogJson;
 const UNKNOWN_PROVIDER = 'no_such_provider';
 /** 种子里第一个厂商（`secret_set` 的空白值那一支要先过 provider 体检才轮到 `api_key`）。 */
 const KNOWN_PROVIDER = 'deep_seek';
+/** `LlmProvider::Custom` 的 `as_str()`：种子里就有这一条预设（`provider.rs:116`）。 */
+const CUSTOM_PROVIDER = 'custom';
+/** 造「custom 填了接口地址」这个前提用的假网关地址（demo 不发请求）。 */
+const GATEWAY_BASE_URL = 'https://gateway.example.com/v1';
 const MISSING_PROJECT_ID = '00000000-0000-4000-8000-0000000000aa';
 const MISSING_ROW_ID = '00000000-0000-4000-8000-0000000000bb';
 const CJK = /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/;
@@ -52,6 +56,11 @@ interface Scenario {
   /** 用例名（ASCII：本目录非注释 CJK 必须为 0）。 */
   name: string;
   cmd: string;
+  /**
+   * 可选的**白盒前提**：在触发之前改内存库（先例：本文件的 `allPilotItemIds()` 直接读
+   * `getDemoDb()`）。只有「命令入参造不出这个前提」时才用它，且要在用例里写明是白盒。
+   */
+  setup?: () => void;
   args: () => Record<string, unknown>;
   code: string;
   /** A-4 / A-5 / A-6 / A-11 真值表里那一行的**精确键集**。 */
@@ -482,10 +491,33 @@ const SCENARIOS: Scenario[] = [
     code: 'llm/missing_secret',
     keys: VALIDATION_0,
   },
+  // ---- llm/config 的另两个 reason：custom 的配置推导（state.rs:104-118），先于 missing_secret ----
+  {
+    name: 'llm_provider_test on custom without a base url',
+    cmd: 'llm_provider_test',
+    // 种子态就够：custom 的预设 base_url 与 default_model 都是空串（provider.rs:165/:178），
+    // 库里也没存 base_url ⇒ 撞 missing_base_url（Key 同样没配，但 ② 在 ③ 之前）。
+    args: () => ({ provider: CUSTOM_PROVIDER }),
+    code: 'llm/config',
+    keys: LLM_CONFIG_2,
+  },
+  {
+    name: 'llm_provider_test on custom with a base url but no model',
+    cmd: 'llm_provider_test',
+    // 🔴 白盒造前提：命令入参里没有 base_url 这个入口（它是**设置**的一部分），
+    // 只能改库。桩很窄——只填这一个字段，不碰分派链、不碰其它段落。
+    setup: () => {
+      getDemoDb().settings.app.model.base_url = GATEWAY_BASE_URL;
+    },
+    args: () => ({ provider: CUSTOM_PROVIDER }),
+    code: 'llm/config',
+    keys: LLM_CONFIG_2,
+  },
 ];
 
 /** 触发一条错误路径并交出 payload；路径没报错就是本文件自己的缺陷（不许静默绿）。 */
 async function emit(scenario: Scenario): Promise<IpcErrorPayload> {
+  scenario.setup?.();
   const cause: unknown = await demoInvoke(scenario.cmd, scenario.args()).then(
     () => null,
     (error: unknown) => error,
@@ -566,7 +598,7 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
 
   it('总扫：把每条错误路径全部触发一遍，逐条比对契约词表，并证明触发面没有漏', async () => {
     // 条数写死在这里而不是标题里：将来加一条路径必须同时改这个数，改不动就是没真的加。
-    expect(SCENARIOS).toHaveLength(45);
+    expect(SCENARIOS).toHaveLength(47);
     const payloads = await Promise.all(SCENARIOS.map((scenario) => emit(scenario)));
 
     expect(payloads).toHaveLength(SCENARIOS.length);
@@ -623,6 +655,12 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
     // 后续任务往库里塞非纯 JSON 的值，这条哨兵会**静默变弱**。
     // ⚠ 用 `toStrictEqual` 而不是 `toEqual`：`toEqual` 与 `JSON.stringify` 在「值为 `undefined` 的键」
     // 这一维上**同盲**（两者都忽略），换成 `toEqual` 并不比原来强；`toStrictEqual` 才真把它纳入判据。
+    // ⚠ `scenario.setup` 是**造前提**（属场景本身，例如把库里的 `base_url` 填上），不是「调用的
+    // 副作用」⇒ 先跑一遍把前提铺好再快照。`emit` 里还会再跑一次，那些 setup 都是幂等赋值，
+    // 所以快照之后库只会因**调用**而变——判据强度不变（本文件 47 条路径一条都不许改库）。
+    for (const scenario of SCENARIOS) {
+      scenario.setup?.();
+    }
     const before = structuredClone(getDemoDb());
 
     for (const scenario of SCENARIOS) {

@@ -6,26 +6,24 @@
  *
  * 机制：这里把 `./runtime` mock 成 `'demo'`，于是 `client.ts` 分派点选中的 invoker 是
  * `demo/backend.ts` 的 `demoInvoke`，而不是 Tauri 的 `invoke`。断言三件事：
- *   ① **契约内**的命令走到假后端，钉**两个半边**：
- *      - **未实现探针**：挑**当前仍是骨架的那一条命令**（即 `demo/backend.ts` 里仍由
- *        `notImplemented()` 占位的那条；探针随 handler 逐轮落地而往后移一位），
- *        断言它 reject 出「未实现」的**英文**开发者信息，经 `callVia`
- *        的 catch 归一化成 `ipc/invoke_failed`（不新增错误码：`contracts/error-codes.json` 冻结在
- *        43 条）。消息里**含命令名** ⇒ 同时证明「真的到达了 `demoBackend`」，否则「两边都没调」也会绿。
- *      - **已实现半边**：已接真 handler 的命令（本轮取 `project_list`）必须 **resolve 出真种子数据**
- *        （按种子的 id / brand_name 断言，不重打字面量）⇒ 证明分派真的读到了内存库，而不是空转。
+ *   ① **契约内**的命令走到假后端并 **resolve 出内存库里的真种子数据**（按种子的 id / brand_name /
+ *      整份设置断言，不重打字面量）⇒ 既证明分派真的到达了 `demoBackend`，也证明它**读到了库**，
+ *      而不是「两边都没调」的假绿。命令面覆盖两个模块（项目与设置），证明这不是对某一条凑巧成立。
  *   ② **契约外**的命令走 demo 守卫 ⇒ `ipc/unknown_command` + `params.cmd` 逐字等于命令名
  *      （`contracts/error-codes.json` 里那条 note 点名的唯一发射点），且归一化后 code 不被吞掉。
  *   ③ demo 分支**绕过了** `invoke`——桩打在 `mockInvoke` 上也不会被碰到。
- *      ③才是「分派真的换了 invoker」的判据：把分派点改回直接调 `invoke`，①拿不到英文信息、
+ *      ③才是「分派真的换了 invoker」的判据：把分派点改回直接调 `invoke`，①拿不到种子数据、
  *      ③数出一次调用，两条一起红。
  *
  * ⚠ 与 `client.demo-seam.test.ts` 的分工：本文件把检测结论**喂**给分派点（证分派正确），
  * 那一份用**真** `runtime` 模块（证检测结论真的传到了分派点、且绕开了 Tauri）。
  *
- * ⚠ **未实现探针是移动的**：某条命令一旦接上真 handler，它就退出探针位、改由「已实现半边」钉住，
- * 探针往后移一位到下一条仍是骨架的命令；40 条全部落地后这半个用例退休。
- * 「③零调用」与「①不含 CJK」是**不变量**，与探针移到哪一条无关（开发者诊断串一律 ASCII，简报 §B-11）。
+ * 🔴 ①曾经还挂着半个**移动探针**：挑一条仍是骨架的命令，断言它 reject 出英文的
+ * 「未实现」开发者信息（经 `callVia` 归一化成 `ipc/invoke_failed`，不新增错误码：
+ * `contracts/error-codes.json` 冻结在 43 条）。命令面全部接线之后探针无处可移 ⇒ 退休，
+ * 「分派真的到了假后端」这个属性由 ① 的已实现半边接管，而它**严格更强**
+ * （不仅证明"到了"，还证明"读到了内存库"）。「③零调用」与「不含 CJK」是**不变量**，与探针无关
+ * （开发者诊断串一律 ASCII）。
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -34,42 +32,34 @@ import { demoInvoke } from '../demo/backend';
 import { mockInvoke } from '../test/invoke-mock';
 import { isIpcErrorPayload } from './types';
 import { SEED_ACTIVE_PROJECT_ID, SEED_ARCHIVED_PROJECT_ID, SEED_PROJECTS } from '../demo/seed/projects';
+import { SEED_SETTINGS } from '../demo/seed/settings';
 
 // `client.ts` 只从 `./runtime` 取 `runtime` 这一个绑定，所以工厂给它就够了。
 vi.mock('./runtime', () => ({ runtime: 'demo' }));
 
-/** 与 `demo/backend.ts` 的 `NOT_IMPLEMENTED` 措辞对齐（独立写死，不 import 生产常量免得自我印证）。 */
-const NOT_IMPLEMENTED = 'not implemented: ';
-const INVOKE_FAILED = 'ipc/invoke_failed';
 const UNKNOWN_COMMAND = 'ipc/unknown_command';
 const CJK = /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/;
 
 describe('api/client · demo 运行时（分派到 src/demo/backend.ts 的假后端）', () => {
-  it('契约内的命令走到 demoBackend：reject「未实现」的英文信息并归一化成 ipc/invoke_failed', async () => {
-    mockInvoke.stubAlways('settings_get', () => ({}));
-
-    const error: unknown = await client.settingsGet().catch((cause: unknown) => cause);
-
-    expect(error).toBeInstanceOf(client.IpcRequestError);
-    if (!(error instanceof client.IpcRequestError)) throw new Error('expected IpcRequestError');
-    expect(error.code).toBe(INVOKE_FAILED);
-    // 含命令名 ⇒ 证明真的到达了 demoBackend（正向对照，不是「两边都没调」的假绿）。
-    expect(error.message).toContain(`${NOT_IMPLEMENTED}settings_get`);
-    expect(error.params).toEqual({
-      cmd: 'settings_get',
-      reason: `${NOT_IMPLEMENTED}settings_get`,
-    });
-    // 开发者诊断串不进词典、不上屏，一律 ASCII（简报 §B-11）。
-    expect(error.message).not.toMatch(CJK);
-  });
-
-  it('已实现半边：M1 的命令 resolve 出真种子数据（分派真的读到内存库，不是空转）', async () => {
+  it('已实现半边：项目命令 resolve 出真种子数据（分派真的读到内存库，不是空转）', async () => {
     const rows = await client.projectList({});
 
     expect(rows.map((row) => row.id)).toContain(SEED_ACTIVE_PROJECT_ID);
     expect(rows.map((row) => row.brand_name)).toContain(SEED_PROJECTS[0].brand_name);
     // 默认过滤掉归档项目：种子那条 archived 不在结果里（过滤逻辑也是真的在跑）。
     expect(rows.map((row) => row.id)).not.toContain(SEED_ARCHIVED_PROJECT_ID);
+  });
+
+  it('已实现半边（探针退休后的对价）：设置命令也 resolve 出种子里那份数据', async () => {
+    // 探针退休不算强度下降的前提就是这条：分派到位的证据从「reject 出带命令名的英文信息」
+    // 换成「resolve 出内存库里的真数据」，后者严格更强（还顺带证明 handler 读的是库，不是常量）。
+    const settings = await client.settingsGet();
+    const providers = await client.llmProviders();
+
+    expect(settings).toEqual(SEED_SETTINGS.app);
+    expect(providers).toEqual(SEED_SETTINGS.providers);
+    expect(mockInvoke.callsOf('settings_get')).toHaveLength(0);
+    expect(mockInvoke.callsOf('llm_providers')).toHaveLength(0);
   });
 
   it('契约外的命令走 demo 守卫：ipc/unknown_command + params.cmd 逐字相等', async () => {

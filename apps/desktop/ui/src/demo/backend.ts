@@ -23,12 +23,16 @@
  * 配合上面那张全覆盖网，键集合与 `IPC_COMMANDS` 由构造保证相等（并有一条断言钉住），
  * 于是本文件只需 `import type`（编译后擦除）⇒ 依赖图保持单向：`api/client` → `demo/backend`。
  *
- * # 未接线的命令由 `notImplemented()` 占位（随落地逐条退休）
- * 占位抛的是**普通 `Error` + 英文开发者信息**（`not implemented: <cmd>`），不是 `IpcErrorPayload`：
- * 它给开发者看、不进词典、**不占错误码**（`contracts/error-codes.json` 冻结在 43 条）；
- * 经 `callVia` 的 catch 会归一化成 `ipc/invoke_failed`，与任何 invoker 失败同一条路径。
- * 某条命令接上真 handler 后就从占位换成具名导入，存量探针测试的**探针位随之后移**；
- * 40 条全部落地 ⇒ `notImplemented` 与那几条探针一起退休（不留死代码）。
+ * # 40 条全部接线（占位与探针已一起退休）
+ * 命令面已经全部落地 ⇒ 这里不再有「未实现」占位。曾经那套 `notImplemented(cmd)` 抛的是
+ * **普通 `Error` + 英文开发者信息**（`not implemented: <cmd>`），不是 `IpcErrorPayload`：
+ * 它给开发者看、不进词典、**不占错误码**（`contracts/error-codes.json` 冻结在 43 条），
+ * 经 `callVia` 的 catch 归一化成 `ipc/invoke_failed`，与任何 invoker 失败同一条路径。
+ * 它退休的对价是断言面**只增不减**（简报 §C）：`backend.test.ts` 的反向断言从 32 条扩到 40 条，
+ * 而「分派真的到了 `demoBackend`」改由**已实现半边**（resolve 出内存库里的种子数据）证明——
+ * 严格更强（不仅证明"到了"，还证明"读到了库"）。
+ * ⚠ handler 仍然**可以**抛普通 `Error`（例如 `handlers/export.ts` 里「运行环境不支持 blob 下载」
+ * 那一支）：同样归一化成 `ipc/invoke_failed`，同样不新增错误码。
  */
 import type { IpcCommand } from '../api/client';
 import {
@@ -37,6 +41,7 @@ import {
   entityCardRevisions,
   entityCardUpdateField,
 } from './handlers/entity-card';
+import { exportWriteFile } from './handlers/export';
 import {
   projectArchive,
   projectCreate,
@@ -72,22 +77,20 @@ import {
   competitorReorder,
   competitorUpsert,
 } from './handlers/relations';
+import { secretDelete, secretSet, secretStatus } from './handlers/secret';
+import {
+  llmProviders,
+  llmProviderTest,
+  settingsGet,
+  settingsUpdate,
+} from './handlers/settings';
 import { withLatency } from './latency';
 import type { DemoHandler } from './types';
 import { demoError } from './types';
 
-const NOT_IMPLEMENTED = 'not implemented: ';
-
-/** 造一条「未实现」的开发者诊断串（英文、含命令名，便于在控制台一眼定位是哪条命令没接）。 */
-function notImplemented(cmd: IpcCommand): DemoHandler {
-  return () => {
-    throw new Error(`${NOT_IMPLEMENTED}${cmd}`);
-  };
-}
-
 /**
- * 40 条命令的假实现表。**逐条列出**（不许用循环批量生成：那就绕过了全覆盖网，
- * 也让"哪条命令归哪个 task"看不出来）。
+ * 40 条命令的假实现表——**全部是真 handler**，一个占位都不剩。
+ * **逐条列出**（不许用循环批量生成：那就绕过了全覆盖网，也让"哪条命令归哪个 task"看不出来）。
  */
 export const demoBackend: Record<IpcCommand, DemoHandler> = {
   // ---- M1 项目 / 实体卡 / 竞品 / 资产（21 条）----
@@ -126,15 +129,15 @@ export const demoBackend: Record<IpcCommand, DemoHandler> = {
   prompt_set_export_csv: promptSetExportCsv,
   prompt_set_import_csv: promptSetImportCsv,
 
-  // ---- 设置 / 密钥 / 导出（8 条，仍由 notImplemented 占位）----
-  settings_get: notImplemented('settings_get'),
-  settings_update: notImplemented('settings_update'),
-  secret_set: notImplemented('secret_set'),
-  secret_status: notImplemented('secret_status'),
-  secret_delete: notImplemented('secret_delete'),
-  llm_provider_test: notImplemented('llm_provider_test'),
-  llm_providers: notImplemented('llm_providers'),
-  export_write_file: notImplemented('export_write_file'),
+  // ---- 设置 / 密钥 / 导出（8 条）----
+  settings_get: settingsGet,
+  settings_update: settingsUpdate,
+  secret_set: secretSet,
+  secret_status: secretStatus,
+  secret_delete: secretDelete,
+  llm_provider_test: llmProviderTest,
+  llm_providers: llmProviders,
+  export_write_file: exportWriteFile,
 };
 
 /**

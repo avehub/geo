@@ -1,38 +1,38 @@
 /**
- * demo 假后端骨架的门禁测试（Task 11 · 计划正文 Task 11 的第 1 步）。
+ * demo 假后端的门禁测试（Task 11 建的骨架，每轮 handler 落地后同步收口）。
  *
- * 钉三件事：
+ * 钉四件事：
  * ① **键集全覆盖**：`demoBackend` 的键集合与 `IPC_COMMANDS` **完全相等**。
  *    `Record<IpcCommand, DemoHandler>` 已经在编译期强制全覆盖（AGENTS 规则 8「命令增减两侧
- *    同时改」的保证），但本轮的未知命令守卫是拿**这张表的键**在运行时收窄的 ⇒ 键集漂了，
+ *    同时改」的保证），但未知命令守卫是拿**这张表的键**在运行时收窄的 ⇒ 键集漂了，
  *    守卫就跟着漂。编译期网 + 运行期集合相等，两道一起才算钉住。
- * ② **还没实现的 handler 逐条抛「未实现」**：给开发者看的英文 `Error`（`not implemented: <cmd>`），
- *    经 `api/client.ts` 的 `callVia` 归一化成 `ipc/invoke_failed`。
- *    ⚠ 逐条替换 handler 时，被替换掉的那条命令要从 ② 的清单里摘掉、并加进下面那张
- *    `IMPLEMENTED_COMMANDS`——那是**预期演进**（骨架变实体），不是断言降级：
- *    ② 的条数**只减**、③（反向断言）的条数**只增**，两道的强度都只增不减。
- * ③ **刷新即重置**：`resetDemoDb()` 真的从种子重建，且种子模块自身不被 db 的改动污染（深拷）。
+ * ② **40 条全部脱离骨架**：逐条空入参调用，谁都不许再抛「未实现」。
+ *    🔴 这条是「未实现探针」退休后的**对价**（简报 §C）：探针的价值是「证明分派真的到了
+ *    `demoBackend`」，40 条全落地之后它无处可移；接管的这条断言面从 **32 扩到 40**，
+ *    并按模块逐条列出清单（不用前缀正则）——那张清单同时就是「哪条命令归哪一轮」的账本。
+ * ③ **`demoInvoke` 真的走到 handler**：拿一条已落地的命令断言它 **resolve 出内存库里的种子数据**。
+ *    旧探针只能证明「消息里带命令名」，这条还证明「读到了库」⇒ 严格更强（简报 §C 的裁定原则）。
+ * ④ **刷新即重置**：`resetDemoDb()` 真的从种子重建，且种子模块自身不被 db 的改动污染（深拷）。
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { IPC_COMMANDS } from '../api/client';
 import type { IpcCommand } from '../api/client';
+import type { AppSettings } from '../api/types';
 import { isIpcErrorPayload } from '../api/types';
 import { demoBackend, demoInvoke } from './backend';
 import { createDemoDb, getDemoDb, resetDemoDb } from './db';
 import { DEFAULT_DEMO_LATENCY_MS, setDemoLatency, withLatency } from './latency';
 import { SEED_PROJECTS } from './seed/projects';
+import { SEED_SETTINGS } from './seed/settings';
 import { demoError } from './types';
-
-/** 与 `demo/backend.ts` 里的措辞对齐（这里独立写死，不 import 生产常量，免得自我印证）。 */
-const NOT_IMPLEMENTED = 'not implemented: ';
 
 /** 与 `client.demo-runtime.test.ts` 同一条判据：开发者诊断串不许含 CJK（§B-11）。 */
 const CJK = /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/;
 
 /**
  * 已接真 handler 的命令，按**模块**分组逐条列出（不用前缀正则）：这张清单就是
- * 「哪条命令已经脱离骨架」的账本，② 的待实现集合 = `IPC_COMMANDS` 减它。
+ * 「哪条命令已经脱离骨架」的账本，② 的断言面 = 它的全集，待实现集合 = `IPC_COMMANDS` 减它。
  * M1 21 条（`project_*` 10 + `entity_card_*` 4 + `competitor_*` 4 + `asset_*` 3）。
  */
 const M1_COMMANDS: readonly IpcCommand[] = [
@@ -74,8 +74,24 @@ const M2_COMMANDS: readonly IpcCommand[] = [
   'prompt_set_import_csv',
 ];
 
-/** 已接线全集（② 的补集、③ 的断言面）：随每轮落地**只增不减**。 */
-const IMPLEMENTED_COMMANDS: readonly IpcCommand[] = [...M1_COMMANDS, ...M2_COMMANDS];
+/** 设置 / 密钥 / 导出 8 条（`settings_*` 2 + `secret_*` 3 + `llm_*` 2 + `export_*` 1，Task 14）。 */
+const SETTINGS_COMMANDS: readonly IpcCommand[] = [
+  'settings_get',
+  'settings_update',
+  'secret_set',
+  'secret_status',
+  'secret_delete',
+  'llm_provider_test',
+  'llm_providers',
+  'export_write_file',
+];
+
+/** 已接线全集（② 的断言面）：随每轮落地**只增不减**；Task 14 之后就是 40 条全集。 */
+const IMPLEMENTED_COMMANDS: readonly IpcCommand[] = [
+  ...M1_COMMANDS,
+  ...M2_COMMANDS,
+  ...SETTINGS_COMMANDS,
+];
 
 /** 把「同步 throw」与「返回 rejected promise」两种 handler 形状收成同一个 catch。 */
 async function capture(thunk: () => unknown): Promise<unknown> {
@@ -101,38 +117,33 @@ describe('demo/backend · 骨架契约', () => {
     expect([...keys].sort()).toEqual([...IPC_COMMANDS].sort());
   });
 
-  it('剩下 8 条 handler 逐条抛「not implemented: <cmd>」的英文 Error', async () => {
+  it('40 条全部脱离骨架：空入参调用不再抛「not implemented」（反向断言，强度只增不减）', async () => {
+    // 三份账本各自的条数写死在这里：将来加一条命令必须同时改这个数，改不动就是没真的加。
     expect(M1_COMMANDS).toHaveLength(21);
     expect(M2_COMMANDS).toHaveLength(11);
-    const pending = IPC_COMMANDS.filter((cmd) => !IMPLEMENTED_COMMANDS.includes(cmd));
-    expect(pending).toHaveLength(8);
+    expect(SETTINGS_COMMANDS).toHaveLength(8);
+    expect(IMPLEMENTED_COMMANDS).toHaveLength(40);
+    // 账本没有漏项：`IPC_COMMANDS` 里没有一条还挂在「待实现」上（Task 14 之后这个集合恒空）。
+    expect(IPC_COMMANDS.filter((cmd) => !IMPLEMENTED_COMMANDS.includes(cmd))).toEqual([]);
 
-    for (const cmd of pending) {
-      const cause = await capture(() => demoBackend[cmd]({}));
-
-      expect(cause, cmd).toBeInstanceOf(Error);
-      expect((cause as Error).message).toBe(`${NOT_IMPLEMENTED}${cmd}`);
-      expect((cause as Error).message).not.toMatch(CJK);
-    }
-  });
-
-  it('已接线的 32 条都脱离骨架：空入参调用不再抛「not implemented」（反向断言，强度只增不减）', async () => {
-    expect(IMPLEMENTED_COMMANDS).toHaveLength(32);
     for (const cmd of IMPLEMENTED_COMMANDS) {
       const cause = await capture(() => demoBackend[cmd]({}));
       const message = cause instanceof Error ? cause.message : '';
 
       expect(message, cmd).not.toContain('not implemented');
+      expect(message, cmd).not.toMatch(CJK);
     }
   });
 
-  it('demoInvoke 对契约内命令真的走到 demoBackend（消息里带命令名）', async () => {
-    // 探针换成**仍未实现**的命令：M1/M2 的 32 条都已经是真 handler 了（断言形状一个字没改）。
-    const cause = await capture(() => demoInvoke('settings_get', {}));
+  it('demoInvoke 对契约内命令真的走到 demoBackend：已落地的那条 resolve 出内存库里的种子数据', async () => {
+    // 探针退休后的等价物（简报 §C-3）：旧断言只看「reject 的消息里带命令名」，
+    // 这条直接拿回**库里的种子设置** ⇒ 既证明分派穿过了守卫与延迟层到达 handler，
+    // 也证明 handler 真的读到了内存库（旧探针证不了后半截，严格更强）。
+    const settings = await demoInvoke<AppSettings>('settings_get');
 
-    expect(cause).toBeInstanceOf(Error);
-    expect((cause as Error).message).toBe(`${NOT_IMPLEMENTED}settings_get`);
-    expect((cause as Error).message).not.toMatch(CJK);
+    expect(settings).toEqual(SEED_SETTINGS.app);
+    // 归一化后的稳定 id（`LlmProvider::default()` = DeepSeek，带下划线）。
+    expect(settings.model.provider).toBe('deep_seek');
   });
 
   it('demoInvoke 对未知命令 reject ipc/unknown_command，params.cmd 逐字等于命令名', async () => {

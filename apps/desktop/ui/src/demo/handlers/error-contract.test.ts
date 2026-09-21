@@ -13,9 +13,9 @@
  *    A-5（format_version / payload）、A-6（field_path 四种）、A-11（三个 not_found 都必带 `kind`）。
  *
  * # 怎么收集「demo 发出的每个 code」（非空洞的关键）
- * **不**正则扫源码（脆）。把 M1 + M2 的每条错误路径都**真的触发一遍**，catch 到 payload 后逐条比对
+ * **不**正则扫源码（脆）。把 demo 已接线的每条错误路径都**真的触发一遍**，catch 到 payload 后逐条比对
  * ⇒「发出去的」与「被钉的」是同一批对象。最后那条总扫用例还会断言收集到的 code 集合
- * **正好是** M1 会用到的那 4 个，证明触发面没有漏。
+ * **正好是** `SCENARIOS` 里那 45 条路径会发出的那 9 个码，证明触发面没有漏。
  *
  * ⚠ 本文件**不许**降级成「只断言 code 存在」，也**不许**为了过测试去改 `contracts/**`（禁改）。
  */
@@ -39,6 +39,10 @@ interface ErrorCodeEntry {
 
 const catalog: { codes: ErrorCodeEntry[] } = catalogJson;
 
+/** 认不出的服务商（`llm/config` 与 `validation/failed` 两条路都用它当输入）。 */
+const UNKNOWN_PROVIDER = 'no_such_provider';
+/** 种子里第一个厂商（`secret_set` 的空白值那一支要先过 provider 体检才轮到 `api_key`）。 */
+const KNOWN_PROVIDER = 'deep_seek';
 const MISSING_PROJECT_ID = '00000000-0000-4000-8000-0000000000aa';
 const MISSING_ROW_ID = '00000000-0000-4000-8000-0000000000bb';
 const CJK = /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/;
@@ -61,6 +65,11 @@ const VALIDATION_3 = ['field', 'reason', 'value'];
 const VALIDATION_4 = ['expected', 'field', 'reason', 'value'];
 /** `prompt_set/empty_import` 在契约里登记的 params 是**空数组** ⇒ 一个键都不许加。 */
 const VALIDATION_0: string[] = [];
+/**
+ * `llm/config` 的「认不出的服务商」那一支（`settings_service.rs:270-279` 的 `parse_provider`）：
+ * 契约给这条码登记了两个键，发射点也是两个 ⇒ 与 `validation/failed` 的三键形态**不能混**。
+ */
+const LLM_CONFIG_2 = ['reason', 'value'];
 
 /** 小样本题库的全部条目 id（造「一次删光」这个前提用）。 */
 function allPilotItemIds(): string[] {
@@ -404,6 +413,75 @@ const SCENARIOS: Scenario[] = [
     code: 'prompt_set/empty_import',
     keys: VALIDATION_0,
   },
+
+  // ---- 设置 / 密钥 / LLM 测试（Task 14）：两个 code 各走各的路，绝不混用 ----
+  // 表单体检（`settings_update`）⇒ `validation/failed`；命令入参（`secret_*` / `llm_provider_test`）
+  // ⇒ `llm/config`。真值源 `settings_service.rs:270-283`：同一份数据，只是 code 不同。
+  {
+    name: 'settings_update where model.provider is unknown',
+    cmd: 'settings_update',
+    args: () => ({
+      settings: {
+        ...getDemoDb().settings.app,
+        model: { ...getDemoDb().settings.app.model, provider: UNKNOWN_PROVIDER },
+      },
+    }),
+    code: 'validation/failed',
+    keys: VALIDATION_3,
+  },
+  {
+    name: 'settings_update where language is blank',
+    cmd: 'settings_update',
+    // 整包提交：只把 language 弄坏，其余照库里那份 ⇒ 越界的那一项让整批被拒。
+    args: () => ({ settings: { ...getDemoDb().settings.app, language: '   ' } }),
+    code: 'validation/failed',
+    keys: VALIDATION_2,
+  },
+  {
+    name: 'secret_set with an unknown provider',
+    cmd: 'secret_set',
+    args: () => ({ provider: UNKNOWN_PROVIDER, value: 'sk-demo-not-a-real-key' }),
+    code: 'llm/config',
+    keys: LLM_CONFIG_2,
+  },
+  {
+    name: 'secret_set with a blank api key',
+    cmd: 'secret_set',
+    // 🔴 `field` 逐字是 `api_key`（裁定 R-F 的唯一例外），不是含糊的 `value`。
+    args: () => ({ provider: KNOWN_PROVIDER, value: '   ' }),
+    code: 'validation/failed',
+    keys: VALIDATION_2,
+  },
+  {
+    name: 'secret_status with an unknown provider',
+    cmd: 'secret_status',
+    args: () => ({ provider: UNKNOWN_PROVIDER }),
+    code: 'llm/config',
+    keys: LLM_CONFIG_2,
+  },
+  {
+    name: 'secret_delete with an unknown provider',
+    cmd: 'secret_delete',
+    args: () => ({ provider: UNKNOWN_PROVIDER }),
+    code: 'llm/config',
+    keys: LLM_CONFIG_2,
+  },
+  {
+    name: 'llm_provider_test with an unknown provider',
+    cmd: 'llm_provider_test',
+    args: () => ({ provider: UNKNOWN_PROVIDER }),
+    code: 'llm/config',
+    keys: LLM_CONFIG_2,
+  },
+  {
+    name: 'llm_provider_test without a configured key',
+    cmd: 'llm_provider_test',
+    // 契约给这条码登记的 params 就是空数组（Plan A Task 4 断言其为空 map）⇒ 一个键都不许加，
+    // 尤其不许把 provider 塞进去（前端要知道是哪个厂商，靠的是它自己发出去的那个入参）。
+    args: () => ({ provider: KNOWN_PROVIDER }),
+    code: 'llm/missing_secret',
+    keys: VALIDATION_0,
+  },
 ];
 
 /** 触发一条错误路径并交出 payload；路径没报错就是本文件自己的缺陷（不许静默绿）。 */
@@ -488,16 +566,18 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
 
   it('总扫：把每条错误路径全部触发一遍，逐条比对契约词表，并证明触发面没有漏', async () => {
     // 条数写死在这里而不是标题里：将来加一条路径必须同时改这个数，改不动就是没真的加。
-    expect(SCENARIOS).toHaveLength(37);
+    expect(SCENARIOS).toHaveLength(45);
     const payloads = await Promise.all(SCENARIOS.map((scenario) => emit(scenario)));
 
     expect(payloads).toHaveLength(SCENARIOS.length);
     const codes = [...new Set(payloads.map((payload) => payload.code))].sort();
-    // 触发面自查：M1 + M2 会用到的 code 就这 7 个（A-11 的表 + M2 的两个 not_found 与空导入），
-    // 少了说明本文件有路径没真的触发。
+    // 触发面自查：demo 会用到的 code 就这 9 个（M1 的 A-11 表 + M2 的两个 not_found 与空导入
+    // + 设置/密钥那一轮的 `llm/config` 与 `llm/missing_secret`），少了说明本文件有路径没真的触发。
     expect(codes).toEqual([
       'competitor/not_found',
       'entity_card/not_found',
+      'llm/config',
+      'llm/missing_secret',
       'project/not_found',
       'prompt_item/not_found',
       'prompt_set/empty_import',

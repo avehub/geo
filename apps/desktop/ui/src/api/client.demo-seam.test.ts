@@ -22,20 +22,27 @@
  * 根本不是同一个计数器的情况下**恒绿**（空洞）。动态 import 与 `client.ts` 命中同一个注册表条目，
  * 计数器才是同一个实例；最后那条「正向对照」用例把这件事本身也钉住了。
  *
- * ⚠ 主用例钉**两个半边**：已接真 handler 的命令（本轮 `project_list`）**resolve 出真种子数据**；
- * 仍是骨架的命令（取 `demo/backend.ts` 里仍由 `notImplemented()` 占位的那条；
- * 探针随落地逐轮后移，40 条全落地后退休）
- * **reject 出英文 not-implemented**。两个半边都**不碰 Tauri shim**。
- * 「`mockInvoke` 零调用」与「不是 `TypeError`」是**不变量**，它们才是本用例的主断言，与探针位无关。
+ * ⚠ 主用例钉**三个半边**，三个都**不碰 Tauri shim**：
+ * ① 已接真 handler 的命令 **resolve 出内存库里的真种子数据**（两个模块各证一次 ⇒ 不是对某一条凑巧成立）；
+ * ② demo handler 发出的**契约错误 payload** 穿过同一条接缝后 code / params 都不被吞掉；
+ * ③ 上面两条路上 `mockInvoke` 都是**零调用**。
+ * 「`mockInvoke` 零调用」与「不是 `TypeError`」是**不变量**，它们才是本用例的主断言。
+ *
+ * 🔴 这里曾经还挂着半个**移动探针**（挑一条仍是骨架的命令，断言它 reject 出英文 not-implemented、
+ * 归一化成 `ipc/invoke_failed`）；命令面全部接线之后它无处可移 ⇒ 退休。退休不算强度下降：
+ * 「分派真的到了假后端」由 ① 接管（严格更强：不仅证明"到了"，还证明"读到了内存库"），
+ * 「错误穿过接缝不降级」这一维由 ② 接管（它钉的是**契约码原样透传**，比 `ipc/invoke_failed` 更细）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SEED_ACTIVE_PROJECT_ID, SEED_ARCHIVED_PROJECT_ID, SEED_PROJECTS } from '../demo/seed/projects';
+import { SEED_SETTINGS } from '../demo/seed/settings';
 
 const INTERNALS = '__TAURI_INTERNALS__';
-/** 与 `demo/backend.ts` 的 `NOT_IMPLEMENTED` 措辞对齐（独立写死，不 import 生产常量免得自我印证）。 */
-const NOT_IMPLEMENTED = 'not implemented: ';
 const INVOKE_FAILED = 'ipc/invoke_failed';
+/** demo handler 在命令入参认不出时发的那条码（`settings_service.rs:270-279` 的 `parse_provider`）。 */
+const LLM_CONFIG = 'llm/config';
+const UNKNOWN_PROVIDER = 'no_such_provider';
 const CJK = /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/;
 
 type WindowBag = Record<string, unknown>;
@@ -95,17 +102,25 @@ describe('api/client · demo 接缝（真检测 + 真分派，不 mock runtime�
     // ⚠ 上面那条命令现在是**成功**的：成功而不碰 shim，才是「浏览器里那句 invoke 报错不会再出现」的判据。
     expect(mockInvoke.callsOf('project_list')).toHaveLength(0);
 
-    // 未实现探针半边：仍是骨架的命令 reject 英文 not-implemented，归一化成 ipc/invoke_failed。
-    const error: unknown = await client.settingsGet().catch((cause: unknown) => cause);
+    // 已实现半边（第二条）：设置命令也 resolve 出内存库里的种子数据 ⇒ 分派对每条命令都成立。
+    const settings = await client.settingsGet();
+    expect(settings).toEqual(SEED_SETTINGS.app);
     expect(mockInvoke.callsOf('settings_get')).toHaveLength(0);
+
+    // 错误半边（探针退休后接管「错误穿过接缝不降级」这一维）：demo handler 发的契约 payload
+    // 经 `callVia` 归一化后 code / params 原样透传，**不落进** `ipc/invoke_failed` 那一桶。
+    const error: unknown = await client
+      .secretStatus(UNKNOWN_PROVIDER)
+      .catch((cause: unknown) => cause);
+    expect(mockInvoke.callsOf('secret_status')).toHaveLength(0);
     // 主断言②：用户原始报错 `Cannot read properties of undefined (reading 'invoke')` 是 TypeError，
     // 所以「不是 TypeError」才是「浏览器里那句密码式报错不会再出现」的判据。
     expect(error).not.toBeInstanceOf(TypeError);
     expect(error).toBeInstanceOf(client.IpcRequestError);
     if (!(error instanceof client.IpcRequestError)) throw new Error('expected IpcRequestError');
-    expect(error.code).toBe(INVOKE_FAILED);
-    // 探针位随 handler 落地逐轮后移；与 client.demo-runtime.test.ts 用同一个契约常量。
-    expect(error.message).toContain(`${NOT_IMPLEMENTED}settings_get`);
+    expect(error.code).toBe(LLM_CONFIG);
+    expect(error.code).not.toBe(INVOKE_FAILED);
+    expect(error.params).toEqual({ reason: 'unknown_provider', value: UNKNOWN_PROVIDER });
     expect(error.message).not.toMatch(CJK);
   });
 

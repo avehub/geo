@@ -35,6 +35,7 @@ export function detectRuntime(win?: unknown): Runtime {
 
 /**
  * 本次加载的运行时：**模块首次被 import 时求值一次**，之后不再变。
+ * ⚠ 隐含假设：本常量在 bundle **求值期**读定一次，因此依赖 Tauri core 对 `__TAURI_INTERNALS__` 的注入早于页面脚本求值（`@tauri-apps/api` 自己是**调用时**才读、不依赖此顺序；本检测依赖）。若将来改成 lazy getter（每次调用现判），这条假设即可去掉。
  *
  * 入参写成 `typeof window === 'undefined' ? undefined : window` 而不是裸 `window`：
  * 裸引用在没有 DOM 全局的环境（SSR / node）里直接是 `ReferenceError`，而检测的职责恰恰是

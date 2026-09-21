@@ -8,6 +8,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
+import { demoInvoke } from '../demo/backend';
 import { runtime } from './runtime';
 import type {
   AppSettings,
@@ -150,6 +151,8 @@ export type IpcInvoker = <T>(cmd: string, args?: Record<string, unknown>) => Pro
  *
  * 错误归一化留在这里、不留给 invoker：不论走 Tauri 的 `invoke` 还是 demo 的假后端，
  * 调用方看到的都是带稳定 code 的 `IpcRequestError`——Task 9 的成果，不因分派点搬家而回退。
+ *
+ * @internal 仅供 `call()` 与测试注入使用；组件一律走 `client.*` 的具名导出，不要直接 callVia/invoke。
  */
 export async function callVia<T>(
   cmd: IpcCommand,
@@ -163,31 +166,10 @@ export async function callVia<T>(
   }
 }
 
-/**
- * demo 运行时（浏览器，没有 Tauri IPC 桥）下的占位 invoker。
- *
- * 假后端是 Task 11 的产物（`src/demo/**` 今天还不存在），所以这一轮只能抛一句**给开发者看的**
- * 英文信息。它跑在 i18n 之外，照 Task 9 §B-4 对 `main.tsx` 挂载不变量的先例：不进词典、
- * 不开扫描白名单、用英文。相比原先浏览器里那句密码式的
- * `Cannot read properties of undefined (reading 'invoke')`，这句点名了「非 Tauri 运行时 +
- * demo 后端尚未接线」，严格更好，且零契约影响、不阻塞 Task 11。
- *
- * ⚠ 它是普通 `Error`、**不是** `IpcErrorPayload`，**不新增错误码**
- * （`contracts/error-codes.json` 冻结在 43 条）；经 `callVia` 的 catch 归一化成
- * `ipc/invoke_failed`，与任何 invoker 失败走同一条路径。
- * ⚠ 不要为 Task 11 预留可变绑定的注册器（`registerDemoInvoker()` 之类）——那是过度设计：
- * 届时只需把下面 `call()` 里的 `demoNotWired` 换成 `demoInvoke` 的 import，一行的事。
- */
-const DEMO_NOT_WIRED = 'demo runtime detected but the demo backend is not wired yet (Task 11)';
-
-async function demoNotWired<T>(): Promise<T> {
-  throw new Error(DEMO_NOT_WIRED);
-}
-
 async function call<T>(cmd: IpcCommand, args?: Record<string, unknown>): Promise<T> {
   // `runtime` 是模块级常量（`api/runtime.ts`）：首次 import 时按 `window.__TAURI_INTERNALS__`
   // 在不在读定一次，判据与 `@tauri-apps/api` 自己的取用方式同源（见那个文件的头注释）。
-  return callVia<T>(cmd, args, runtime === 'tauri' ? invoke : demoNotWired);
+  return callVia<T>(cmd, args, runtime === 'tauri' ? invoke : demoInvoke);
 }
 
 // ---------------------------------------------------------------------------

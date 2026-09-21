@@ -109,7 +109,12 @@ export interface PromptSeedRow {
  * 造一个 `IpcErrorPayload` 形状的错误（简报 §B-7）。
  *
  * - **只造形状、不新增码**：`contracts/error-codes.json` 冻结在 43 条，`code` 必须是里面已有的；
- * - **`params` 的键集必须与该 code 登记的完全一致**（多一个少一个都算违约：词典插值会出空洞）。
+ * - **`params` 的键集要同时满足两层**（B-13②，更正原先「必须完全一致」的口径，见简报 §A-11）：
+ *   ① **对契约（词表）**——发出的每个键都 **∈** 该 code 在 `contracts/error-codes.json` 登记的 `params`
+ *   数组（**子集**关系，不是相等）；② **对发射点（真值表）**——**精确键集以该 code 的 Rust 发射点为准**：
+ *   例如 `validation/failed` 登记 `expected/field/limit/reason/value` 共 5 个键，而空白 `domain` 只发
+ *   `{field, reason}` 2 个键、非法域名发 3 个键——**真实后端自己就发子集**。
+ *   ⚠ 反过来**少一个已登记的必需键**同样违约（三个 `not_found` 都必须带 `kind`），词典插值会出空洞。
  *   本 helper **不校验键集**——校验需要把契约表复制一份进前端，那必然漂移；
  *   改由 `src/i18n/error-codes.test.ts`（词典侧）与调用点的测试（demo 侧）两头钉；
  * - `message` 是**语言中立紧凑串** `{code} {k}={v}…`，键按字典序，与后端
@@ -119,7 +124,7 @@ export interface PromptSeedRow {
  *   demo 这边没有 ⇒ 写 handler 时就不要把用户输入的 Key 放进 params。
  *
  * @param code `contracts/error-codes.json` 里已登记的稳定错误码。
- * @param params 该 code 登记的 params，键集必须逐字一致。
+ * @param params 该 code 的 params：每个键必须 ∈ 契约登记的词表，精确键集以其 Rust 发射点为准（见上）。
  * @param detail 结构化上下文，默认 `null`（与 DTO 的 `detail?: unknown | null` 对齐）。
  */
 export function demoError(

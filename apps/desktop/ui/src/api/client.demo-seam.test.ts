@@ -22,10 +22,14 @@
  * 根本不是同一个计数器的情况下**恒绿**（空洞）。动态 import 与 `client.ts` 命中同一个注册表条目，
  * 计数器才是同一个实例；最后那条「正向对照」用例把这件事本身也钉住了。
  *
- * ⚠ Task 12 接上真 handler 之后，本文件的**结果侧**会从 `rejects` 翻成 `resolves`；
- * 「`mockInvoke` 零调用」与「不是 `TypeError`」这两条**不变**，它们才是本用例的主断言。
+ * ⚠ 主用例钉**两个半边**：已接真 handler 的命令（本轮 `project_list`）**resolve 出真种子数据**；
+ * 仍是骨架的命令（本轮 `prompt_set_list`；探针随落地逐轮后移，40 条全落地后退休）
+ * **reject 出英文 not-implemented**。两个半边都**不碰 Tauri shim**。
+ * 「`mockInvoke` 零调用」与「不是 `TypeError`」是**不变量**，它们才是本用例的主断言，与探针位无关。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { SEED_ACTIVE_PROJECT_ID, SEED_ARCHIVED_PROJECT_ID, SEED_PROJECTS } from '../demo/seed/projects';
 
 const INTERNALS = '__TAURI_INTERNALS__';
 /** 与 `demo/backend.ts` 的 `NOT_IMPLEMENTED` 措辞对齐（独立写死，不 import 生产常量免得自我印证）。 */
@@ -80,18 +84,27 @@ describe('api/client · demo 接缝（真检测 + 真分派，不 mock runtime�
   it('demo 分派一次都没碰 Tauri invoke shim，rejection 也不是 TypeError', async () => {
     const { client, mockInvoke } = await loadDemoSeam();
 
-    const error: unknown = await client.projectList({}).catch((cause: unknown) => cause);
+    // 已实现半边：resolve 出**真种子数据**（按种子 id / brand_name 断言，不重打字面量）。
+    const rows = await client.projectList({});
+    expect(rows.map((row) => row.id)).toContain(SEED_ACTIVE_PROJECT_ID);
+    expect(rows.map((row) => row.brand_name)).toContain(SEED_PROJECTS[0].brand_name);
+    expect(rows.map((row) => row.id)).not.toContain(SEED_ARCHIVED_PROJECT_ID);
 
     // 主断言①：真检测结论 + 真分派点，Tauri invoke 一次都没被调用。
+    // ⚠ 上面那条命令现在是**成功**的：成功而不碰 shim，才是「浏览器里那句 invoke 报错不会再出现」的判据。
     expect(mockInvoke.callsOf('project_list')).toHaveLength(0);
+
+    // 未实现探针半边：仍是骨架的命令 reject 英文 not-implemented，归一化成 ipc/invoke_failed。
+    const error: unknown = await client.promptSetList('p-probe').catch((cause: unknown) => cause);
+    expect(mockInvoke.callsOf('prompt_set_list')).toHaveLength(0);
     // 主断言②：用户原始报错 `Cannot read properties of undefined (reading 'invoke')` 是 TypeError，
     // 所以「不是 TypeError」才是「浏览器里那句密码式报错不会再出现」的判据。
     expect(error).not.toBeInstanceOf(TypeError);
     expect(error).toBeInstanceOf(client.IpcRequestError);
     if (!(error instanceof client.IpcRequestError)) throw new Error('expected IpcRequestError');
     expect(error.code).toBe(INVOKE_FAILED);
-    // 结果侧（Task 12 之后会翻成 resolves）：与 client.demo-runtime.test.ts 用同一个契约常量。
-    expect(error.message).toContain(`${NOT_IMPLEMENTED}project_list`);
+    // 探针位随 handler 落地逐轮后移；与 client.demo-runtime.test.ts 用同一个契约常量。
+    expect(error.message).toContain(`${NOT_IMPLEMENTED}prompt_set_list`);
     expect(error.message).not.toMatch(CJK);
   });
 

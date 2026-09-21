@@ -237,7 +237,9 @@ describe('demo/seed · 题库（§B-3 / A-8）', () => {
       [62, 'sufficient'],
       [28, 'insufficient'],
     ]);
-    // 一致性自检（不是重算分级）：条目数与档位必须落在 src/api/constants.ts 那两个镜像常量的同一侧。
+    // B-13①（原注释写「一致性自检（不是重算分级）」，与紧随其后的代码不符 ⇒ 改成实话）：
+    // 用 src/api/constants.ts 的镜像常量**交叉重算**一遍档位；真值源是 crates/geo-domain/src/prompt.rs 的
+    // sample_size_grade，镜像常量漂了这里会红。
     for (const set of SEED_PROMPT_SETS) {
       const expected =
         set.items.length >= SUFFICIENT_SAMPLE_SIZE

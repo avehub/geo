@@ -1,12 +1,16 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import ProjectListPage from './ProjectListPage';
 import { mockInvoke } from '../test/invoke-mock';
 import { renderWithProviders } from '../test/render';
 import { makeProject } from '../test/fixtures';
 import type { Project } from '../api/types';
+import { demoInvoke } from '../demo/backend';
+import { resetDemoDb } from '../demo/db';
+import { SEED_PROJECTS } from '../demo/seed/projects';
+import zhCN from '../i18n/locales/zh-CN';
 
 const hongyu = makeProject({ id: 'p-hongyu', name: '宏宇泵业 GEO', brand_name: '宏宇泵业' });
 const valve = makeProject({ id: 'p-valve', name: '南方阀门项目', brand_name: '南方阀门' });
@@ -352,5 +356,54 @@ describe('ProjectListPage', () => {
     expect(screen.getByRole('button', { name: /刷新/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /新建项目/ })).toBeInTheDocument();
     expect(screen.getByText(/^提示：标签列可直接输入后回车增删/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * B-3（简报 §B-3 / A-3）：把 `project_list` **真的转发进 demo 内存后端**，证明
+ * 页面 → `client.projectList` → `demoInvoke` → `handlers/project.ts` 这条链是通的，
+ * 而不是像上面 15 条那样打在本地桩上。
+ *
+ * 🔴 为什么必须逐命令 `stubAlways` 闭包（A-3）：`InvokeHandler` 只收 `args`、**收不到 `cmd`**，
+ * 所以 `mockInvoke.setFallback` 无从转发；而 `stub` 是**一次性消费**（`invoke()` 对非 always 桩走
+ * `list.shift()`）⇒ 勾「显示已归档」后页面会**第二次**拉列表，用 `stub` 第二次就落到 fallback。
+ * 本用例最后那条 `>= 2` 就是 §D-9④ 变异（`stubAlways` → `stub`）的钉子。
+ *
+ * ⚠ 只转发本用例真的会触发的命令（`project_list`），不把 21 条全塞进来（B-3）。
+ * ⚠ 断言里的中文只是**种子数据**（品牌名）；界面文案走词典 `zhCN.project.list.showArchived`（B-3）。
+ */
+describe('ProjectListPage · B-3 demo 后端转发（逐命令 stubAlways 闭包）', () => {
+  beforeEach(() => {
+    resetDemoDb();
+  });
+
+  afterEach(() => {
+    resetDemoDb();
+    mockInvoke.reset();
+  });
+
+  it('种子项目经 demoInvoke 渲染出来，勾「显示已归档」后第二次拉列表带出归档项目', async () => {
+    mockInvoke.stubAlways('project_list', (args) => demoInvoke('project_list', args));
+    renderWithProviders(<ProjectListPage />);
+
+    // 非空洞断言①：渲染出来的是**种子**里的项目名（active 在列、archived 默认不在列）。
+    expect(await screen.findByText(SEED_PROJECTS[0].name)).toBeInTheDocument();
+    expect(screen.queryByText(SEED_PROJECTS[1].name)).not.toBeInTheDocument();
+    // 非空洞断言②：证明真的走了转发链，而不是撞上别的桩。
+    expect(mockInvoke.callsOf('project_list').length).toBeGreaterThanOrEqual(1);
+    expect(mockInvoke.lastArgsOf('project_list')).toMatchObject({
+      filter: { include_archived: false },
+    });
+
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: zhCN.project.list.showArchived }),
+    );
+
+    expect(await screen.findByText(SEED_PROJECTS[1].name)).toBeInTheDocument();
+    // 第二次调用：`stub`（一次性消费）在这里就会落到 fallback ⇒ §D-9④ 的钉子。
+    expect(mockInvoke.callsOf('project_list').length).toBeGreaterThanOrEqual(2);
+    expect(mockInvoke.lastArgsOf('project_list')).toMatchObject({
+      filter: { include_archived: true },
+    });
   });
 });

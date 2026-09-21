@@ -6,15 +6,19 @@
  *    `Record<IpcCommand, DemoHandler>` 已经在编译期强制全覆盖（AGENTS 规则 8「命令增减两侧
  *    同时改」的保证），但本轮的未知命令守卫是拿**这张表的键**在运行时收窄的 ⇒ 键集漂了，
  *    守卫就跟着漂。编译期网 + 运行期集合相等，两道一起才算钉住。
- * ② **本轮 40 条 handler 全部未实现**：抛的是给开发者看的英文 `Error`（`not implemented: <cmd>`），
+ * ② **还没实现的 handler 逐条抛「未实现」**：给开发者看的英文 `Error`（`not implemented: <cmd>`），
  *    经 `api/client.ts` 的 `callVia` 归一化成 `ipc/invoke_failed`。
  *    ⚠ Task 12–14 逐条替换 handler 时，被替换掉的那条命令要从 ② 的清单里摘掉——
  *    那是**预期演进**（骨架变实体），不是断言降级。
+ *    **Task 12 已摘掉 M1 的 21 条**（清单见下面的 `M1_COMMANDS`），剩 19 条：
+ *    M2 题库 11 条归 Task 13、设置/密钥/导出 8 条归 Task 14。同时新增一条**反向**断言：
+ *    那 21 条已经脱离骨架（拿空入参调用也不再抛「not implemented」）⇒ 断言强度只增不减。
  * ③ **刷新即重置**：`resetDemoDb()` 真的从种子重建，且种子模块自身不被 db 的改动污染（深拷）。
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { IPC_COMMANDS } from '../api/client';
+import type { IpcCommand } from '../api/client';
 import { isIpcErrorPayload } from '../api/types';
 import { demoBackend, demoInvoke } from './backend';
 import { createDemoDb, getDemoDb, resetDemoDb } from './db';
@@ -27,6 +31,34 @@ const NOT_IMPLEMENTED = 'not implemented: ';
 
 /** 与 `client.demo-runtime.test.ts` 同一条判据：开发者诊断串不许含 CJK（§B-11）。 */
 const CJK = /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/;
+
+/**
+ * Task 12 落地的 M1 21 条（`project_*` 10 + `entity_card_*` 4 + `competitor_*` 4 + `asset_*` 3）。
+ * 逐条列出而不用前缀正则：这张清单就是「哪条命令归哪个 task」的账本（简报 §B-1）。
+ */
+const M1_COMMANDS: readonly IpcCommand[] = [
+  'project_create',
+  'project_list',
+  'project_get',
+  'project_update',
+  'project_archive',
+  'project_delete',
+  'project_export',
+  'project_import',
+  'project_export_competitors_csv',
+  'project_export_assets_csv',
+  'entity_card_autobuild',
+  'entity_card_get',
+  'entity_card_update_field',
+  'entity_card_revisions',
+  'competitor_upsert',
+  'competitor_list',
+  'competitor_delete',
+  'competitor_reorder',
+  'asset_add',
+  'asset_list',
+  'asset_delete',
+];
 
 /** 把「同步 throw」与「返回 rejected promise」两种 handler 形状收成同一个 catch。 */
 async function capture(thunk: () => unknown): Promise<unknown> {
@@ -52,8 +84,12 @@ describe('demo/backend · 骨架契约', () => {
     expect([...keys].sort()).toEqual([...IPC_COMMANDS].sort());
   });
 
-  it('40 条 handler 逐条抛「not implemented: <cmd>」的英文 Error', async () => {
-    for (const cmd of IPC_COMMANDS) {
+  it('剩下 19 条 handler 逐条抛「not implemented: <cmd>」的英文 Error', async () => {
+    expect(M1_COMMANDS).toHaveLength(21);
+    const pending = IPC_COMMANDS.filter((cmd) => !M1_COMMANDS.includes(cmd));
+    expect(pending).toHaveLength(19);
+
+    for (const cmd of pending) {
       const cause = await capture(() => demoBackend[cmd]({}));
 
       expect(cause, cmd).toBeInstanceOf(Error);
@@ -62,11 +98,21 @@ describe('demo/backend · 骨架契约', () => {
     }
   });
 
+  it('M1 的 21 条已脱离骨架：空入参调用不再抛「not implemented」（反向断言，强度只增不减）', async () => {
+    for (const cmd of M1_COMMANDS) {
+      const cause = await capture(() => demoBackend[cmd]({}));
+      const message = cause instanceof Error ? cause.message : '';
+
+      expect(message, cmd).not.toContain('not implemented');
+    }
+  });
+
   it('demoInvoke 对契约内命令真的走到 demoBackend（消息里带命令名）', async () => {
-    const cause = await capture(() => demoInvoke('project_list', { filter: {} }));
+    // 探针换成**仍未实现**的命令：project_list 在 Task 12 已经是真 handler 了（断言形状一个字没改）。
+    const cause = await capture(() => demoInvoke('prompt_set_list', { project_id: 'p-probe' }));
 
     expect(cause).toBeInstanceOf(Error);
-    expect((cause as Error).message).toBe(`${NOT_IMPLEMENTED}project_list`);
+    expect((cause as Error).message).toBe(`${NOT_IMPLEMENTED}prompt_set_list`);
     expect((cause as Error).message).not.toMatch(CJK);
   });
 

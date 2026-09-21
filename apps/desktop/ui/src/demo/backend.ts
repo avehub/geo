@@ -30,6 +30,35 @@
  * Task 12 填 M1 的 21 条、Task 13 填 M2 的 11 条、Task 14 填设置/密钥/导出的 8 条。
  */
 import type { IpcCommand } from '../api/client';
+import {
+  entityCardAutobuild,
+  entityCardGet,
+  entityCardRevisions,
+  entityCardUpdateField,
+} from './handlers/entity-card';
+import {
+  projectArchive,
+  projectCreate,
+  projectDelete,
+  projectGet,
+  projectList,
+  projectUpdate,
+} from './handlers/project';
+import {
+  projectExport,
+  projectExportAssetsCsv,
+  projectExportCompetitorsCsv,
+  projectImport,
+} from './handlers/project-transfer';
+import {
+  assetAdd,
+  assetDelete,
+  assetList,
+  competitorDelete,
+  competitorList,
+  competitorReorder,
+  competitorUpsert,
+} from './handlers/relations';
 import { withLatency } from './latency';
 import type { DemoHandler } from './types';
 import { demoError } from './types';
@@ -49,27 +78,27 @@ function notImplemented(cmd: IpcCommand): DemoHandler {
  */
 export const demoBackend: Record<IpcCommand, DemoHandler> = {
   // ---- M1 项目 / 实体卡 / 竞品 / 资产（21 条 ⇒ Task 12）----
-  project_create: notImplemented('project_create'),
-  project_list: notImplemented('project_list'),
-  project_get: notImplemented('project_get'),
-  project_update: notImplemented('project_update'),
-  project_archive: notImplemented('project_archive'),
-  project_delete: notImplemented('project_delete'),
-  project_export: notImplemented('project_export'),
-  project_import: notImplemented('project_import'),
-  project_export_competitors_csv: notImplemented('project_export_competitors_csv'),
-  project_export_assets_csv: notImplemented('project_export_assets_csv'),
-  entity_card_autobuild: notImplemented('entity_card_autobuild'),
-  entity_card_get: notImplemented('entity_card_get'),
-  entity_card_update_field: notImplemented('entity_card_update_field'),
-  entity_card_revisions: notImplemented('entity_card_revisions'),
-  competitor_upsert: notImplemented('competitor_upsert'),
-  competitor_list: notImplemented('competitor_list'),
-  competitor_delete: notImplemented('competitor_delete'),
-  competitor_reorder: notImplemented('competitor_reorder'),
-  asset_add: notImplemented('asset_add'),
-  asset_list: notImplemented('asset_list'),
-  asset_delete: notImplemented('asset_delete'),
+  project_create: projectCreate,
+  project_list: projectList,
+  project_get: projectGet,
+  project_update: projectUpdate,
+  project_archive: projectArchive,
+  project_delete: projectDelete,
+  project_export: projectExport,
+  project_import: projectImport,
+  project_export_competitors_csv: projectExportCompetitorsCsv,
+  project_export_assets_csv: projectExportAssetsCsv,
+  entity_card_autobuild: entityCardAutobuild,
+  entity_card_get: entityCardGet,
+  entity_card_update_field: entityCardUpdateField,
+  entity_card_revisions: entityCardRevisions,
+  competitor_upsert: competitorUpsert,
+  competitor_list: competitorList,
+  competitor_delete: competitorDelete,
+  competitor_reorder: competitorReorder,
+  asset_add: assetAdd,
+  asset_list: assetList,
+  asset_delete: assetDelete,
 
   // ---- M2 Prompt 题库（11 条 ⇒ Task 13）----
   prompt_set_generate: notImplemented('prompt_set_generate'),

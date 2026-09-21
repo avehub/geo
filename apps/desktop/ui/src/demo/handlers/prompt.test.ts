@@ -281,6 +281,23 @@ describe('demo/handlers/prompt · prompt_item_add', () => {
     expect(added.competitor_ids).toEqual([]);
   });
 
+  it('content_hash 随内容变（**不是常量**）：两次新增之间 hash 再次改变', async () => {
+    // 🔴 只断言 `startsWith('demo-')` 或「新值 != 种子值」都抓不到「hash 被写成常量」这个变异
+    // （实测：注入 `set.content_hash = 'demo-constant'` 后，那两种断言**仍然绿**）。
+    // 唯一可判别的判据是「两次**不同**内容 ⇒ 两个**不同** hash」。
+    await demoInvoke('prompt_item_add', { set_id: SEED_PILOT_SET_ID, items: [draft()] });
+    const first = await demoInvoke<PromptSet>('prompt_set_get', { id: SEED_PILOT_SET_ID });
+
+    await demoInvoke('prompt_item_add', {
+      set_id: SEED_PILOT_SET_ID,
+      items: [draft({ text: '第二条文案长度不一样' })],
+    });
+    const second = await demoInvoke<PromptSet>('prompt_set_get', { id: SEED_PILOT_SET_ID });
+
+    expect(first.content_hash.startsWith('demo-')).toBe(true);
+    expect(second.content_hash).not.toBe(first.content_hash);
+  });
+
   it('空数组报 validation/failed {field:items, reason:empty}', async () => {
     const cause = await capture(() =>
       demoInvoke('prompt_item_add', { set_id: SEED_PILOT_SET_ID, items: [] }),

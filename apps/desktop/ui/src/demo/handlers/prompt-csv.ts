@@ -98,7 +98,11 @@ export const promptSetImportCsv: DemoHandler = (args) => {
   // 题库不存在 ⇒ 先抛，一份 CSV 都不解析（整批不落库）。
   requirePromptSet(db, setId);
 
-  // csv_io:134：先剥 BOM，否则第一列名会变成 "\uFEFFtext" 而整批被拒。
+  // csv_io:134 的**镜像**。⚠ 在 JS 里这一行是**冗余**的：`String.prototype.trim()` 把 U+FEFF
+  // 当空白吃掉，而 Rust 的 `str::trim()` 按 Unicode `White_Space` 判定（U+FEFF 的 `White_Space=No`）
+  // ⇒ 真后端那行是**载荷性**的，demo 这行不是（表头本来就逐列 `.trim()`，不剥也不会整批被拒；
+  // 把 `.replace(BOM, '')` 删掉，BOM 那条用例**仍然绿**）。保留它的理由只有两个：
+  // 让「导入容忍 BOM」这条契约在代码里看得见，以及不把自己的正确性押在 trim 的空白集定义上。
   const records = parseCsv(asString(args.payload).replace(BOM, ''));
   const [header, ...dataRecords] = records as [CsvRecord | undefined, ...CsvRecord[]];
 
@@ -255,12 +259,17 @@ function parsePromptRow(
 // ---------------------------------------------------------------------------
 
 /**
- * 把整份 CSV 读成记录数组。语法错误**不抛**，而是就地变成一条 `error` 非空的记录：
- * csv_io:161-172 也是这个形状（`Err(err) => { push row_invalid; continue }`），
- * 于是「第 3 行读不出来、其余行照样导入」这件事在 demo 里演得出来。
+ * 把整份 CSV 读成记录数组。语法错误**不抛**，而是就地变成一条 `error` 非空的记录，
+ * 然后**跳到下一个换行继续扫**——csv_io:161-172 也是这个形状
+ * （`Err(err) => { push row_invalid; continue }`），于是「第 3 行读不出来、其余行照样导入」
+ * 这件事在 demo 里真的演得出来（`prompt-csv.test.ts` 有一条用例专门钉它）。
  *
- * 🔴 诊断串一律 **ASCII**：它进 `params.value`，是给开发者看的原文（真值源装的是 csv 库的
- * `err.to_string()`）。绝不要把单元格内容拼进去——那会把用户数据（可能是中文）塞进错误载荷。
+ * 唯一没有"其余行"可继续的是**引号未闭合一直到 EOF**：那条记录本来就吃到文件尾。
+ * ⚠ 错误恢复是**尽力而为**：跳过区间里的引号状态无法可靠重建，所以一律当普通字符扫到 `\n` 为止。
+ *
+ * 🔴 诊断串一律 **ASCII**，且**绝不**拼入单元格内容——那会把用户数据（可能是中文）塞进错误载荷。
+ * ⚠ 它是 demo 自拟的 ASCII 替身，**不是** csv 库 `err.to_string()` 的原文
+ * （真值源那一侧装的是库原文；两者形状同为「行号 + 一句英文诊断」，但字面不同）。
  */
 function parseCsv(body: string): CsvRecord[] {
   const records: CsvRecord[] = [];
@@ -289,7 +298,23 @@ function parseCsv(body: string): CsvRecord[] {
     recordLine = lineNumber;
   };
   const fail = (reason: string): void => {
-    records.push({ cells: [], line: recordLine, error: `csv parse error: record ${recordLine} (line: ${recordLine}): ${reason}` });
+    records.push({
+      cells: [],
+      line: recordLine,
+      error: `csv parse error: record ${recordLine} (line: ${recordLine}): ${reason}`,
+    });
+    // 错误恢复：跳到下一个换行、复位记录级状态，让后续行还能被读到（csv_io:172 的 `continue`）。
+    while (index < body.length && body[index] !== '\n') index += 1;
+    if (index < body.length) {
+      index += 1;
+      lineNumber += 1;
+    }
+    cells = [];
+    field = '';
+    inQuotes = false;
+    quoteClosed = false;
+    touched = false;
+    recordLine = lineNumber;
   };
 
   while (index < body.length) {
@@ -334,7 +359,7 @@ function parseCsv(body: string): CsvRecord[] {
         continue;
       }
       fail('found data after closing quote');
-      return records;
+      continue;
     }
 
     if (char === '"' && field === '') {

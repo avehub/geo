@@ -30,6 +30,7 @@ import type { DemoDb, DemoHandler } from '../types';
 import { demoError } from '../types';
 import { getDemoDb, promptItemsOf, promptSetsOf, promptSetWithItems } from '../db';
 import { withLatency } from '../latency';
+import { SEED_BASELINE_SET_ID, SEED_PROMPT_ITEMS, SEED_PROMPT_SETS } from '../seed/prompt-sets';
 import type { DedupeReport, PromptItem, PromptSet, PromptSetSummary } from '../../api/types';
 import {
   asIntent,
@@ -54,6 +55,9 @@ const GENERATE_EXTRA_MS = 1080;
 
 /** `prompt_set_generate` 造的 `label` 前缀（代码生成 ⇒ ASCII / 语言中立）。 */
 const GENERATED_LABEL_PREFIX = 'demo-set-';
+
+/** 认出自己造过的 label（序号必须与 `GENERATED_LABEL_PREFIX` 同步改）。 */
+const GENERATED_LABEL = /^demo-set-(\d+)$/;
 
 /** `metric_spec_version` 的兜底值：项目里一份题库都没有时无从继承（种子用的就是它）。 */
 const METRIC_SPEC_VERSION = 'geo-metrics-v1';
@@ -105,10 +109,16 @@ export function reindexed(items: readonly PromptItem[]): PromptItem[] {
  * （`seed/prompt-sets.ts` 刻意用了另一种形状，好让「改过」与「没改过」肉眼可分）。
  */
 export function writePromptItems(db: DemoDb, setId: string, items: readonly PromptItem[]): void {
+  // 🔴 **先**查 set 再动库：反过来写（先重写 `promptItems`、发现 set 没了就 return）会在极端情况下
+  // 留下"归一化真值已改、内嵌副本与 content_hash 还是旧的"的半途状态——单一写入口里
+  // 唯一一处**静默**的不一致。今天所有调用方都先过了 `requirePromptSet`，所以不可达；
+  // 但"不可达"不该靠调用方的自觉，写入口自己就得是全有或全无。
+  const set = db.promptSets.find((row) => row.id === setId);
+  if (!set) {
+    throw demoError('prompt_set/not_found', { kind: 'prompt_set', id: setId });
+  }
   const owned = items.map((item) => ({ ...item, set_id: setId }));
   db.promptItems = [...db.promptItems.filter((item) => item.set_id !== setId), ...owned];
-  const set = db.promptSets.find((row) => row.id === setId);
-  if (!set) return;
   set.items = owned;
   set.content_hash = demoContentHash(owned);
 }
@@ -126,6 +136,39 @@ function toSummary(db: DemoDb, set: PromptSet): PromptSetSummary {
     created_at: set.created_at,
     notes: set.notes,
   };
+}
+
+/**
+ * 新题库的 label 序号 = 「既存 `demo-set-N` 的最大 N」与「项目内题库份数」两者的较大者 + 1。
+ *
+ * 只看份数会**撞名**：2 份种子 → `demo-set-3` → `demo-set-4`；把 `demo-set-3` 删掉后再生成，
+ * 份数又回到 3 ⇒ 又叫 `demo-set-4`，下拉里出现两个同名题库（id 是 UUID，数据不受影响，
+ * 但界面看起来像坏了）。取较大者就把"删掉中间一份"这个路径也堵住了。
+ */
+function nextLabelIndex(sets: readonly PromptSet[]): number {
+  const highest = sets.reduce((max, set) => {
+    const matched = GENERATED_LABEL.exec(set.label);
+    return matched === null ? max : Math.max(max, Number(matched[1]));
+  }, 0);
+  return Math.max(sets.length, highest) + 1;
+}
+
+/**
+ * 项目里一份题库都没有时的**克隆素材**：回落到种子模块的基线题库。
+ *
+ * 🔴 为什么必须有这个回落：真后端的生成管线（模板展开 + LLM 扩写）**永远返回非空**，
+ * 而"取项目里条目最多的那份"在用户把题库全删光之后会产出一份 **0 条**的空题库且不报任何错——
+ * 产品负责人点「生成」看到一个空列表，会当成 bug 报回来。
+ * 读种子是读**静态数据**，不违反规则 9（不生成文案、不算相似度、不算分级）。
+ */
+function seedBaselineSet(): PromptSet | undefined {
+  return SEED_PROMPT_SETS.find((row) => row.id === SEED_BASELINE_SET_ID);
+}
+
+function seedBaselineItems(): PromptItem[] {
+  return structuredClone(
+    SEED_PROMPT_ITEMS.filter((item) => item.set_id === SEED_BASELINE_SET_ID),
+  );
 }
 
 /** 计数入参：非有限数回落到 `fallback`（不能用 `asNumber`，它把缺省归零，而这里的缺省是 3 / 1）。 */
@@ -204,29 +247,31 @@ export const promptSetGenerate: DemoHandler = async (args) => {
   await withLatency(GENERATE_EXTRA_MS);
 
   const sets = promptSetsOf(db, projectId);
-  const source = sets.reduce<PromptSet | undefined>(
-    (richest, set) =>
-      richest === undefined || promptItemsOf(db, set.id).length > promptItemsOf(db, richest.id).length
+  const richest = sets.reduce<PromptSet | undefined>(
+    (acc, set) =>
+      acc === undefined || promptItemsOf(db, set.id).length > promptItemsOf(db, acc.id).length
         ? set
-        : richest,
+        : acc,
     undefined,
   );
-  const sourceItems = source ? promptItemsOf(db, source.id) : [];
+  // 一份都没有 ⇒ 回落到种子的基线题库（见 `seedBaselineSet` 的理由），绝不产出空题库。
+  const source = richest ?? seedBaselineSet();
+  const sourceItems = richest ? promptItemsOf(db, richest.id) : seedBaselineItems();
 
   const setId = newId();
   const set: PromptSet = {
     id: setId,
     project_id: projectId,
     version: 1,
-    // 代码生成的 label ⇒ ASCII；序号接在现有份数之后（两份种子 ⇒ 第一次生成是 demo-set-3）。
-    label: `${GENERATED_LABEL_PREFIX}${sets.length + 1}`,
+    // 代码生成的 label ⇒ ASCII；序号规则见 `nextLabelIndex`（两份种子 ⇒ 第一次生成是 demo-set-3）。
+    label: `${GENERATED_LABEL_PREFIX}${nextLabelIndex(sets)}`,
     items: [],
     content_hash: demoContentHash(sourceItems),
     // A-8：`PromptSet::new` 的 engine_scope 默认空 vec（P0-A 还没接引擎，不自己编引擎名）。
     engine_scope: [],
     metric_spec_version: source?.metric_spec_version ?? METRIC_SPEC_VERSION,
-    // 规则 9：分级**不重算**，继承被克隆那份的静态值；一份都没有时 `asSampleSizeGrade` 回落
-    // 最保守的一档（0 条本来也够不上 sufficient）。
+    // 规则 9：分级**不重算**，继承被克隆那份的静态值。`asSampleSizeGrade` 那一支只是类型上的
+    // 兜底（种子表非空 ⇒ 实践中到不了），回落的是三档里最保守的一档。
     sample_size_grade: source ? source.sample_size_grade : asSampleSizeGrade(undefined),
     created_at: nowIso(),
     // notes 继承：降级说明属于**这一轮生成的事实**，克隆体照带（前端按行分派渲染）。

@@ -110,6 +110,12 @@ describe('demo/handlers/prompt-csv · 往返一致性', () => {
     const after = await demoInvoke<PromptSet>('prompt_set_get', { id: SEED_PILOT_SET_ID });
     expect(after.content_hash).not.toBe(before.content_hash);
     expect(after.content_hash.startsWith('demo-')).toBe(true);
+
+    // 🔴 再导一次**不同内容**：上面那两条断言抓不到「hash 写成常量」的变异
+    // （实测注入 `set.content_hash = 'demo-constant'` 后它们仍然绿——种子值本来就不等于它）。
+    await importCsv(csv('换成两条,pricing_plan,4,,,,1', '内容也不一样,local_service,3,,,,1'));
+    const again = await demoInvoke<PromptSet>('prompt_set_get', { id: SEED_PILOT_SET_ID });
+    expect(again.content_hash).not.toBe(after.content_hash);
   });
 });
 
@@ -209,7 +215,7 @@ describe('demo/handlers/prompt-csv · 行错误与默认值', () => {
   });
 
   it('未闭合的引号 ⇒ row_invalid + {value}（ASCII 开发者串，不上屏）', async () => {
-    // 未闭合的引号会吞掉它之后的全部内容（csv crate 也是这个行为）⇒ 必须放最后一行。
+    // 未闭合的引号一直吃到文件尾 ⇒ 它之后**没有**"其余行"可恢复，所以放最后一行。
     const result = await importCsv(
       csv('合法行,pricing_plan,3,,,,1', '"没有闭合的引号,pricing_plan,3,,,,1'),
     );
@@ -218,7 +224,29 @@ describe('demo/handlers/prompt-csv · 行错误与默认值', () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]!.reason).toBe('row_invalid');
     expect(result.errors[0]!.row).toBe(3);
-    // `value` 装的是解析器的开发者诊断串（Rust 侧装 csv 库原文）：一律 ASCII，不进词典。
+    // `value` 装的是解析器的开发者诊断串（Rust 侧装 csv 库原文）：一律 ASCII，不进词典，
+    // 且**绝不**回显单元格内容（否则会把用户的中文数据塞进错误载荷）。
+    expect(result.errors[0]!.params?.value).toMatch(/^[\x20-\x7e]+$/);
+  });
+
+  it('收口引号后还有数据 ⇒ 只有那一行报 row_invalid，**后续行照样导入**（错误恢复）', async () => {
+    // csv_io:161-172 的形状是 `Err(err) => { push row_invalid; continue }` ⇒ 语法错误**不截断**整份文件。
+    // 这条用例就是那个 `continue` 的机械执行者：拿掉 `parseCsv` 里 `fail()` 之后的"跳到下一个换行"，
+    // 最后一条就再也读不到，本用例立刻红（变异自证 §D-9 的同族判据）。
+    const result = await importCsv(
+      csv(
+        '合法行,pricing_plan,3,,,,1',
+        '"闭合后还有数据"xx,pricing_plan,3,,,,1',
+        '最后一条,local_service,3,,,,1',
+      ),
+    );
+
+    expect(result.items.map((item) => item.text)).toEqual(['合法行', '最后一条']);
+    // 恢复之后 position 仍然 0 基连续（错误行不占位，对齐 csv_io:174 的 `result.items.len()`）。
+    expect(result.items.map((item) => item.position)).toEqual([0, 1]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.row).toBe(3);
+    expect(result.errors[0]!.reason).toBe('row_invalid');
     expect(result.errors[0]!.params?.value).toMatch(/^[\x20-\x7e]+$/);
   });
 

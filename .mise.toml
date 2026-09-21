@@ -36,6 +36,15 @@ run = "./ui/node_modules/.bin/tauri dev"
 description = "只启动前端 Vite（浏览器调试用）"
 run = "pnpm --dir apps/desktop/ui run dev"
 
+# demo 模式的**构建产物**入口：`web` 跑的是 vite dev（未打包、带 HMR），
+# 这一条先 `build` 再用 `vite preview` 起静态服务器，验的是产品负责人真正会拿到的那份产物
+# （含 `src/demo/seed/**` 的中文语料是否被正确打进包、体积增量是否可接受）。
+# ⚠ 与 `dev` 不同，这里**不需要** `dir = "apps/desktop"`：没有 tauri CLI 参与，
+# 两个 `--dir apps/desktop/ui` 各自指向 pnpm 的工作目录即可。
+[tasks."demo:preview"]
+description = "构建前端产物并用 vite preview 起静态服务器（demo 的构建产物形态，端口 4173）"
+run = "pnpm --dir apps/desktop/ui run build && pnpm --dir apps/desktop/ui exec vite preview --port 4173"
+
 [tasks.test]
 description = "Rust + 前端全量测试"
 run = [

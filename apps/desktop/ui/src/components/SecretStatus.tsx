@@ -136,8 +136,12 @@ export default function SecretStatusPanel({ provider }: SecretStatusPanelProps) 
         <Descriptions size="small" column={2} bordered>
           <Descriptions.Item label={t('settings.secret.result.model')}>{result.model}</Descriptions.Item>
           <Descriptions.Item label={t('settings.secret.result.latency')}>{`${result.latency_ms} ms`}</Descriptions.Item>
+          {/*
+            Task 15a（用户裁定 Q4）：**不展示价目与记账**。`cost_cny` 仍在 `LlmTestResult` 里、
+            demo 与真后端都照旧返回（数据面保留，P0-B 的成本看板还要用它），只是不再上屏。
+            词典键 `settings.secret.result.cost` 因此同批删掉（zh/en 一起），不留孤儿键。
+          */}
           <Descriptions.Item label={t('settings.secret.result.usage')}>{`${result.prompt_tokens} / ${result.completion_tokens} tokens`}</Descriptions.Item>
-          <Descriptions.Item label={t('settings.secret.result.cost')}>{`¥${result.cost_cny.toFixed(2)}`}</Descriptions.Item>
         </Descriptions>
       )}
 

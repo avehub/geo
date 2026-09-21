@@ -49,7 +49,6 @@ const settings: ResourceBundle['settings'] = {
       model: 'Model',
       latency: 'Latency',
       usage: 'Usage',
-      cost: 'Cost',
     },
   },
 

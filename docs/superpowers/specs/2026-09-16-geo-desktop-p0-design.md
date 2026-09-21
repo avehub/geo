@@ -327,6 +327,7 @@ pub struct HttpResponse { pub status: u16, pub body: String }
 | 包管理 | pnpm 12.4.2（`packageManager` 字段锁定） | 单仓多包、硬链接省空间、版本随项目走 |
 | 日志 | `tracing` + `tracing-appender`，**不用** `tauri-plugin-log` | 两者都要独占全局 `log` logger：`tracing-subscriber::init()` 会装 `LogTracer`，随后插件 `attach_logger` 必然失败 → `Builder::run` 返回 `Err` → 启动即 panic（P0-A 收尾实测复现：`PluginInitialization("log", ...)`）。单一管线还能把依赖的 `log` 记录一并写进同一个滚动文件，P0-D 诊断打包只用收一个目录 |
 | 文件导出 | Rust 命令 `export_write_file`（dialog 选路径 + `tokio::fs::write`） | WKWebView 不实现 blob 的 `download` 属性，前端自建 Blob 点击后静默无反应；收口到 Rust 侧还能统一补 BOM |
+| demo 模式 / i18n 基座 / 设置页 | 另见 `2026-09-18-geo-desktop-demo-i18n-settings-design.md` | 本文件写就时还没有「纯前端 + 静态数据的 demo 假后端」与双语基座；那份文档是它们的落地设计（含 §4.2 的错误码契约：后端只回稳定错误码 + 语言中立 `params`，文案由前端按当前语言渲染）。**涉及 demo 模式 / i18n / 设置页这三块时以那份为准**，本文件的 crate 分层与选型约束（HTTP TLS、数据层、包管理等）不受影响 |
 
 ---
 

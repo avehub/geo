@@ -102,7 +102,13 @@ export function WizardStepContent({ step }: { step: number }) {
           <Input placeholder="https://www.example.com" allowClear />
         </Form.Item>
         <Form.Item name="core_pages" label={t('project.wizard.corePages')} extra={t('project.wizard.corePagesExtra')}>
-          <Select mode="tags" placeholder="https://www.example.com/about" tokenSeparators={[',', '，']} open={false} suffixIcon={null} />
+          <Select
+            mode="tags"
+            placeholder={t('project.wizard.corePagesPlaceholder')}
+            tokenSeparators={[',', '，']}
+            open={false}
+            suffixIcon={null}
+          />
         </Form.Item>
       </>
     );

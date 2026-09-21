@@ -790,18 +790,102 @@ describe('B-1② · 第三轮：退化 params 一律被兜底挡住（裁定 B-1
 });
 
 describe('AGENTS 规则 6 · 文案合规', () => {
-  it('errors / fields 两侧的文案都没有绝对化用语', () => {
-    const bannedZh = ['保证', '霸屏', '第一', '最好', '最强', '最优', '最先进', '国家级', '世界级', '独家'];
-    const bannedEn = [/guaranteed/i, /#1/, /\bbest\b/i, /100%/, /number one/i];
-    const offenders: string[] = [];
+  /**
+   * zh 侧绝对化用语。一律用 `RegExp`（原先是裸子串 + `includes`），因为 `第一` 必须带**负向前瞻**。
+   *
+   * Task 15a 第 10 条（台账 #42）：裸 `'第一'` 会把**序数**用法一起判红——
+   * 「第一条」是 CSV 的行序、「第一列」是表头列序、「第一步」是向导步骤，都是合法文案
+   * （Task 12 / Task 13 复审各撞过一次这个假阳性）。广告法语境下要禁的是**名次断言**
+   * （「排名第一」「全网第一」，或句末光杆的「第一」），后面紧跟量词的一律不是。
+   *
+   * 前瞻词表取本仓已收敛的那一份：`task-13-brief.md` §6 的合规红线正则
+   * `第一(?!次|天|步|轮|批|版|层|手|线|季度)`，再加 `task-13-review.md` §12 建议补的 `条|列|行`。
+   *
+   * ⚠ 这**不是**放宽判据。裸 `第一` 在今天词典面上的命中数是 **0**，加前瞻之后仍然是 **0**
+   * （下面那条主断言逐字未变）；变的只是「以后写一条合法序数文案不会被误判」。
+   * 反过来说，前瞻词表里每多一个词都是**放过一类文案**，所以词表本身被对照组逐条钉住。
+   */
+  const bannedZh: readonly RegExp[] = [
+    /保证/,
+    /霸屏/,
+    /第一(?!次|天|步|轮|批|版|层|手|线|季度|条|列|行)/,
+    /最好/,
+    /最强/,
+    /最优/,
+    /最先进/,
+    /国家级/,
+    /世界级/,
+    /独家/,
+  ];
 
+  /** en 侧同理（AGENTS 规则 6：禁 `guaranteed ranking` / `#1` / `best` / `100%`）。 */
+  const bannedEn: readonly RegExp[] = [/guaranteed/i, /#1/, /\bbest\b/i, /100%/, /number one/i];
+
+  type ComplianceEntry = readonly [side: string, path: string, value: string];
+
+  /** 判据本体抽成函数，好让对照组能拿**探针数据**喂它（否则「0 条违规」是永真断言）。 */
+  function scanCompliance(probe: readonly ComplianceEntry[]): string[] {
+    const offenders: string[] = [];
+    for (const [side, path, value] of probe) {
+      for (const pattern of bannedZh) if (pattern.test(value)) offenders.push(`${side} ${path} → ${pattern}`);
+      for (const pattern of bannedEn) if (pattern.test(value)) offenders.push(`${side} ${path} → ${pattern}`);
+    }
+    return offenders;
+  }
+
+  /** 今天的词典面：errors + fields 两个 namespace、两侧全部叶子。 */
+  function dictionaryProbe(): ComplianceEntry[] {
+    const probe: ComplianceEntry[] = [];
     for (const side of SIDES) {
       for (const [path, value] of [...ENTRIES[side], ...FIELD_ENTRIES[side]]) {
-        for (const word of bannedZh) if (value.includes(word)) offenders.push(`${side} ${path} → ${word}`);
-        for (const pattern of bannedEn) if (pattern.test(value)) offenders.push(`${side} ${path} → ${pattern}`);
+        probe.push([side, path, value]);
       }
     }
-    expect(offenders).toEqual([]);
+    return probe;
+  }
+
+  it('errors / fields 两侧的文案都没有绝对化用语', () => {
+    const probe = dictionaryProbe();
+    // 防空跑：词典面塌成空集时「0 条违规」是永真的
+    expect(probe.length, '合规扫描面为空 ⇒ 判据已失效').toBeGreaterThanOrEqual(100);
+    expect(scanCompliance(probe)).toEqual([]);
+  });
+
+  /**
+   * 对照组（第 10 条的硬要求）：证明加了负向前瞻之后判据**既不是永真也不是永假**。
+   * 名次断言必须红、序数必须过，两个方向各钉一组；再端到端验一次 `scanCompliance`。
+   */
+  it('自证（对照组）：`第一` 的负向前瞻只放过序数，名次断言照旧判红', () => {
+    const first = bannedZh.find((pattern) => pattern.source.startsWith('第一'));
+    if (first === undefined) throw new Error('bannedZh 里必须有「第一」那一条');
+    expect(first.source).toBe('第一(?!次|天|步|轮|批|版|层|手|线|季度|条|列|行)');
+
+    // ① 名次断言：必须命中（含句末光杆的「第一」）
+    for (const claim of ['第一', '排名第一', '全网第一', '行业第一', '第一品牌', '销量第一', '第一名']) {
+      expect(first.test(claim), `名次断言「${claim}」漏判了`).toBe(true);
+    }
+    // ② 序数用法：必须放过（前瞻词表逐条钉住，少一个词就红）
+    for (const ordinal of [
+      '第一次', '第一天', '第一步', '第一轮', '第一批', '第一版', '第一层',
+      '第一手', '第一线', '第一季度', '第一条', '第一列', '第一行',
+    ]) {
+      expect(first.test(ordinal), `序数「${ordinal}」被误判成绝对化用语了`).toBe(false);
+    }
+
+    // ③ 端到端：把一条名次断言塞进扫描面 ⇒ offenders 必须点名它
+    expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '排名第一']])).toEqual([
+      `zh-CN errors.reasons.probe → ${first}`,
+    ]);
+    // 同一条判据喂序数 ⇒ 干净
+    expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '第一条记录不合法']])).toEqual([]);
+
+    // ④ 其余 zh 词与 en 词也各验一条（证明换成 RegExp 之后整张表还在工作，不是只剩 `第一`）
+    expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '保证排名']])).toHaveLength(1);
+    expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '业内最先进']])).toHaveLength(1);
+    expect(scanCompliance([['en-US', 'errors.reasons.probe', 'Guaranteed ranking']])).toHaveLength(1);
+    expect(scanCompliance([['en-US', 'errors.reasons.probe', 'The #1 choice']])).toHaveLength(1);
+    expect(scanCompliance([['en-US', 'errors.reasons.probe', '100% accurate']])).toHaveLength(1);
+    expect(scanCompliance([['en-US', 'errors.reasons.probe', 'the best provider']])).toHaveLength(1);
   });
 });
 
@@ -876,26 +960,33 @@ describe('F-2d · en 字段标签一律单数头名词（主谓一致）', () =>
   const CLASH = /\bs\s+(?:is|has|was|does|exceeds|contains|points|could|must|failed)\b/i;
 
   /**
-   * 头名词**合法**为复数、或 F-2d 的扫除没覆盖到的复数标签（例外表，逐条有据）。
+   * 头名词**合法**为复数的 en 标签（例外表，逐条有据）。
    *
-   * 这一份是**假阳性对账**的产物：52 个 en 标签里，首词或末词以 `s` 结尾的**恰好** 5 个，
-   * 其余 47 个都被下面的结构性守卫覆盖。新增条目需要控制器签字，
-   * 且 `expect(PLURAL_HEAD_KNOWN.size).toBe(5)` 与「反向哨兵」那条会立刻红。
+   * 这一份是**假阳性对账**的产物：52 个 en 标签里，首词或末词以 `s` 结尾的原先有 5 个。
+   * 新增条目需要控制器签字，且 `expect(PLURAL_HEAD_KNOWN.size).toBe(1)` 与「反向哨兵」那条会立刻红。
    *
-   * ⚠ 后 4 条是本轮**新发现**的残留（复审 M-2 只数到 3 条可达组合，F-2d 只改了 8 个标签，
-   * 都没覆盖到它们），而且**可达**：`repeat_count` 走 `crates/geo-domain/src/prompt.rs:239`
-   * 与 `services/prompt_service.rs:171` 的 `out_of_range`；`competitors` 走
-   * `crates/geo-domain/src/project.rs:238` 与 `services/project_service.rs:205`；另外 3 个走
+   * # 5 → 1：残留 N-5 已在 Task 15a 第 11 条清掉（台账 #03）
+   *
+   * 原先记在 `task-7b-report.md` §11 的 **N-5** 是 4 条**真缺陷**（不是假阳性）：
+   * `repeat_count` = `'Rewrite rounds'`、`concurrency.max_parallel` = `'Max parallel requests'`、
+   * `rate_limit.requests_per_minute` = `'Requests per minute'`、`rate_limit.retry_max` = `'Max retries'`，
+   * 与单数谓语组合后确实渲染出 `"Rewrite rounds is outside the allowed range (…)"` 这种主谓不一致句，
+   * 而且**可达**：`repeat_count` 走 `crates/geo-domain/src/prompt.rs:239` 与
+   * `services/prompt_service.rs:171` 的 `out_of_range`；另外 3 个走
    * `services/settings_service.rs:302`-`:327` 的 `in_range()`（同样发 `out_of_range`）。
-   * 修它们要改 `en-US/fields.ts`，**超出本 commit 的边界**（控制器明令不许碰词典文件），
-   * 所以只记账不改：见 `task-7b-report.md` §11 的 **N-5**。
+   * 当时因为「控制器明令不许碰词典文件」只记账不改。
+   *
+   * Task 15a 改了 `en-US/fields.ts` 那 4 行（`'Rewrite round count'` / `'Parallel request limit'` /
+   * `'Per-minute request limit'` / `'Max retry count'`），4 条真缺陷关闭 ⇒ 例外表只剩下面这 1 条**假阳性**。
+   *
+   * 判据强度：`size` 从 5 收到 1 **不是**放宽。反向哨兵那条断言的是「带复数头名词的标签集合
+   * == 例外表」，两边同时缩小 ⇒ 结构性守卫的**被判定面从 47 个标签扩到 51 个**。
+   * 对价另有一条：下面新增的 `N5_LABELS` 把这 4 个标签**逐字钉住**并走真实渲染路径验整句主谓一致
+   * （与 `F2D_LABELS` 同形），也就是从「登记在例外表里、不参与判定」升级成「逐字钉住 + 端到端判定」
+   * （简报 §D：退休/替换必须同时扩强别处）。
    */
   const PLURAL_HEAD_KNOWN: ReadonlyMap<string, string> = new Map([
     ['competitors', '"Number of competitors" 的头名词是 Number（单数），"Number of competitors is outside…" 语法正确——**不是**缺陷'],
-    ['repeat_count', '"Rewrite rounds is outside the allowed range (…)" 不一致；残留 N-5'],
-    ['concurrency.max_parallel', '"Max parallel requests is outside the allowed range (…)" 不一致；残留 N-5'],
-    ['rate_limit.requests_per_minute', '"Requests per minute is outside the allowed range (…)" 不一致（复数在**首词**）；残留 N-5'],
-    ['rate_limit.retry_max', '"Max retries is outside the allowed range (…)" 不一致；残留 N-5'],
   ]);
 
   /**
@@ -945,9 +1036,57 @@ describe('F-2d · en 字段标签一律单数头名词（主谓一致）', () =>
     expect(clashes).toEqual([]);
   });
 
+  /**
+   * Task 15a 第 11 条（残留 **N-5** 清账 · 台账 #03）逐条改过的 **4** 个 en 标签。
+   *
+   * 与 `F2D_LABELS` 同形：先逐字钉住（把任何一个改回复数形态就红），再走真实渲染路径
+   * 验整句主谓一致。真值源：`en-US/fields.ts` + 上面 `PLURAL_HEAD_KNOWN` 那段 N-5 的可达性论证
+   * （`repeat_count` 走 `prompt.rs:239` / `prompt_service.rs:171`，另 3 个走
+   * `settings_service.rs:302`-`:327` 的 `in_range()`，全都发 `out_of_range`）。
+   */
+  const N5_LABELS: ReadonlyArray<readonly [field: string, en: string]> = [
+    ['repeat_count', 'Rewrite round count'],
+    ['concurrency.max_parallel', 'Parallel request limit'],
+    ['rate_limit.requests_per_minute', 'Per-minute request limit'],
+    ['rate_limit.retry_max', 'Max retry count'],
+  ];
+
+  it('N-5 清账：4 个 en 标签逐字钉住，且与单数谓语组合后整句主谓一致', () => {
+    // 非永真：4 条一条不许漏钉
+    expect(N5_LABELS.length, 'N-5 是 4 条残留，这里必须钉满 4 条').toBe(4);
+
+    const drifted: string[] = [];
+    for (const [field, expected] of N5_LABELS) {
+      const actual = EN_FIELDS.get(`fields.${field}`);
+      if (actual !== expected) {
+        drifted.push(`${field}: 期望 "${expected}"，实际 "${actual ?? '(词典里没有这个键)'}"`);
+      }
+    }
+    expect(drifted, 'en 标签被改回了复数形态（N-5 回退）').toEqual([]);
+
+    // 端到端：走真实渲染路径（不只是词典取值），整句必须与单数谓语一致
+    for (const [field, expected] of N5_LABELS) {
+      expect(render('validation/failed', { field, reason: 'required' }, 'en-US'), field).toBe(
+        `${expected} is required`,
+      );
+    }
+
+    // 4 个标签 × 18 条单数谓语 reason = 72 句，一句都不许出现「复数名词 + 单数动词」
+    const clashes: string[] = [];
+    for (const [field] of N5_LABELS) {
+      const label = EN_FIELDS.get(`fields.${field}`) ?? '';
+      for (const key of singularVerbReasons) {
+        const sentence = `${label} ${template('en-US', `errors.reasons.${key}`) ?? ''}`;
+        if (CLASH.test(sentence)) clashes.push(`${field} × ${key} → ${sentence}`);
+      }
+    }
+    expect(singularVerbReasons.length, '单数谓语 reason 今天应有 18 条，塌成空集就是判据失效').toBe(18);
+    expect(clashes).toEqual([]);
+  });
+
   it('全部 en 标签的头名词都是单数（结构性守卫；例外表逐条有据且不许悄悄长大）', () => {
     // 防空跑：例外表与词典都不许塌成空集
-    expect(PLURAL_HEAD_KNOWN.size).toBe(5);
+    expect(PLURAL_HEAD_KNOWN.size).toBe(1);
     expect(EN_FIELDS.size).toBeGreaterThanOrEqual(50);
 
     const bad: string[] = [];

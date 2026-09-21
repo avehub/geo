@@ -24,7 +24,7 @@ const fields: ResourceBundle['fields'] = {
   payload: 'Imported payload',
   format_version: 'File format version',
   target_count: 'Target count',
-  repeat_count: 'Rewrite rounds',
+  repeat_count: 'Rewrite round count',
   intents: 'Intent list',
   label: 'Prompt set name',
   items: 'Item list',
@@ -59,11 +59,11 @@ const fields: ResourceBundle['fields'] = {
   'model.temperature': 'Temperature',
   'model.timeout_secs': 'Timeout',
   'proxy.url': 'Proxy URL',
-  'concurrency.max_parallel': 'Max parallel requests',
+  'concurrency.max_parallel': 'Parallel request limit',
   'concurrency.queue_size': 'Queue size',
-  'rate_limit.requests_per_minute': 'Requests per minute',
+  'rate_limit.requests_per_minute': 'Per-minute request limit',
   'rate_limit.min_interval_ms': 'Minimum request interval',
-  'rate_limit.retry_max': 'Max retries',
+  'rate_limit.retry_max': 'Max retry count',
 };
 
 export default fields;

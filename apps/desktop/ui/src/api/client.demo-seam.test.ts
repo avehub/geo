@@ -1,5 +1,5 @@
 /**
- * demo 接缝的**端到端**证明：真 `runtime` 模块 + 真分派点（Task 10 复审 Minor 3 ⇒ 简报 §B-12②）。
+ * demo 接缝的**端到端**证明：真 `runtime` 模块 + 真分派点（本文件**不** mock 任何东西）。
  *
  * 与 `client.demo-runtime.test.ts` 分工不重叠：
  * - 那一份 `vi.mock('./runtime')` 把「检测结论」**直接喂**给分派点 ⇒ 证「mock 成 demo 时分派正确」；
@@ -33,7 +33,7 @@
  * 「分派真的到了假后端」由 ① 接管（严格更强：不仅证明"到了"，还证明"读到了内存库"），
  * 「错误穿过接缝不降级」这一维由 ② 接管（它钉的是**契约码原样透传**，比 `ipc/invoke_failed` 更细）。
  *
- * 🔴 但「普通 `Error` → `ipc/invoke_failed`」这一维**不能没人钉**（Task 14 复审 Minor 1）：
+ * 🔴 但「普通 `Error` → `ipc/invoke_failed`」这一维**不能没人钉**：
  * 那条归一化路径是**活的**——`demo/handlers/export.ts:77-80` 在运行环境不支持 blob 下载时抛的
  * 就是普通 `Error`（`demo/backend.ts:34-35` 明写了 handler 仍然可以这么抛）。所以本文件留了一条
  * **永久探针**：它不随命令面变化而失效，钉的是「非契约类失败也不许裸奔到调用方」。

@@ -150,7 +150,18 @@ describe('SettingsPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('测试连接成功时展示模型与成本', async () => {
+  /**
+   * Task 15a 第 2 条（计划正文 Task 15 · 用户裁定 Q4）：**不展示价目与记账，但保留数据面**。
+   *
+   * 桩里刻意**保留** `cost_cny: 0.01`——要证明的正是"后端照旧返回、界面不再上屏"。
+   * 把字段从桩里删掉的话，这条断言会退化成"没有数据当然不渲染"，判不出渲染层的改动
+   * （变异自证见 task-15a-report.md：把成本行加回去 ⇒ 本条红）。
+   *
+   * ⚠ 断言强度对比旧版：旧版是「模型 + 耗时 + `¥0.01` 三项各一条 `getByText`」，
+   * 新版把结果面板的**标签集**整个钉成 `['模型','耗时','用量']`（多一项少一项都红），
+   * 再加「全文不含币符、不含 `0.01`」两条反向断言 ⇒ 只增不减。
+   */
+  it('测试连接成功时只展示模型 / 耗时 / 用量三项，不再展示成本', async () => {
     stub({ configured: true });
     mockInvoke.stubAlways('llm_provider_test', () => ({
       ok: true,
@@ -168,8 +179,19 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /测试连接/ }));
 
     expect(await screen.findByText(/deepseek-chat/)).toBeInTheDocument();
-    expect(screen.getByText(/812 ms/)).toBeInTheDocument();
-    expect(screen.getByText(/¥0.01/)).toBeInTheDocument();
+    const labels = [...document.querySelectorAll('.ant-descriptions-item-label')].map(
+      (node) => node.textContent,
+    );
+    expect(labels, '结果面板应恰好是「模型 / 耗时 / 用量」三项').toEqual(['模型', '耗时', '用量']);
+    expect(screen.getByText('812 ms')).toBeInTheDocument();
+    expect(screen.getByText('120 / 30 tokens')).toBeInTheDocument();
+
+    // 不含「成本」标签；全文不含任何币符（半角 `¥` U+00A5 与全角 `￥` U+FFE5 都算）；
+    // 也不含那个金额数字——`cost_cny` 在数据面仍在，只是**任何形式都不上屏**。
+    expect(screen.queryByText('成本')).not.toBeInTheDocument();
+    const body = document.body.textContent ?? '';
+    expect(body).not.toMatch(/[¥￥]/);
+    expect(body).not.toContain('0.01');
   });
 
   it('修改并发数后保存调用 settings_update', async () => {

@@ -32,11 +32,41 @@ macOS 侧无需 Homebrew 依赖：Xcode Command Line Tools 足够（HTTP 用 rus
 
 ```bash
 mise run install      # 安装前端依赖
-mise run dev          # 启动原生桌面窗口（Tauri dev）
-mise run web          # 仅前端（浏览器 http://localhost:1420）
+mise run dev          # 启动原生桌面窗口（Tauri dev，真后端）
+mise run web          # demo 模式：仅前端（浏览器 http://localhost:1420）
+mise run demo:preview # demo 模式的构建产物（vite build + preview，http://localhost:4173）
 mise run check        # 提交前门禁：fmt + clippy + cargo test + lint + vitest + build
 scripts/record-fixtures.sh check   # 离线自检 fixtures（不需要 Key、不联网）
 ```
+
+### 三个入口：真后端 / demo 模式 / 构建产物
+
+`mise run web` 与 `mise run demo:preview` 跑的都是 **demo 模式**：界面与交互是真的，数据来自
+`apps/desktop/ui/src/demo/` 这个**纯前端假后端**（`src/demo/seed/**` 的静态语料 + 一份内存库），
+**不连 Rust、不联网、不调用任何 LLM**。因此有四件事必须先说清楚：
+
+- **静态数据**：项目、竞品、实体卡、题库都是预置语料，不是抓取或生成出来的。
+- **刷新即重置**：内存库随页面重载重新播种——新建的项目、写入的 API Key、生成的题库都不会留下。
+- **不代表真实算法结果**：去重率、字段完整率、样本量分级等领域算法是 Rust 纯函数（AGENTS 规则 9），
+  demo 里只呈现预置静态值。例如把题库删到 5 条，样本量分级也**不会**重算。
+- **不写系统钥匙串**：demo 模式下 API Key 只留在内存里，落不了 macOS Keychain。
+
+页面顶部有一条 **demo 横幅**提示当前处于演示模式；真 Tauri 窗口（`mise run dev`）没有这条横幅。
+
+`demo:preview` 与 `web` 的区别只在**产物形态**：`web` 是 `vite dev`（未打包、带 HMR），
+`demo:preview` 先 `vite build` 再用 `vite preview` 起静态服务器（端口 4173），
+验的是产品负责人真正会拿到的那份构建产物（含中文语料是否被正确打进包）。
+
+#### demo 验收清单（三个入口都要走一遍）
+
+| 入口 | 期望 |
+|---|---|
+| `mise run dev` | 真 Tauri 窗口：**无** demo 横幅；IPC 正常（项目列表读的是本机 SQLite，不是种子数据）；API Key 写进系统钥匙串 |
+| `mise run web` | 浏览器 <http://localhost:1420>：**有** demo 横幅；纯前端、无 Rust 参与；刷新即重置 |
+| `mise run demo:preview` | 浏览器 <http://localhost:4173>：与 `web` 同样的 demo 行为，但跑的是 `apps/desktop/ui/dist/` 构建产物 |
+
+⚠ 前两个入口需要**真人走查**（原生窗口与真实钥匙串都在自动化门禁之外）；`mise run check`
+覆盖的是 fmt / clippy / cargo test / eslint / vitest / build，不含"点开窗口看一眼"。
 
 ### 容器内复现门禁（可选）
 

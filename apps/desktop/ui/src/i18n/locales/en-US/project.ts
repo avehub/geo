@@ -48,6 +48,8 @@ const project: ResourceBundle['project'] = {
     websiteExtra: 'Auto-build crawls the homepage and internal pages, own domain only',
     corePages: 'Core pages',
     corePagesExtra: 'Enter a full URL and press Enter; more than one is fine',
+    /** Task 15a 第 19 条：与 zh-CN 同批新增，值逐字相同（URL 示例语言无关，理由见 zh 侧注释）。 */
+    corePagesPlaceholder: 'https://www.example.com/about',
 
     products: 'Product lines',
     productsExtra: 'The product name is required; specs feed the “professional long-tail” prompts',

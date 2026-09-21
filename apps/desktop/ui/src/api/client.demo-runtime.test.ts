@@ -1,5 +1,5 @@
 /**
- * demo 运行时下的分派（Task 10 落的接缝，接上 `src/demo/backend.ts` 之后按新契约改写）。
+ * demo 运行时下的分派（`api/client.ts` 那个分派点选中 `src/demo/backend.ts` 的 `demoInvoke` 这半边）。
  *
  * **单独一个文件**，因为 `vi.mock` 是文件作用域的：`client.test.ts` 的存量用例测的是
  * **Tauri 分派路径**（桩打在 `mockInvoke` 上），把整个文件 mock 成 demo 会把它们全部带偏。

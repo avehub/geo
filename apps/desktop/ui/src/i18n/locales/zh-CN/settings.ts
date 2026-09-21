@@ -1,5 +1,8 @@
 /**
- * 设置页（Task 8 填入组件层那部分；页面自身的文案归 Task 9）。
+ * 设置页文案。按**消费者**分块（不再按任务号描述——组件层与页面层都已落地）：
+ * `providers.*` / `providerForm.*` / `proxy.*` / `secret.*` 由组件层消费
+ * （`ProviderSelect.tsx` / `ProxyForm.tsx` / `SecretStatus.tsx`），`page.*` 由
+ * `pages/SettingsPage.tsx` 消费。en-US 侧同结构、同键集（`i18n/index.test.ts` 的 R-G 双向断言钉住）。
  *
  * # `providers.*` 的键名 = 后端稳定 id，zh 值 = `LlmProvider::label_zh()` 逐字相同
  *
@@ -65,7 +68,6 @@ const settings = {
       model: '模型',
       latency: '耗时',
       usage: '用量',
-      cost: '成本',
     },
   },
 

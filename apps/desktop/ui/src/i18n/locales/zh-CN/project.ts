@@ -70,6 +70,14 @@ const project = {
     websiteExtra: '自动建档会抓取官网首页与站内页面，仅抓自有域名',
     corePages: '核心页面',
     corePagesExtra: '输入完整 URL 后回车，可添加多个',
+    /**
+     * Task 15a 第 19 条（台账 #10 #23）：原先硬编码在 `components/WizardSteps.tsx` 的
+     * `core_pages` 那个 `<Select mode="tags">` 上。裁定是**进词典**而不是进残留例外表——
+     * 它是会被用户看见的占位提示（界面文案），不是 `tokenSeparators` 那种输入契约。
+     * 值刻意与原来的字面量**逐字相同**：改措辞（例如补上兄弟键那种「例如：」前缀）属文案变更，
+     * 按 AGENTS 规则 8 要先在 demo 里定稿并经产品负责人确认，不在收口轮的授权内。
+     */
+    corePagesPlaceholder: 'https://www.example.com/about',
 
     products: '产品线',
     productsExtra: '产品名必填，参数用于生成「专业长尾」prompt',

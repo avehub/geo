@@ -20,7 +20,7 @@ import { isIpcErrorPayload } from '../../api/types';
 import { demoInvoke } from '../backend';
 import { getDemoDb, resetDemoDb } from '../db';
 import { SEED_ACTIVE_PROJECT_ID, SEED_ARCHIVED_PROJECT_ID } from '../seed/projects';
-import { SEED_BASELINE_SET_ID, SEED_PILOT_SET_ID } from '../seed/prompt-sets';
+import { SEED_BASELINE_SET_ID, SEED_PILOT_SET_ID, SEED_PROMPT_SETS } from '../seed/prompt-sets';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 /** 与 `client.demo-runtime.test.ts` 同形的 CJK 判据（用转义而不是字面中文，保持仓内一致风格）。 */
@@ -141,6 +141,86 @@ describe('demo/handlers/prompt · prompt_set_generate', () => {
     expect(created.items.every((item) => item.set_id === created.id)).toBe(true);
     expect(created.items[0]!.position).toBe(0);
     expect(created.items[BASELINE_COUNT - 1]!.position).toBe(BASELINE_COUNT - 1);
+  });
+
+  it('项目里一份题库都没有 ⇒ 回落到种子基线（**绝不产出空题库**）', async () => {
+    // M-6：真后端的生成管线永远返回非空；「取条目最多的那份」在题库被删光后会产出 0 条且不报错，
+    // 产品负责人点「生成」看到空列表会当 bug 报回来 ⇒ 回落到种子的基线题库。
+    await demoInvoke('prompt_set_delete', { id: SEED_BASELINE_SET_ID });
+    await demoInvoke('prompt_set_delete', { id: SEED_PILOT_SET_ID });
+
+    const created = await demoInvoke<PromptSet>('prompt_set_generate', {
+      project_id: SEED_ACTIVE_PROJECT_ID,
+      options: {},
+    });
+
+    expect(created.items).toHaveLength(BASELINE_COUNT);
+    // 份数归零 ⇒ 序号也归零重排（`nextLabelIndex([])` = 1）。
+    expect(created.label).toBe('demo-set-1');
+    expect(created.content_hash.startsWith('demo-')).toBe(true);
+  });
+
+  it('有题库但**全被清空** ⇒ 同样回落（判据是**条目数**，不是份数）', async () => {
+    // R1-2：`richest ?? seedBaselineSet()` 原先只看**份数**，于是「题库存在但 0 条」这条路径
+    // 会漏过回落、产出空题库，而同处注释写的是「绝不产出空题库」。
+    // 「题库存在但 0 条」在命令面上到不了（`prompt_item_delete` 不许删空），但 `project_import`
+    // 能把空题库带进来 ⇒ 不是纯理论。白盒造前提，先例：`prompt-csv.test.ts:292-297`。
+    const db = getDemoDb();
+    db.promptItems = [];
+
+    const created = await demoInvoke<PromptSet>('prompt_set_generate', {
+      project_id: SEED_ACTIVE_PROJECT_ID,
+      options: {},
+    });
+
+    expect(created.items).toHaveLength(BASELINE_COUNT);
+    // 份数仍是 2 ⇒ 序号不受回落影响。
+    expect(created.label).toBe('demo-set-3');
+  });
+
+  it('删掉中间一份再生成 ⇒ label 不撞号（`demo-set-5`，而不是回到 `demo-set-4`）', async () => {
+    // N-9：只看份数会撞名——生成两份后删掉前一份，份数回落 ⇒ 又叫 `demo-set-4`，
+    // 下拉里出现两个同名题库。序号取「既存最大 N」与「份数」的较大者才堵得住。
+    const options = { project_id: SEED_ACTIVE_PROJECT_ID, options: {} };
+    const first = await demoInvoke<PromptSet>('prompt_set_generate', options);
+    const second = await demoInvoke<PromptSet>('prompt_set_generate', options);
+    expect([first.label, second.label]).toEqual(['demo-set-3', 'demo-set-4']);
+
+    await demoInvoke('prompt_set_delete', { id: first.id });
+    const third = await demoInvoke<PromptSet>('prompt_set_generate', options);
+
+    expect(third.label).toBe('demo-set-5');
+    const labels = await demoInvoke<PromptSetSummary[]>('prompt_set_list', {
+      project_id: SEED_ACTIVE_PROJECT_ID,
+    });
+    expect(new Set(labels.map((row) => row.label)).size).toBe(labels.length);
+  });
+
+  it('回落读种子不会污染种子模块（**防御性守卫**，非变异捕获）', async () => {
+    // R1-1：`seedBaselineSet()` 原先交出种子模块的**活引用**（与隔壁 `seedBaselineItems()` 的
+    // `structuredClone` 不对称）。今天没有任何生产路径会写它，所以这条用例在修复前后**都绿**——
+    // 它钉的是「以后谁加一句 `source.label = …` 就会永久污染种子，且 `resetDemoDb()` 会继续复制坏值」。
+    const before = structuredClone(
+      SEED_PROMPT_SETS.find((row) => row.id === SEED_BASELINE_SET_ID),
+    );
+    await demoInvoke('prompt_set_delete', { id: SEED_BASELINE_SET_ID });
+    await demoInvoke('prompt_set_delete', { id: SEED_PILOT_SET_ID });
+
+    const created = await demoInvoke<PromptSet>('prompt_set_generate', {
+      project_id: SEED_ACTIVE_PROJECT_ID,
+      options: {},
+    });
+    // 故意写返回值的每一个从种子继承来的字段：真被共享引用的话，这里就会穿透到种子。
+    created.label = 'polluted-label';
+    created.sample_size_grade = 'insufficient';
+    created.notes = 'polluted-notes';
+
+    expect(SEED_PROMPT_SETS.find((row) => row.id === SEED_BASELINE_SET_ID)).toEqual(before);
+    resetDemoDb();
+    const after = await demoInvoke<PromptSetSummary[]>('prompt_set_list', {
+      project_id: SEED_ACTIVE_PROJECT_ID,
+    });
+    expect(after).toHaveLength(2);
   });
 
   it('入参项目不存在时报 project/not_found（经 requireProject）', async () => {

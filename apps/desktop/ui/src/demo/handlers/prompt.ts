@@ -154,15 +154,20 @@ function nextLabelIndex(sets: readonly PromptSet[]): number {
 }
 
 /**
- * 项目里一份题库都没有时的**克隆素材**：回落到种子模块的基线题库。
+ * 项目里**没有可克隆的条目**时的素材来源：回落到种子模块的基线题库。
  *
  * 🔴 为什么必须有这个回落：真后端的生成管线（模板展开 + LLM 扩写）**永远返回非空**，
- * 而"取项目里条目最多的那份"在用户把题库全删光之后会产出一份 **0 条**的空题库且不报任何错——
- * 产品负责人点「生成」看到一个空列表，会当成 bug 报回来。
+ * 而"取项目里条目最多的那份"在题库被删光、或题库存在但一条都没有时会产出一份 **0 条**的
+ * 空题库且不报任何错——产品负责人点「生成」看到一个空列表，会当成 bug 报回来。
  * 读种子是读**静态数据**，不违反规则 9（不生成文案、不算相似度、不算分级）。
+ *
+ * 🔴 返回**深拷贝**（与 `seedBaselineItems` 对称）：交出种子模块的活引用今天无害（调用方只读
+ * `metric_spec_version` / `sample_size_grade` / `notes` 三个原始值），但只要以后谁写一句
+ * `source.label = …`，就会**永久污染种子**，且 `resetDemoDb()` 会继续复制那份坏值。
  */
 function seedBaselineSet(): PromptSet | undefined {
-  return SEED_PROMPT_SETS.find((row) => row.id === SEED_BASELINE_SET_ID);
+  const row = SEED_PROMPT_SETS.find((item) => item.id === SEED_BASELINE_SET_ID);
+  return row === undefined ? undefined : structuredClone(row);
 }
 
 function seedBaselineItems(): PromptItem[] {
@@ -254,9 +259,12 @@ export const promptSetGenerate: DemoHandler = async (args) => {
         : acc,
     undefined,
   );
-  // 一份都没有 ⇒ 回落到种子的基线题库（见 `seedBaselineSet` 的理由），绝不产出空题库。
-  const source = richest ?? seedBaselineSet();
-  const sourceItems = richest ? promptItemsOf(db, richest.id) : seedBaselineItems();
+  // 🔴 回落判据是**条目数**而不是份数：只看份数会漏掉「题库存在但一条都没有」（`project_import`
+  // 能把这种题库带进来），于是照样产出空题库，与下面这句承诺自相矛盾。绝不产出空题库。
+  const richestItems = richest === undefined ? [] : promptItemsOf(db, richest.id);
+  const useSeedFallback = richestItems.length === 0;
+  const source = useSeedFallback ? seedBaselineSet() : richest;
+  const sourceItems = useSeedFallback ? seedBaselineItems() : richestItems;
 
   const setId = newId();
   const set: PromptSet = {

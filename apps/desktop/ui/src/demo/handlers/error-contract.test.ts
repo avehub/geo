@@ -538,14 +538,17 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
   });
 
   it('每条错误路径都不许改动库（失败的调用没有副作用）', async () => {
-    // `structuredClone` + `toEqual` 而不是 `JSON.stringify` 比对：后者会丢掉值为 `undefined` 的键、
-    // 也分不清 `Date` 与它的字符串形态 ⇒ 一旦 Task 14 往库里塞非纯 JSON 的值，这条哨兵会**静默变弱**。
+    // `structuredClone` + `toStrictEqual` 而不是 `JSON.stringify` + `toBe`：后者分不清 `Date` 与它的
+    // ISO 字符串、也分不清 `NaN` 与 `Infinity`（一律序列化成 `null`），还会被**键序**误报 ⇒ 一旦
+    // 后续任务往库里塞非纯 JSON 的值，这条哨兵会**静默变弱**。
+    // ⚠ 用 `toStrictEqual` 而不是 `toEqual`：`toEqual` 与 `JSON.stringify` 在「值为 `undefined` 的键」
+    // 这一维上**同盲**（两者都忽略），换成 `toEqual` 并不比原来强；`toStrictEqual` 才真把它纳入判据。
     const before = structuredClone(getDemoDb());
 
     for (const scenario of SCENARIOS) {
       await emit(scenario);
     }
 
-    expect(getDemoDb()).toEqual(before);
+    expect(getDemoDb()).toStrictEqual(before);
   });
 });

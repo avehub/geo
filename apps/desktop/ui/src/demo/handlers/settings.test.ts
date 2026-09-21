@@ -5,7 +5,7 @@
  * 真值源 `apps/desktop/src-tauri/src/services/settings_service.rs`（下称 service）。
  * 口径与 `relations.test.ts` 一致：错误 params 的**精确键集**归 `error-contract.test.ts`，
  * 本文件只管行为——
- * - **读写不对称**（service:111-141）：读回落默认厂商、写整批拒绝；
+ * - **读写不对称**（service:111-140）：读回落默认厂商、写整批拒绝；
  * - `update()` 那六步的顺序（体检 → 归一化 → trim proxy.url → trim language → 落库 → 回归一化后的那份）；
  * - `llm_provider_test` 的 `model` 取值规则（`client_for`，service:248-263）；
  * - 计划逐字的成功支字面量（`ok` / `latency_ms` / `prompt_tokens` / `completion_tokens` / `cost_cny`）。

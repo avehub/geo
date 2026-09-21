@@ -8,7 +8,7 @@
  * 所以「泄漏」这条路在 demo 里是**结构性不存在**的，而不只是"记得别存"——
  * 下面那条「整份库 JSON 化后不含 Key 串」就是这件事的机械执行者。
  *
- * 另钉两件事：`field` 逐字是 `api_key`（service:155-159 的裁定 R-F 唯一例外，不是 `value`），
+ * 另钉两件事：`field` 逐字是 `api_key`（service:155-157 的裁定 R-F 唯一例外，不是 `value`），
  * 以及命令入参走 `llm/config`、表单体检走 `validation/failed`（两个 code 不混用，service:270-283）。
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -123,7 +123,7 @@ describe('demo/handlers/secret · 写入与查询', () => {
 });
 
 describe('demo/handlers/secret · 删除是幂等的', () => {
-  it('删两次都不报错，configured 回 false（service:183-194）', async () => {
+  it('删两次都不报错，configured 回 false（service:183-190）', async () => {
     await demoInvoke('secret_set', { provider: 'deep_seek', value: API_KEY });
 
     expect(await demoInvoke('secret_delete', { provider: 'deep_seek' })).toBeUndefined();

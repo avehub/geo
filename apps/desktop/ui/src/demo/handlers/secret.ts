@@ -14,13 +14,13 @@
  * 本轮**禁改** ⇒ 归 Task 15（控制器台账已记）。
  *
  * # 三条语义照抄
- * - `set_secret`(:151-165)：先 `parse_provider`，再 `value.trim()`，**空则拒**
+ * - `set_secret`(:151-164)：先 `parse_provider`，再 `value.trim()`，**空则拒**
  *   `validation/failed` + `{field:'api_key', reason:'required'}`（两键）。
- *   🔴 `field` 逐字是 `api_key`：:155-159 注释「裁定 R-F 的**唯一例外**：`field` 从含糊的
+ *   🔴 `field` 逐字是 `api_key`：:155-157 注释「裁定 R-F 的**唯一例外**：`field` 从含糊的
  *   `value` 改成 `api_key`」⇒ 不要写成 `field:'value'`。
- * - `secret_status`(:167-181)：`configured` = 存在**且** `!value.trim().is_empty()`
+ * - `secret_status`(:167-180)：`configured` = 存在**且** `!value.trim().is_empty()`
  *   （**空白串算未配**）；返回体**永不回值**。
- * - `delete_secret`(:183-194)：**幂等**（删不存在的也返回 Ok）。
+ * - `delete_secret`(:183-190)：**幂等**（删不存在的也返回 Ok）。
  *
  * # provider 认不出 ⇒ `llm/config`，不是 `validation/failed`
  * 判据复用 `./settings.ts` 的 `requireKnownProvider`（`parse_provider` 的替身）：
@@ -78,7 +78,7 @@ export const secretStatus: DemoHandler = (args) => {
   return status;
 };
 
-/** `secret_delete`：幂等（service:183-194 是裸 delete，行不存在也 Ok）。返回 `void`。 */
+/** `secret_delete`：幂等（service:183-190 是裸 delete，行不存在也 Ok）。返回 `void`。 */
 export const secretDelete: DemoHandler = (args) => {
   const db = getDemoDb();
   const provider = requireKnownProvider(db, asString(args.provider));

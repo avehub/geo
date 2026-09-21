@@ -84,7 +84,7 @@ function canonicalProvider(db: DemoDb, raw: string): string | null {
 }
 
 /**
- * `parse_provider`(service:270-279) 的替身：**命令入参**认不出 ⇒ `llm/config` + 两键。
+ * `parse_provider`(service:270-277) 的替身：**命令入参**认不出 ⇒ `llm/config` + 两键。
  *
  * 🔴 与 `settings_update` 的表单体检（`validation/failed` + 三键）是**同一份数据、只是 code 不同**
  * （注释逐字：「前者走命令入参，后者走表单字段校验」）⇒ 两个 code **绝不混用**。
@@ -100,7 +100,7 @@ export function requireKnownProvider(db: DemoDb, raw: string): string {
 
 /**
  * `Option<String>` 入参的收窄：非字符串一律 `null`，**不在这里 trim**
- * ——trim 是 `update()` 的第 ③ 步（service:130-132），顺序照抄。
+ * ——trim 是 `update()` 的第 ③ 步（service:129-131），顺序照抄。
  */
 function asNullableString(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
@@ -154,7 +154,7 @@ function settingsFromUnknown(raw: Record<string, unknown>): AppSettings {
 }
 
 /**
- * 库里那份设置的**归一化副本** = `get()`(service:111-118)。
+ * 库里那份设置的**归一化副本** = `get()`(service:111-117)。
  *
  * 🔴 两个消费者，正好对应真值源的两处：`settings_get` 直接端它出去；
  * `llm_provider_test` 也读它，因为 `client_for`(:249) 读的就是 `self.get().await?`
@@ -171,7 +171,7 @@ function storedSettings(db: DemoDb): AppSettings {
 export const settingsGet: DemoHandler = () => storedSettings(getDemoDb());
 
 /**
- * `settings_update`：写是严格的（service:124-141 那六步，顺序照抄）。
+ * `settings_update`：写是严格的（service:124-140 那六步，顺序照抄）。
  * ① 体检 → ② 归一化 → ③ trim `proxy.url` → ④ trim `language` → ⑤ 落库 → ⑥ 回归一化后的那份。
  */
 export const settingsUpdate: DemoHandler = (args) => {

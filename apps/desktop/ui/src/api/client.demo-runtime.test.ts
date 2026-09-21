@@ -7,8 +7,9 @@
  * 机制：这里把 `./runtime` mock 成 `'demo'`，于是 `client.ts` 分派点选中的 invoker 是
  * `demo/backend.ts` 的 `demoInvoke`，而不是 Tauri 的 `invoke`。断言三件事：
  *   ① **契约内**的命令走到假后端，钉**两个半边**：
- *      - **未实现探针**：挑**当前仍是骨架的那一条命令**（探针随 handler 逐轮落地而往后移一位，
- *        本轮是 `prompt_set_list`），断言它 reject 出「未实现」的**英文**开发者信息，经 `callVia`
+ *      - **未实现探针**：挑**当前仍是骨架的那一条命令**（即 `demo/backend.ts` 里仍由
+ *        `notImplemented()` 占位的那条；探针随 handler 逐轮落地而往后移一位），
+ *        断言它 reject 出「未实现」的**英文**开发者信息，经 `callVia`
  *        的 catch 归一化成 `ipc/invoke_failed`（不新增错误码：`contracts/error-codes.json` 冻结在
  *        43 条）。消息里**含命令名** ⇒ 同时证明「真的到达了 `demoBackend`」，否则「两边都没调」也会绿。
  *      - **已实现半边**：已接真 handler 的命令（本轮取 `project_list`）必须 **resolve 出真种子数据**
@@ -45,18 +46,18 @@ const CJK = /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/;
 
 describe('api/client · demo 运行时（分派到 src/demo/backend.ts 的假后端）', () => {
   it('契约内的命令走到 demoBackend：reject「未实现」的英文信息并归一化成 ipc/invoke_failed', async () => {
-    mockInvoke.stubAlways('prompt_set_list', () => []);
+    mockInvoke.stubAlways('settings_get', () => ({}));
 
-    const error: unknown = await client.promptSetList('p-probe').catch((cause: unknown) => cause);
+    const error: unknown = await client.settingsGet().catch((cause: unknown) => cause);
 
     expect(error).toBeInstanceOf(client.IpcRequestError);
     if (!(error instanceof client.IpcRequestError)) throw new Error('expected IpcRequestError');
     expect(error.code).toBe(INVOKE_FAILED);
     // 含命令名 ⇒ 证明真的到达了 demoBackend（正向对照，不是「两边都没调」的假绿）。
-    expect(error.message).toContain(`${NOT_IMPLEMENTED}prompt_set_list`);
+    expect(error.message).toContain(`${NOT_IMPLEMENTED}settings_get`);
     expect(error.params).toEqual({
-      cmd: 'prompt_set_list',
-      reason: `${NOT_IMPLEMENTED}prompt_set_list`,
+      cmd: 'settings_get',
+      reason: `${NOT_IMPLEMENTED}settings_get`,
     });
     // 开发者诊断串不进词典、不上屏，一律 ASCII（简报 §B-11）。
     expect(error.message).not.toMatch(CJK);

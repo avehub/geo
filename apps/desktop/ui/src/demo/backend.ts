@@ -23,11 +23,12 @@
  * 配合上面那张全覆盖网，键集合与 `IPC_COMMANDS` 由构造保证相等（并有一条断言钉住），
  * 于是本文件只需 `import type`（编译后擦除）⇒ 依赖图保持单向：`api/client` → `demo/backend`。
  *
- * # 本轮 40 条 handler **全部未实现**（骨架）
- * 抛的是**普通 `Error` + 英文开发者信息**（`not implemented: <cmd>`），不是 `IpcErrorPayload`：
- * 它给开发者看、不进词典、**不占错误码**（`contracts/error-codes.json` 冻结在 43 条）。
+ * # 未接线的命令由 `notImplemented()` 占位（随落地逐条退休）
+ * 占位抛的是**普通 `Error` + 英文开发者信息**（`not implemented: <cmd>`），不是 `IpcErrorPayload`：
+ * 它给开发者看、不进词典、**不占错误码**（`contracts/error-codes.json` 冻结在 43 条）；
  * 经 `callVia` 的 catch 会归一化成 `ipc/invoke_failed`，与任何 invoker 失败同一条路径。
- * Task 12 填 M1 的 21 条、Task 13 填 M2 的 11 条、Task 14 填设置/密钥/导出的 8 条。
+ * 某条命令接上真 handler 后就从占位换成具名导入，存量探针测试的**探针位随之后移**；
+ * 40 条全部落地 ⇒ `notImplemented` 与那几条探针一起退休（不留死代码）。
  */
 import type { IpcCommand } from '../api/client';
 import {
@@ -50,6 +51,18 @@ import {
   projectExportCompetitorsCsv,
   projectImport,
 } from './handlers/project-transfer';
+import {
+  promptItemAdd,
+  promptItemDelete,
+  promptItemUpdate,
+  promptSetDedupe,
+  promptSetDelete,
+  promptSetGenerate,
+  promptSetGet,
+  promptSetList,
+  promptSetRename,
+} from './handlers/prompt';
+import { promptSetExportCsv, promptSetImportCsv } from './handlers/prompt-csv';
 import {
   assetAdd,
   assetDelete,
@@ -77,7 +90,7 @@ function notImplemented(cmd: IpcCommand): DemoHandler {
  * 也让"哪条命令归哪个 task"看不出来）。
  */
 export const demoBackend: Record<IpcCommand, DemoHandler> = {
-  // ---- M1 项目 / 实体卡 / 竞品 / 资产（21 条 ⇒ Task 12）----
+  // ---- M1 项目 / 实体卡 / 竞品 / 资产（21 条）----
   project_create: projectCreate,
   project_list: projectList,
   project_get: projectGet,
@@ -100,20 +113,20 @@ export const demoBackend: Record<IpcCommand, DemoHandler> = {
   asset_list: assetList,
   asset_delete: assetDelete,
 
-  // ---- M2 Prompt 题库（11 条 ⇒ Task 13）----
-  prompt_set_generate: notImplemented('prompt_set_generate'),
-  prompt_set_list: notImplemented('prompt_set_list'),
-  prompt_set_get: notImplemented('prompt_set_get'),
-  prompt_set_rename: notImplemented('prompt_set_rename'),
-  prompt_set_delete: notImplemented('prompt_set_delete'),
-  prompt_item_update: notImplemented('prompt_item_update'),
-  prompt_item_add: notImplemented('prompt_item_add'),
-  prompt_item_delete: notImplemented('prompt_item_delete'),
-  prompt_set_dedupe: notImplemented('prompt_set_dedupe'),
-  prompt_set_export_csv: notImplemented('prompt_set_export_csv'),
-  prompt_set_import_csv: notImplemented('prompt_set_import_csv'),
+  // ---- M2 Prompt 题库（11 条）----
+  prompt_set_generate: promptSetGenerate,
+  prompt_set_list: promptSetList,
+  prompt_set_get: promptSetGet,
+  prompt_set_rename: promptSetRename,
+  prompt_set_delete: promptSetDelete,
+  prompt_item_update: promptItemUpdate,
+  prompt_item_add: promptItemAdd,
+  prompt_item_delete: promptItemDelete,
+  prompt_set_dedupe: promptSetDedupe,
+  prompt_set_export_csv: promptSetExportCsv,
+  prompt_set_import_csv: promptSetImportCsv,
 
-  // ---- 设置 / 密钥 / 导出（8 条 ⇒ Task 14）----
+  // ---- 设置 / 密钥 / 导出（8 条，仍由 notImplemented 占位）----
   settings_get: notImplemented('settings_get'),
   settings_update: notImplemented('settings_update'),
   secret_set: notImplemented('secret_set'),

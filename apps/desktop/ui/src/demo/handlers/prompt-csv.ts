@@ -1,0 +1,373 @@
+/**
+ * M2 的两条 CSV 命令（`prompt_set_export_csv` / `prompt_set_import_csv`）的内存实现。
+ * 真值源 `crates/geo-domain/src/csv_io.rs`（下称 csv_io）与
+ * `apps/desktop/src-tauri/src/services/prompt_service.rs`（下称 service）。
+ *
+ * # 🔴 五件照抄的后端语义（全部有行号，别看代码就会写错）
+ * - **导出不带 BOM**：csv_io:127 确实加了 BOM，但 service:668-673 **专门把它剥掉**；
+ *   BOM 只在写盘层 `src-tauri/src/ipc/export.rs:16-22` 补（且幂等）。demo 这一层是
+ *   **service 层的替身**（`export_write_file` 才对应写盘层）⇒ 这里不加，前端下载时再补。
+ * - **导入要容忍 BOM**：csv_io:134 `strip_prefix('\u{FEFF}')`（Excel 存下来的 CSV 往往带）。
+ * - **导入是整包替换**：service:699-700 `reindex` + `replace_items`，**不是追加**。
+ * - **空导入要拒**：service:689-697，`params` 必须是 `{}`（契约给这个 code 登记的是**空数组**），
+ *   逐行错误装进 **`detail`**（`demoError` 的第三个参）。
+ * - **表头缺列 = 整批被拒**（不是行错误）：csv_io:147-154，列名逐个 trim、**顺序不敏感**、
+ *   多出来的列容忍，缺一个就 `validation/failed {field:'csv_header', reason:'missing_header',
+ *   value:'<缺失列名，逗号+空格连接>'}`。
+ *
+ * # ⚠ 三件**刻意不移植**的行判据（简报 §B-2③：demo 演错误契约，不当校验器）
+ * csv_io:198-243 里还有 `too_long`（要 `MAX_PROMPT_CHARS`）、`out_of_range`（要 `MAX_WEIGHT` /
+ * `MAX_REPEAT_COUNT`）、`not_allowed`（要整份广告法红线词库）三支。这三个常量/词库在
+ * `api/constants.ts` 里**没有前端镜像**，凭空造一份就是新的漂移面 ⇒ demo 只实现
+ * `required` / `invalid_format` / `row_invalid` 三种 reason。**已列入 Task 15 的例外表**。
+ *
+ * # `source` 从列里解析，不是一律 `imported`
+ * csv_io:243-249：列**为空**才是 `imported`，非空就照列里的值落库（模板生成出来的题库导出再导回，
+ * 来源不能被抹成 imported——它是指标口径的一部分）。
+ *
+ * # 语言约束（门禁 7）
+ * 本目录非注释 CJK 必须为 0 ⇒ 解析器的诊断串一律 ASCII（它进 `params.value`，是给开发者看的
+ * 原文，不进词典、不上屏；真值源那侧装的是 csv 库的 `err.to_string()`，同样是 ASCII）。
+ */
+import type { DemoHandler } from '../types';
+import { demoError } from '../types';
+import { getDemoDb, promptItemsOf } from '../db';
+import { PROMPT_CSV_HEADER } from '../../api/constants';
+import type { CsvImportResult, CsvRowError, IntentCategory, PromptItem, PromptSource } from '../../api/types';
+import { INTENT_VALUES, PROMPT_SOURCE_VALUES } from '../../api/types';
+import { reindexed, requirePromptSet, writePromptItems } from './prompt';
+import { CSV_TAG_SEPARATOR, asString, newId, toCsv } from './shared';
+
+/** `weight` 列为空时的默认值（csv_io:214-216）。 */
+const DEFAULT_WEIGHT = 3;
+/** `repeat_count` 列为空时的默认值（csv_io:228-230）。 */
+const DEFAULT_REPEAT_COUNT = 1;
+/** `source` 列为空时的默认值（csv_io:243-245）。 */
+const DEFAULT_SOURCE: PromptSource = 'imported';
+/** `u8` 的上限：Rust 那侧是 `parse::<u8>()`，超出即解析失败（不是越界）。 */
+const U8_MAX = 255;
+/** Excel / 记事本存 CSV 时加的字节序标记。 */
+const BOM = '\uFEFF';
+/** 未加引号的裸 `\r` 直接跳过（CRLF 行尾由 `\n` 收口）。 */
+const CARRIAGE_RETURN = '\r';
+
+/**
+ * 一条已解析的 CSV 记录。
+ *
+ * `line` 是**物理行号**（表头为第 1 行，与 csv_io 的 `record.position().line()` 同口径）；
+ * 引号里含换行时，物理行号取该记录**起始**那一行（诊断定位到"这一行有问题"比定位到 EOF 更有用）。
+ * `error` 非空表示 csv 库那一层就读不出这条记录 ⇒ 走 `row_invalid`。
+ */
+interface CsvRecord {
+  cells: string[];
+  line: number;
+  error: string | null;
+}
+
+/**
+ * `prompt_set_export_csv`：列序逐字等于共享常量 `PROMPT_CSV_HEADER`，**不带 BOM**。
+ *
+ * 序列化复用 `shared.toCsv`（按需加引号、引号内 `"` 翻倍、`\n` 结尾），不自己拼串——
+ * 与竞品/资产那两条导出共用同一份 csv crate 行为镜像，改一处三处跟着对。
+ * `group_name` 为 null 时写空串（csv_io:112 的 `unwrap_or_default()`），tags 用 `;` 连接。
+ */
+export const promptSetExportCsv: DemoHandler = (args) => {
+  const db = getDemoDb();
+  const set = requirePromptSet(db, asString(args.id));
+  const rows = promptItemsOf(db, set.id).map((item) => [
+    item.text,
+    item.intent,
+    String(item.weight),
+    item.group_name ?? '',
+    item.tags.join(CSV_TAG_SEPARATOR),
+    item.source,
+    String(item.repeat_count),
+  ]);
+  return toCsv(PROMPT_CSV_HEADER, rows);
+};
+
+/**
+ * `prompt_set_import_csv`：表头校验 → 逐行解析（错误行不中断）→ 空导入拒绝 → **整包替换**。
+ *
+ * 🔴 顺序即语义：表头缺列在**任何**写入之前就抛；行错误攒着继续（csv_io:158-181 的 `continue`）；
+ * 只有「一条都没解析出来 **且** 现有题库非空」才拒（service:689-697 的两个条件缺一不可）。
+ */
+export const promptSetImportCsv: DemoHandler = (args) => {
+  const db = getDemoDb();
+  const setId = asString(args.id);
+  // 题库不存在 ⇒ 先抛，一份 CSV 都不解析（整批不落库）。
+  requirePromptSet(db, setId);
+
+  // csv_io:134：先剥 BOM，否则第一列名会变成 "\uFEFFtext" 而整批被拒。
+  const records = parseCsv(asString(args.payload).replace(BOM, ''));
+  const [header, ...dataRecords] = records as [CsvRecord | undefined, ...CsvRecord[]];
+
+  const columns = (header?.cells ?? []).map((cell) => cell.trim());
+  const missing = PROMPT_CSV_HEADER.filter((column) => !columns.includes(column));
+  if (missing.length > 0) {
+    throw demoError('validation/failed', {
+      field: 'csv_header',
+      reason: 'missing_header',
+      value: missing.join(', '),
+    });
+  }
+
+  const items: PromptItem[] = [];
+  const errors: CsvRowError[] = [];
+  for (const record of dataRecords) {
+    if (record.error !== null) {
+      errors.push({ row: record.line, reason: 'row_invalid', params: { value: record.error } });
+      continue;
+    }
+    const outcome = parsePromptRow(record, columns, setId, items.length);
+    if (outcome.item) {
+      items.push(outcome.item);
+    } else {
+      errors.push({ row: record.line, reason: outcome.reason, params: outcome.params });
+    }
+  }
+
+  const existing = promptItemsOf(db, setId);
+  if (items.length === 0 && existing.length > 0) {
+    // 契约给 `prompt_set/empty_import` 登记的 params 是**空数组** ⇒ 一个键都不能加；
+    // 逐行原因走 `detail`（前端 `describeCsvRowError` 按当前语言渲染）。
+    throw demoError('prompt_set/empty_import', {}, errors);
+  }
+
+  writePromptItems(db, setId, reindexed(items));
+  const result: CsvImportResult = {
+    items: structuredClone(promptItemsOf(db, setId)),
+    errors,
+  };
+  return result;
+};
+
+// ---------------------------------------------------------------------------
+// 逐行判据（csv_io:190-278 的 `parse_prompt_row`）
+// ---------------------------------------------------------------------------
+
+/** 一行的解析结果：要么出一条条目，要么出一个 reason + params（绝不出自然语言）。 */
+type RowOutcome =
+  | { item: PromptItem; reason?: undefined; params?: undefined }
+  | { item?: undefined; reason: string; params: Record<string, string> };
+
+function invalidFormat(value: string): RowOutcome {
+  return { reason: 'invalid_format', params: { value } };
+}
+
+/**
+ * 严格解析枚举列：契约内原样收下，契约外 `null`（⇒ `invalid_format`）。
+ *
+ * 🔴 与 `shared.asIntent` / `asPromptSource`（**宽松**回落到中立成员）刻意分成两套：
+ * draft 那条路上后端由 serde 在 IPC 边界把关，demo 自己判就是「自作主张多判几种」；
+ * 而 CSV 这条路真后端**自己就在判**（csv_io:207 / 246 的 `::parse(...).ok_or_else(...)`）⇒
+ * demo 必须同样严格，否则「导入一行非法意图」这个错误路径在浏览器里根本演不出来。
+ * 清单直接消费 `api/types.ts` 的运行时值表，**不硬编码字符串数组**。
+ */
+function parseIntent(raw: string): IntentCategory | null {
+  return (INTENT_VALUES as readonly string[]).includes(raw) ? (raw as IntentCategory) : null;
+}
+
+function parsePromptSource(raw: string): PromptSource | null {
+  return (PROMPT_SOURCE_VALUES as readonly string[]).includes(raw) ? (raw as PromptSource) : null;
+}
+
+/**
+ * `parse::<u8>()` 的镜像：只认十进制非负整数且 ≤255。
+ * `'abc'` / `'3.5'` / `'-1'` / `'999'` 一律 `null`（Rust 那侧同样是解析失败 ⇒ `invalid_format`，
+ * 而不是 `out_of_range`——越界那支只在**解析成功**之后才跑，demo 未移植，见文件头）。
+ */
+function parseU8(raw: string): number | null {
+  if (!/^\d+$/.test(raw)) return null;
+  const value = Number(raw);
+  return value <= U8_MAX ? value : null;
+}
+
+/**
+ * 一行 → 一条条目。判据顺序逐字照 csv_io:196-262（顺序决定了同一行报哪个 reason）。
+ *
+ * ⚠ `group_name` 留空 ⇒ `null`；后端会回填 `intent.label_zh()`（csv_io:269-273，一张中文表），
+ * demo 不镜像它（简报 H-8），前端有本地化的 `__ungrouped__` 路径。
+ * ⚠ `position` = **已成功解析的条目数**（csv_io:174 传的 `result.items.len()`），
+ * 错误行不占位；落库前还会经 `reindexed` 再排一次，两处口径一致。
+ */
+function parsePromptRow(
+  record: CsvRecord,
+  columns: readonly string[],
+  setId: string,
+  position: number,
+): RowOutcome {
+  const cell = (name: string): string => {
+    const at = columns.indexOf(name);
+    // `flexible(true)`：短行取不到该列就是空串（csv_io:173 的 `record.get(i).unwrap_or("")`）。
+    return at < 0 ? '' : (record.cells[at] ?? '').trim();
+  };
+
+  const text = cell('text');
+  if (text === '') return { reason: 'required', params: {} };
+
+  const intentRaw = cell('intent');
+  const intent = parseIntent(intentRaw);
+  if (intent === null) return invalidFormat(intentRaw);
+
+  const weightRaw = cell('weight');
+  const weight = weightRaw === '' ? DEFAULT_WEIGHT : parseU8(weightRaw);
+  if (weight === null) return invalidFormat(weightRaw);
+
+  const repeatRaw = cell('repeat_count');
+  const repeatCount = repeatRaw === '' ? DEFAULT_REPEAT_COUNT : parseU8(repeatRaw);
+  if (repeatCount === null) return invalidFormat(repeatRaw);
+
+  const sourceRaw = cell('source');
+  const source = sourceRaw === '' ? DEFAULT_SOURCE : parsePromptSource(sourceRaw);
+  if (source === null) return invalidFormat(sourceRaw);
+
+  const groupName = cell('group_name');
+  const tagsRaw = cell('tags');
+  const tags =
+    tagsRaw === ''
+      ? []
+      : tagsRaw
+          .split(CSV_TAG_SEPARATOR)
+          .map((tag) => tag.trim())
+          .filter((tag) => tag !== '');
+
+  return {
+    item: {
+      id: newId(),
+      set_id: setId,
+      text,
+      intent,
+      weight,
+      group_name: groupName === '' ? null : groupName,
+      tags,
+      source,
+      // CSV 没有竞品列 ⇒ 导入的条目一律不做品牌对比（真后端同样如此，列不在表头里）。
+      competitor_ids: [],
+      repeat_count: repeatCount,
+      position,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// CSV 读取（csv crate 的行为镜像：RFC4180 引号规则 + `flexible(true)` 容忍长短行）
+// ---------------------------------------------------------------------------
+
+/**
+ * 把整份 CSV 读成记录数组。语法错误**不抛**，而是就地变成一条 `error` 非空的记录：
+ * csv_io:161-172 也是这个形状（`Err(err) => { push row_invalid; continue }`），
+ * 于是「第 3 行读不出来、其余行照样导入」这件事在 demo 里演得出来。
+ *
+ * 🔴 诊断串一律 **ASCII**：它进 `params.value`，是给开发者看的原文（真值源装的是 csv 库的
+ * `err.to_string()`）。绝不要把单元格内容拼进去——那会把用户数据（可能是中文）塞进错误载荷。
+ */
+function parseCsv(body: string): CsvRecord[] {
+  const records: CsvRecord[] = [];
+  let cells: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  let quoteClosed = false;
+  let lineNumber = 1;
+  let recordLine = 1;
+  let touched = false;
+  let index = 0;
+
+  const endField = (): void => {
+    cells.push(field);
+    field = '';
+    touched = true;
+  };
+  const endRecord = (): void => {
+    endField();
+    records.push({ cells, line: recordLine, error: null });
+    cells = [];
+    touched = false;
+  };
+  const endLine = (): void => {
+    lineNumber += 1;
+    recordLine = lineNumber;
+  };
+  const fail = (reason: string): void => {
+    records.push({ cells: [], line: recordLine, error: `csv parse error: record ${recordLine} (line: ${recordLine}): ${reason}` });
+  };
+
+  while (index < body.length) {
+    const char = body[index] as string;
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (body[index + 1] === '"') {
+          field += '"';
+          index += 2;
+          continue;
+        }
+        inQuotes = false;
+        quoteClosed = true;
+        index += 1;
+        continue;
+      }
+      if (char === '\n') lineNumber += 1;
+      field += char;
+      index += 1;
+      continue;
+    }
+
+    if (quoteClosed) {
+      // 收口引号之后只允许分隔符或行尾；其余情况 csv crate 报 "found data after closing quote"。
+      if (char === ',') {
+        endField();
+        quoteClosed = false;
+        index += 1;
+        continue;
+      }
+      if (char === '\n') {
+        endRecord();
+        quoteClosed = false;
+        endLine();
+        index += 1;
+        continue;
+      }
+      if (char === CARRIAGE_RETURN) {
+        quoteClosed = false;
+        index += 1;
+        continue;
+      }
+      fail('found data after closing quote');
+      return records;
+    }
+
+    if (char === '"' && field === '') {
+      inQuotes = true;
+      touched = true;
+      index += 1;
+      continue;
+    }
+    if (char === ',') {
+      endField();
+      index += 1;
+      continue;
+    }
+    if (char === '\n') {
+      endRecord();
+      endLine();
+      index += 1;
+      continue;
+    }
+    if (char === CARRIAGE_RETURN) {
+      index += 1;
+      continue;
+    }
+    field += char;
+    touched = true;
+    index += 1;
+  }
+
+  if (inQuotes) {
+    fail('unterminated quoted field');
+    return records;
+  }
+  // 末尾的换行不该再多出一条空记录；但「没有末尾换行的最后一行」必须收进来。
+  if (touched || cells.length > 0) endRecord();
+  return records;
+}

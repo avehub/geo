@@ -13,7 +13,7 @@
  *    A-5（format_version / payload）、A-6（field_path 四种）、A-11（三个 not_found 都必带 `kind`）。
  *
  * # 怎么收集「demo 发出的每个 code」（非空洞的关键）
- * **不**正则扫源码（脆）。把 M1 的每条错误路径都**真的触发一遍**，catch 到 payload 后逐条比对
+ * **不**正则扫源码（脆）。把 M1 + M2 的每条错误路径都**真的触发一遍**，catch 到 payload 后逐条比对
  * ⇒「发出去的」与「被钉的」是同一批对象。最后那条总扫用例还会断言收集到的 code 集合
  * **正好是** M1 会用到的那 4 个，证明触发面没有漏。
  *
@@ -22,11 +22,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import catalogJson from '../../../../../../contracts/error-codes.json';
+import { PROMPT_CSV_HEADER } from '../../api/constants';
 import { isIpcErrorPayload } from '../../api/types';
 import type { IpcErrorPayload } from '../../api/types';
 import { demoInvoke } from '../backend';
 import { getDemoDb, resetDemoDb } from '../db';
 import { SEED_ACTIVE_COMPETITOR_IDS, SEED_ACTIVE_PROJECT_ID, SEED_ARCHIVED_PROJECT_ID } from '../seed/projects';
+import { SEED_PILOT_SET_ID } from '../seed/prompt-sets';
 
 /** 清单条目的形状（照抄 `src/i18n/error-codes.test.ts` 的既有写法，不加 cast）。 */
 interface ErrorCodeEntry {
@@ -55,6 +57,20 @@ interface Scenario {
 const NOT_FOUND_KEYS = ['id', 'kind'];
 const VALIDATION_2 = ['field', 'reason'];
 const VALIDATION_3 = ['field', 'reason', 'value'];
+/** `prompt_item_delete` 的「不许删空」那一支：`expected` 装 `<N`、`value` 装请求条数。 */
+const VALIDATION_4 = ['expected', 'field', 'reason', 'value'];
+/** `prompt_set/empty_import` 在契约里登记的 params 是**空数组** ⇒ 一个键都不许加。 */
+const VALIDATION_0: string[] = [];
+
+/** 小样本题库的全部条目 id（造「一次删光」这个前提用）。 */
+function allPilotItemIds(): string[] {
+  return getDemoDb()
+    .promptItems.filter((item) => item.set_id === SEED_PILOT_SET_ID)
+    .map((item) => item.id);
+}
+
+/** 一份表头合法、但唯一数据行 `text` 为空的 CSV（⇒ 0 条可导入）。 */
+const EMPTY_IMPORT_CSV = `${PROMPT_CSV_HEADER.join(',')}\n ,pricing_plan,3,,,,1`;
 
 const SCENARIOS: Scenario[] = [
   // ---- project/not_found：{kind:'project', id} 两个键都要（A-11）----
@@ -263,6 +279,131 @@ const SCENARIOS: Scenario[] = [
     code: 'validation/failed',
     keys: VALIDATION_3,
   },
+
+  // ---- M2：prompt_set/not_found 五个发射点都必带 kind（A-11）----
+  {
+    name: 'prompt_set_get on a missing prompt set',
+    cmd: 'prompt_set_get',
+    args: () => ({ id: MISSING_ROW_ID }),
+    code: 'prompt_set/not_found',
+    keys: NOT_FOUND_KEYS,
+  },
+  {
+    name: 'prompt_set_rename on a missing prompt set',
+    cmd: 'prompt_set_rename',
+    args: () => ({ id: MISSING_ROW_ID, label: 'x' }),
+    code: 'prompt_set/not_found',
+    keys: NOT_FOUND_KEYS,
+  },
+  {
+    name: 'prompt_set_delete on a missing prompt set',
+    cmd: 'prompt_set_delete',
+    args: () => ({ id: MISSING_ROW_ID }),
+    code: 'prompt_set/not_found',
+    keys: NOT_FOUND_KEYS,
+  },
+  {
+    name: 'prompt_set_dedupe on a missing prompt set',
+    cmd: 'prompt_set_dedupe',
+    args: () => ({ id: MISSING_ROW_ID }),
+    code: 'prompt_set/not_found',
+    keys: NOT_FOUND_KEYS,
+  },
+  {
+    name: 'prompt_set_export_csv on a missing prompt set',
+    cmd: 'prompt_set_export_csv',
+    args: () => ({ id: MISSING_ROW_ID }),
+    code: 'prompt_set/not_found',
+    keys: NOT_FOUND_KEYS,
+  },
+  // 导入那侧 requirePromptSet 先跑：题库不存在时**一份 CSV 都不解析**（空载荷也不报缺表头）。
+  {
+    name: 'prompt_set_import_csv on a missing prompt set',
+    cmd: 'prompt_set_import_csv',
+    args: () => ({ id: MISSING_ROW_ID, payload: '' }),
+    code: 'prompt_set/not_found',
+    keys: NOT_FOUND_KEYS,
+  },
+  {
+    name: 'prompt_item_add on a missing prompt set',
+    cmd: 'prompt_item_add',
+    args: () => ({ set_id: MISSING_ROW_ID, items: [{ text: 'x', intent: 'pricing_plan' }] }),
+    code: 'prompt_set/not_found',
+    keys: NOT_FOUND_KEYS,
+  },
+
+  // ---- M2：prompt_item/not_found 两个发射点 ----
+  {
+    name: 'prompt_item_update on a missing item',
+    cmd: 'prompt_item_update',
+    args: () => ({
+      item: { id: MISSING_ROW_ID, set_id: SEED_PILOT_SET_ID, text: 'x', intent: 'pricing_plan' },
+    }),
+    code: 'prompt_item/not_found',
+    keys: NOT_FOUND_KEYS,
+  },
+  {
+    name: 'prompt_item_delete with an id outside the set',
+    cmd: 'prompt_item_delete',
+    args: () => ({ set_id: SEED_PILOT_SET_ID, ids: [MISSING_ROW_ID] }),
+    code: 'prompt_item/not_found',
+    keys: NOT_FOUND_KEYS,
+  },
+
+  // ---- M2：生成命令经 requireProject，报的是 project/not_found ----
+  {
+    name: 'prompt_set_generate on a missing project',
+    cmd: 'prompt_set_generate',
+    args: () => ({ project_id: MISSING_PROJECT_ID, options: {} }),
+    code: 'project/not_found',
+    keys: NOT_FOUND_KEYS,
+  },
+
+  // ---- M2：validation/failed 的四个发射点（键集分别是 2 / 2 / 2 / 4 个）----
+  {
+    name: 'prompt_set_rename with a blank label',
+    cmd: 'prompt_set_rename',
+    args: () => ({ id: SEED_PILOT_SET_ID, label: '   ' }),
+    code: 'validation/failed',
+    keys: VALIDATION_2,
+  },
+  {
+    name: 'prompt_item_add with an empty items array',
+    cmd: 'prompt_item_add',
+    args: () => ({ set_id: SEED_PILOT_SET_ID, items: [] }),
+    code: 'validation/failed',
+    keys: VALIDATION_2,
+  },
+  {
+    name: 'prompt_item_delete with an empty ids array',
+    cmd: 'prompt_item_delete',
+    args: () => ({ set_id: SEED_PILOT_SET_ID, ids: [] }),
+    code: 'validation/failed',
+    keys: VALIDATION_2,
+  },
+  {
+    name: 'prompt_item_delete that would empty the whole set',
+    cmd: 'prompt_item_delete',
+    args: () => ({ set_id: SEED_PILOT_SET_ID, ids: allPilotItemIds() }),
+    code: 'validation/failed',
+    keys: VALIDATION_4,
+  },
+  {
+    name: 'prompt_set_import_csv with a missing header column',
+    cmd: 'prompt_set_import_csv',
+    args: () => ({ id: SEED_PILOT_SET_ID, payload: 'text,intent\nx,pricing_plan' }),
+    code: 'validation/failed',
+    keys: VALIDATION_3,
+  },
+
+  // ---- M2：空导入拒绝，params 必须是空对象（契约登记的是空数组）----
+  {
+    name: 'prompt_set_import_csv where every row fails',
+    cmd: 'prompt_set_import_csv',
+    args: () => ({ id: SEED_PILOT_SET_ID, payload: EMPTY_IMPORT_CSV }),
+    code: 'prompt_set/empty_import',
+    keys: VALIDATION_0,
+  },
 ];
 
 /** 触发一条错误路径并交出 payload；路径没报错就是本文件自己的缺陷（不许静默绿）。 */
@@ -302,11 +443,13 @@ describe('demo/handlers · 错误契约第 2 层：发射点的精确键集（A-
 });
 
 describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契约词表里', () => {
-  it('三个 not_found 都带 kind，且 kind 恒为契约 note 里写死的那个值', async () => {
+  it('五个 not_found 都带 kind，且 kind 恒为契约 note 里写死的那个值', async () => {
     const expectations: [string, string, string][] = [
       ['project_get', 'project', MISSING_PROJECT_ID],
       ['entity_card_update_field', 'entity_card', SEED_ARCHIVED_PROJECT_ID],
       ['competitor_upsert', 'competitor', MISSING_ROW_ID],
+      ['prompt_set_get', 'prompt_set', MISSING_ROW_ID],
+      ['prompt_item_delete', 'prompt_item', MISSING_ROW_ID],
     ];
     const argsOf: Record<string, () => Record<string, unknown>> = {
       project_get: () => ({ id: MISSING_PROJECT_ID }),
@@ -323,6 +466,9 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
         draft: { name: 'Rival A', aliases: [], website: null, note: null },
         id: MISSING_ROW_ID,
       }),
+      prompt_set_get: () => ({ id: MISSING_ROW_ID }),
+      // ⚠ 这一支报的是**条目**不存在（id 是 prompt_item 的），不是题库不存在。
+      prompt_item_delete: () => ({ set_id: SEED_PILOT_SET_ID, ids: [MISSING_ROW_ID] }),
     };
 
     for (const [cmd, kind, id] of expectations) {
@@ -340,16 +486,22 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
     }
   });
 
-  it('总扫：把 20 条错误路径全部触发一遍，逐条比对契约词表，并证明触发面没有漏', async () => {
+  it('总扫：把每条错误路径全部触发一遍，逐条比对契约词表，并证明触发面没有漏', async () => {
+    // 条数写死在这里而不是标题里：将来加一条路径必须同时改这个数，改不动就是没真的加。
+    expect(SCENARIOS).toHaveLength(37);
     const payloads = await Promise.all(SCENARIOS.map((scenario) => emit(scenario)));
 
     expect(payloads).toHaveLength(SCENARIOS.length);
     const codes = [...new Set(payloads.map((payload) => payload.code))].sort();
-    // 触发面自查：M1 会用到的 code 就这 4 个（A-11 的表），少了说明本文件有路径没真的触发。
+    // 触发面自查：M1 + M2 会用到的 code 就这 7 个（A-11 的表 + M2 的两个 not_found 与空导入），
+    // 少了说明本文件有路径没真的触发。
     expect(codes).toEqual([
       'competitor/not_found',
       'entity_card/not_found',
       'project/not_found',
+      'prompt_item/not_found',
+      'prompt_set/empty_import',
+      'prompt_set/not_found',
       'validation/failed',
     ]);
 

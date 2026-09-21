@@ -23,8 +23,21 @@
 import type { DemoDb } from '../types';
 import { demoError } from '../types';
 import { projectById } from '../db';
-import type { Competitor, Project, ProjectAsset } from '../../api/types';
-import { FIELD_STATUS_VALUES, INDUSTRY_VALUES } from '../../api/types';
+import type {
+  Competitor,
+  IntentCategory,
+  Project,
+  ProjectAsset,
+  PromptSource,
+  SampleSizeGrade,
+} from '../../api/types';
+import {
+  FIELD_STATUS_VALUES,
+  INDUSTRY_VALUES,
+  INTENT_VALUES,
+  PROMPT_SOURCE_VALUES,
+  SAMPLE_SIZE_GRADE_VALUES,
+} from '../../api/types';
 import type { FieldStatus, Industry, Language } from '../../api/types';
 
 /** CSV 字段分隔符（真值源 `crates/geo-domain/src/csv_io.rs` 用的 csv crate 默认值）。 */
@@ -33,6 +46,18 @@ const FIELD_SEPARATOR = ',';
 const RECORD_SEPARATOR = '\n';
 /** 需要加引号的字符：分隔符、引号本身、两种换行。 */
 const MUST_QUOTE = /[",\n\r]/;
+
+/**
+ * **单元格内**多值的分隔符（标签列、竞品别名列）：镜像 Rust `crates/geo-domain/src/csv_io.rs:32`
+ * 的 `const TAG_SEPARATOR: char = ';'`。
+ *
+ * ⚠ 为什么不能放 `api/constants.ts`：那个文件是两侧共享且本轮禁改，而 Rust 的 `TAG_SEPARATOR`
+ * 是**私有** `const`（没有 `pub`）⇒ 要共享就得改 `crates/**`，那是越界。
+ * ⚠ 仓内已有第二份本地镜像：`handlers/project-transfer.ts:65` 的 `const CELL_SEPARATOR = ';'`
+ * （同一个 Rust 常量，用于竞品别名列），它未导出且该文件本轮禁改。「两份本地镜像应合并」
+ * 已列入 Task 15 的收口项。
+ */
+export const CSV_TAG_SEPARATOR = ';';
 
 /** 运行时新建对象的 id：uuid v4（仓库口径，AGENTS「ID 统一 uuid::Uuid（v4）」）。 */
 export function newId(): string {
@@ -147,6 +172,45 @@ export function asFieldStatus(value: unknown): FieldStatus {
 }
 
 /**
+ * 意图维度（M2 的 7 类意图）：清单消费 `INTENT_VALUES`，顺序即界面选项顺序。
+ *
+ * 回落 `category_awareness`（清单第 0 项 = 品类认知）：`IntentCategory` 在 Rust 侧**没有**
+ * `#[default]`，所以这里不能声称"照抄后端默认值"；选它是因为它是意图漏斗**最上游**那一档，
+ * 回落过去不会凭空给条目套上"比价/本地服务"这类带业务后果的语义。
+ */
+export function asIntent(value: unknown): IntentCategory {
+  return (INTENT_VALUES as readonly string[]).includes(asString(value))
+    ? (value as IntentCategory)
+    : INTENT_VALUES[0];
+}
+
+/**
+ * 条目来源：清单消费 `PROMPT_SOURCE_VALUES`。
+ *
+ * 🔴 回落 `manual`（**不是** Rust 的 `PromptSource::default()` = `Template`）：来源是指标口径的
+ * 一部分，契约外的值宁可认成"人工录入"，也绝不凭空给条目盖上 template / generated 的戳——
+ * 那会让界面显示一条并不存在的生成链路。与 `prompt_item_add` 强制 `manual` 同一条理由。
+ */
+export function asPromptSource(value: unknown): PromptSource {
+  return (PROMPT_SOURCE_VALUES as readonly string[]).includes(asString(value))
+    ? (value as PromptSource)
+    : 'manual';
+}
+
+/**
+ * 样本量分级：清单消费 `SAMPLE_SIZE_GRADE_VALUES`。
+ *
+ * 回落 `insufficient`（三档里最保守的一档）：分级决定界面是否展示精确分数，
+ * 回落错了会**多**给结论；回落到最保守那档只会少给，与「不足时给补齐建议而非静默通过」
+ * 的产品纪律同向。
+ */
+export function asSampleSizeGrade(value: unknown): SampleSizeGrade {
+  return (SAMPLE_SIZE_GRADE_VALUES as readonly string[]).includes(asString(value))
+    ? (value as SampleSizeGrade)
+    : 'insufficient';
+}
+
+/**
  * 数值入参：非有限数一律 0。用于 `weight` / `repeat_count` / `version` 这类导入路径上的计数。
  */
 export function asNumber(value: unknown): number {
@@ -154,12 +218,16 @@ export function asNumber(value: unknown): number {
 }
 
 /**
- * 原样收下并断言成 DTO 的联合类型（**只用于机器生成的载荷**，例如 `project_import` 读的
- * 就是 `project_export` 自己写出来的 JSON）。
+ * 原样收下并断言成 DTO 的联合类型。**只用于两种入参**：
+ * ① 机器生成的载荷（`project_import` 读的就是 `project_export` 自己写出来的 JSON）；
+ * ② `api/types.ts` **刻意没有**运行时清单的枚举（目前只有 `AssetKind` 一个）——
+ *    想校验就得凭空造一份镜像常量，那是新的漂移面（归 Task 15）。
  *
- * 🔴 为什么不在这里做白名单校验：真后端由 serde 在 IPC 边界拒绝契约外的枚举值；demo 若自己判，
- * 就是 §B-2③ 明令禁止的「自作主张多判几种」。而 `AssetKind` 在 `api/types.ts` 里
- * **刻意没有**运行时清单 ⇒ 想校验就得凭空造一份镜像常量（漂移面，归 Task 15）。
+ * 🔴 有运行时清单的枚举**一律走 `asXxx`**（`asLanguage` / `asIndustry` / `asFieldStatus` /
+ * `asIntent` / `asPromptSource` / `asSampleSizeGrade`）：它们消费 `api/types.ts` 的值表，
+ * 契约内的值原样收下、契约外的回落到该枚举的中立成员。真后端由 serde 在 IPC 边界**拒绝**
+ * 契约外的值；demo 不复制那套拒绝逻辑（§B-2③：不自造校验规则），但必须**收敛**到一个合法成员，
+ * 否则非法值会一路流进渲染层，而界面并没有能力把它显示成"非法"。
  */
 export function asEnumValue<T>(value: unknown): T {
   return value as T;

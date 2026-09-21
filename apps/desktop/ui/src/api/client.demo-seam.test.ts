@@ -23,7 +23,8 @@
  * 计数器才是同一个实例；最后那条「正向对照」用例把这件事本身也钉住了。
  *
  * ⚠ 主用例钉**两个半边**：已接真 handler 的命令（本轮 `project_list`）**resolve 出真种子数据**；
- * 仍是骨架的命令（本轮 `prompt_set_list`；探针随落地逐轮后移，40 条全落地后退休）
+ * 仍是骨架的命令（取 `demo/backend.ts` 里仍由 `notImplemented()` 占位的那条；
+ * 探针随落地逐轮后移，40 条全落地后退休）
  * **reject 出英文 not-implemented**。两个半边都**不碰 Tauri shim**。
  * 「`mockInvoke` 零调用」与「不是 `TypeError`」是**不变量**，它们才是本用例的主断言，与探针位无关。
  */
@@ -95,8 +96,8 @@ describe('api/client · demo 接缝（真检测 + 真分派，不 mock runtime�
     expect(mockInvoke.callsOf('project_list')).toHaveLength(0);
 
     // 未实现探针半边：仍是骨架的命令 reject 英文 not-implemented，归一化成 ipc/invoke_failed。
-    const error: unknown = await client.promptSetList('p-probe').catch((cause: unknown) => cause);
-    expect(mockInvoke.callsOf('prompt_set_list')).toHaveLength(0);
+    const error: unknown = await client.settingsGet().catch((cause: unknown) => cause);
+    expect(mockInvoke.callsOf('settings_get')).toHaveLength(0);
     // 主断言②：用户原始报错 `Cannot read properties of undefined (reading 'invoke')` 是 TypeError，
     // 所以「不是 TypeError」才是「浏览器里那句密码式报错不会再出现」的判据。
     expect(error).not.toBeInstanceOf(TypeError);
@@ -104,7 +105,7 @@ describe('api/client · demo 接缝（真检测 + 真分派，不 mock runtime�
     if (!(error instanceof client.IpcRequestError)) throw new Error('expected IpcRequestError');
     expect(error.code).toBe(INVOKE_FAILED);
     // 探针位随 handler 落地逐轮后移；与 client.demo-runtime.test.ts 用同一个契约常量。
-    expect(error.message).toContain(`${NOT_IMPLEMENTED}prompt_set_list`);
+    expect(error.message).toContain(`${NOT_IMPLEMENTED}settings_get`);
     expect(error.message).not.toMatch(CJK);
   });
 

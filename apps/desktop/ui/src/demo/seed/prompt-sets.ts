@@ -94,7 +94,15 @@ export const SEED_PROMPT_SETS: PromptSet[] = [
     // 62 条 >= SUFFICIENT_SAMPLE_SIZE(60) ⇒ 静态写死 sufficient（规则 9：不重算）。
     sample_size_grade: 'sufficient',
     created_at: '2026-09-16T06:00:00Z',
-    notes: null,
+    // `notes` 的**两条渲染路径**都要有样本（`pages/PromptSetPage.tsx` 的 `describeNoteLine` 按行分派）：
+    // 第 1 行 = 后端 `degradation_note("expansion", …)` 的**单行紧凑 ASCII 机器行**
+    // （真值源 `prompt_service.rs:282` 调用、`:842` 生成；字段 stage / code / params，键按字典序），
+    // 前端 `JSON.parse` 之后走词典，机器记号一个都不上屏；
+    // 第 2 行 = **既存的中文散文行**，原样渲染（裁定 §H-2 明令不许顺手改成机器行）。
+    // `reason: 'other'` 与 `stage: 'expansion'` 都是词典里已登记的值（zh-CN/errors.ts 的 transport.*）。
+    notes:
+      'degraded {"code":"llm/transport","params":{"reason":"other"},"stage":"expansion"}\n' +
+      '扩写阶段调用模型失败，本轮题目改由行业模板与本地改写补足，结论仅供方向性参考。',
   },
   {
     id: SEED_PILOT_SET_ID,

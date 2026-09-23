@@ -12,6 +12,16 @@
  */
 const demo = {
   banner: '演示模式：静态种子数据，刷新即重置，不代表真实算法结果。',
+  /**
+   * 密钥区的那句提示（计划正文 Task 14 的 Produces **逐字**要求：「演示模式不会写入系统钥匙串」）。
+   *
+   * 它是**如实描述**，不是免责声明：demo 的 `secret_set` 连内存都不存 Key——只把 `configured`
+   * 翻成 `true`、值当场丢弃（`demo/handlers/secret.ts:53-62`，异常表 E-21，AGENTS 规则 3 的更强落法）。
+   * 少了这句，用户在浏览器里粘一把真 Key 点保存，会以为它进了钥匙串。
+   * 渲染点 `components/SecretStatus.tsx`，按 `api/runtime.ts` 的 `runtime` 条件出现：
+   * 真桌面端确实写钥匙串，在那儿渲染它就是假话。
+   */
+  secretNoKeychain: '演示模式不会写入系统钥匙串',
 };
 
 export default demo;

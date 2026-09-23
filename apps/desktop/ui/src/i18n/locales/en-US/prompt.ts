@@ -142,8 +142,9 @@ const prompt: ResourceBundle['prompt'] = {
     deleteSelected: 'Delete selected',
     deleteSelectedCount: 'Delete selected ({{selected}})',
     deleteConfirmTitle: 'Delete the {{total}} selected prompts?',
-    deleteConfirmContent:
-      'The content hash and the sample-size grade are recomputed after deletion, and this cannot be undone (export a CSV backup first if you need one).',
+    // 🔴 与 zh-CN 同批改：不再承诺「重算」（demo 里 sample_size_grade 是静态继承的，
+    // 规则 9 / 异常表 E-7）。理由与常驻判据见 zh 侧注释。
+    deleteConfirmContent: 'This cannot be undone (export a CSV backup first if you need one).',
     deleteConfirmOk: 'Delete',
     filtered: 'Showing {{shown}} of {{total}}',
     intentFilterAll: 'All ({{total}})',

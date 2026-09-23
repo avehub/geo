@@ -87,6 +87,11 @@ function describeNoteLine(line: string, t: TFunction): string {
   // stage 走 raw passthrough：后端将来加了第三种 stage，界面露出机器记号（显眼、可排查），
   // 而不是静默渲染成半句话。两个 stage 键的覆盖断言在 no-hardcoded-strings.test.ts（B-4 同类问题：
   // 扫描测试只看字面量，抓不到这种从数据里拼出来的 key）。
+  //
+  // ⚠ 这段「动态键查词典、查不到回退 id」的机制与 `i18n/enum-label.ts` 的 `enumLabel` 同形，
+  // 但**刻意不收进去**：这里拼的是 notes 机器行的整键路径（`…notes.stage.<stage>`），回退语义是
+  // 「露出机器记号」而不是「显示枚举标签」，且只此一处消费。它是「全仓只有一份实现」那条判据
+  // （`components/ProviderSelect.test.tsx`）里**唯一被认领的例外**——要动这段，先动那条判据并写明理由。
   const stageKey = `prompt.promptSet.notes.stage.${stage}`;
   const rendered = t(stageKey, { nsSeparator: false });
   const stageText =

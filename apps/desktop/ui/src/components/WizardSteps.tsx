@@ -99,7 +99,8 @@ export function WizardStepContent({ step }: { step: number }) {
           rules={[{ type: 'url', message: t('common.invalidUrl') }]}
           extra={t('project.wizard.websiteExtra')}
         >
-          <Input placeholder="https://www.example.com" allowClear />
+          {/* 占位提示也会上屏 ⇒ 走词典；值与搬进来之前逐字相同（改措辞属文案变更，AGENTS 规则 8） */}
+          <Input placeholder={t('project.wizard.websitePlaceholder')} allowClear />
         </Form.Item>
         <Form.Item name="core_pages" label={t('project.wizard.corePages')} extra={t('project.wizard.corePagesExtra')}>
           <Select

@@ -7,6 +7,8 @@ import { mockInvoke } from '../test/invoke-mock';
 import { renderWithProviders } from '../test/render';
 import { makeProject } from '../test/fixtures';
 import { WIZARD_DRAFT_KEY, resetWizardDraftStore } from '../store/wizard-draft';
+import enUS from '../i18n/locales/en-US';
+import zhCN from '../i18n/locales/zh-CN';
 
 const NEXT = /下一步/;
 
@@ -210,5 +212,28 @@ describe('ProjectWizardPage', () => {
     expect(rendered.length).toBe(2);
     expect(screen.queryByText(/io\/failed reason=/)).not.toBeInTheDocument();
     expect(screen.queryByText('创建失败，请检查填写内容')).not.toBeInTheDocument();
+  });
+
+  /**
+   * #47（15a §8-3）：`WizardSteps.tsx` 第 2 步的官网占位提示也要走词典。
+   *
+   * 它**全 ASCII**，两遍 CJK 残留扫描看不见它，但确实会上屏 ⇒ 与 15a 处理过的
+   * `corePagesPlaceholder`（`…/about` 那条）同性质、同办法：**值逐字搬进词典、不改文案**
+   * （加「例如：」这种前缀属改文案，AGENTS 规则 8 要产品负责人先点头）。
+   */
+  it('#47 · 官网占位提示走词典，且值逐字等于搬进词典前的那个字面量', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectWizardPage />);
+
+    await user.type(screen.getByLabelText('品牌名'), 'HongYu');
+    await gotoStep(user, 1);
+
+    // 两侧逐字同一个 URL：它本来就是语言中立的示例地址，搬进词典不是为了翻译，是为了不留硬编码
+    expect(zhCN.project.wizard.websitePlaceholder).toBe('https://www.example.com');
+    expect(enUS.project.wizard.websitePlaceholder).toBe('https://www.example.com');
+    // 组件真的查词典：渲染出来的 placeholder 就是词典值，不是同形字面量
+    expect(screen.getByPlaceholderText(zhCN.project.wizard.websitePlaceholder)).toBeInTheDocument();
+    // 防空跑：同一个 Form.Item 的 label 仍在（别是整步没渲染出来的假绿）
+    expect(screen.getByLabelText('官网')).toBeInTheDocument();
   });
 });

@@ -33,6 +33,12 @@ const settings = {
 
   providerForm: {
     baseUrl: '接口地址',
+    /**
+     * 选「自定义」时那个输入框的占位提示。原先硬编码在 `components/ProviderSelect.tsx` 上：
+     * 全 ASCII ⇒ 两遍 CJK 残留扫描都看不见它，但它确实会上屏（与 `project.wizard.*Placeholder`
+     * 同性质）。值**逐字搬进词典、不改文案**（加「例如：」前缀属改文案，AGENTS 规则 8 要产品负责人先点头）。
+     */
+    baseUrlPlaceholder: 'https://api.example.com/v1',
     baseUrlHint: 'OpenAI 兼容服务，需以 http:// 或 https:// 开头；必填',
     baseUrlReadonly: '接口地址：',
     defaultModel: '默认模型',

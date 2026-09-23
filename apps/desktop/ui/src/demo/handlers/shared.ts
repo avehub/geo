@@ -51,11 +51,12 @@ const MUST_QUOTE = /[",\n\r]/;
  * **单元格内**多值的分隔符（标签列、竞品别名列）：镜像 Rust `crates/geo-domain/src/csv_io.rs:32`
  * 的 `const TAG_SEPARATOR: char = ';'`。
  *
- * ⚠ 为什么不能放 `api/constants.ts`：那个文件是两侧共享且本轮禁改，而 Rust 的 `TAG_SEPARATOR`
- * 是**私有** `const`（没有 `pub`）⇒ 要共享就得改 `crates/**`，那是越界。
- * ⚠ 仓内已有第二份本地镜像：`handlers/project-transfer.ts:65` 的 `const CELL_SEPARATOR = ';'`
- * （同一个 Rust 常量，用于竞品别名列），它未导出且该文件本轮禁改。「两份本地镜像应合并」
- * 已列入 Task 15 的收口项。
+ * ⚠ 为什么不能放 `api/constants.ts`：那个文件装的是两侧共享的**契约常量**，而 Rust 的
+ * `TAG_SEPARATOR` 是**私有** `const`（没有 `pub`）⇒ 要真共享就得改 `crates/**`，那是越界。
+ * 🔴 全仓**只许有这一份**本地镜像：竞品别名列（`handlers/project-transfer.ts`）与题库标签列
+ * （`handlers/prompt-csv.ts`）都从这里引。曾经存在过第二份未导出的 `CELL_SEPARATOR`
+ * （同一个 Rust 常量、各漂各的风险），现已收掉；「不许再长出第二份」的判据在
+ * `handlers/m1-contract.test.ts`（命中清单必须恰好是本文件这一处）。
  */
 export const CSV_TAG_SEPARATOR = ';';
 

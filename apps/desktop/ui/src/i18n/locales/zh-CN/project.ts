@@ -68,6 +68,12 @@ const project = {
 
     website: '官网',
     websiteExtra: '自动建档会抓取官网首页与站内页面，仅抓自有域名',
+    /**
+     * 与下面 `corePagesPlaceholder` 同性质、同裁定：原先硬编码在 `components/WizardSteps.tsx`
+     * 的官网输入框上，全 ASCII ⇒ CJK 残留扫描看不见，但确实会上屏 ⇒ 进词典。
+     * 值**逐字不动**（补「例如：」前缀属改文案，AGENTS 规则 8 要产品负责人先点头）。
+     */
+    websitePlaceholder: 'https://www.example.com',
     corePages: '核心页面',
     corePagesExtra: '输入完整 URL 后回车，可添加多个',
     /**

@@ -142,7 +142,7 @@ describe('api/client · demo 接缝（真检测 + 真分派，不 mock runtime�
     expect(error.message).not.toMatch(CJK);
   });
 
-  // 🔴 永久探针（Task 14 复审 Minor 1）：`ipc/invoke_failed` 这一维必须**一直有人钉**。
+  // 🔴 永久探针：`ipc/invoke_failed` 这一维必须**一直有人钉**。
   // 它钉的是「handler 抛的**普通 Error**（不是契约 payload）穿过同一条接缝后被归一化」，
   // 活的走这条路的代码是 `demo/handlers/export.ts:77-80`（运行环境不支持 blob 下载）。
   it('永久探针：handler 抛的普通 Error 归一化成 ipc/invoke_failed，零调用不变量照样成立', async () => {

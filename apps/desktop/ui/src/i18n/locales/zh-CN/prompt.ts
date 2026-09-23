@@ -194,7 +194,14 @@ const prompt = {
     deleteSelected: '删除选中',
     deleteSelectedCount: '删除选中（{{selected}}）',
     deleteConfirmTitle: '删除选中的 {{total}} 条 prompt？',
-    deleteConfirmContent: '删除后内容哈希与样本量分级会重算，且不可恢复（可先导出 CSV 备份）。',
+    /**
+     * 🔴 **不承诺「重算」**：`sample_size_grade` 在 demo 里是静态继承的（AGENTS 规则 9 / 异常表 E-7：
+     * 分级阈值属领域算法），原文案写着「内容哈希与样本量分级会重算」——那是**会上屏的过度承诺**，
+     * 产品负责人在 demo 里删一条题库就会看见界面撒谎。真后端确实两者都重算
+     * （`PromptSet::refresh()`），所以「不承诺」在两种运行时下都不算少说真话。
+     * 常驻判据在 `i18n/dictionary.test.ts`（词典任何叶子都不许把「分级」与「重算」写在一起）。
+     */
+    deleteConfirmContent: '删除后不可恢复（可先导出 CSV 备份）。',
     deleteConfirmOk: '确认删除',
     filtered: '筛出 {{shown}} / {{total}} 条',
     intentFilterAll: '全部（{{total}}）',

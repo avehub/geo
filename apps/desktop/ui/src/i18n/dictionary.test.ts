@@ -911,7 +911,7 @@ describe('AGENTS 规则 6 · 文案合规', () => {
 
   it('全部 9 个 namespace、两侧的文案都没有绝对化用语', () => {
     const probe = dictionaryProbe();
-    // 防空跑：词典面塌成空集时「0 条违规」是永真的。912 = 9 个 namespace × 两侧各 456 个叶子。
+    // 防空跑：词典面塌成空集时「0 条违规」是永真的。918 = 9 个 namespace × 两侧各 459 个叶子（本轮 #23/#47/#25 两侧同批各加 3 键）。
     expect(probe.length, '合规扫描面塌了 ⇒ 判据已失效').toBeGreaterThanOrEqual(900);
     // 🔴 覆盖面自查（15b #49 的本体）：probe 里出现的 namespace 必须**恰好**是词典的全部 9 个。
     // 少了 ⇒ 又回到 M-2 那个缺口；多了 ⇒ 说明 path 前缀被谁改坏了。
@@ -1201,5 +1201,87 @@ describe('F-2d · en 字段标签一律单数头名词（主谓一致）', () =>
       .map(([path]) => path.slice('fields.'.length))
       .sort();
     expect(seen).toEqual([...PLURAL_HEAD_KNOWN.keys()].sort());
+  });
+});
+
+/**
+ * #22（台账 #43 #41 #36 同一根因，一并处置）：**上屏文案不许承诺 demo 不会做的重算**。
+ *
+ * 出事的那句是 `prompt.promptSet.deleteConfirmContent`：它写着「内容哈希与样本量分级**会重算**」，
+ * 而 demo 按 AGENTS 规则 9 **不重算** `sample_size_grade`（分级阈值是领域算法；导入、增删条目
+ * 都只继承静态值，见 `demo/handlers/prompt.ts:21` 与 `demo/handlers/project-transfer.ts`）。
+ * 这是**会上屏的过度承诺**——产品负责人在 demo 里删一条题库就会看见界面撒谎。
+ *
+ * 裁定是「改文案，不承诺重算」，并且**不加**每页可见提示（`components/DemoBanner.tsx` 的常驻 demo 横幅已经兜底）。
+ * 这里把它落成常驻判据：词典任何叶子都不许同时出现「分级/档位」与「重算/重新计算」
+ * （en 侧同理）。**只禁分级那一维**：`content_hash` 在 demo 里确实每次写都重算
+ * （`prompt.ts:108` 的占位算法），承诺它不算撒谎，所以不一并禁掉——禁宽了判据就会逼出假例外。
+ *
+ * ⚠ 判据本身要有对照组（下面最后一条）：没有它，「0 条承诺」在词典面塌掉时同样是永真。
+ */
+describe('#22 · 上屏文案不许承诺「样本量分级会重算」', () => {
+  /** zh 侧的两个词族：同一句里都出现才算承诺。 */
+  const GRADE_ZH = /(样本量分级|样本量档位|分级|档位)/;
+  const RECOMPUTE_ZH = /(重算|重新计算)/;
+  /** en 侧同理（`sample-size grade` / `tier` × `recomputed` / `recalculated`）。 */
+  const GRADE_EN = /(grade|tier)/i;
+  const RECOMPUTE_EN = /(recomput|recalculat)/i;
+
+  type Leaf = [side: string, path: string, value: string];
+
+  /** 两侧 × 全部 namespace 的叶子（从资源树现算，不手抄键名）。 */
+  function allLeaves(): Leaf[] {
+    const out: Leaf[] = [];
+    for (const side of SIDES) {
+      const tree: unknown = side === 'zh-CN' ? zhCN : enUS;
+      for (const [leafPath, value] of leaves(tree)) out.push([side, leafPath, value]);
+    }
+    return out;
+  }
+
+  function gradePromises(probe: readonly Leaf[]): string[] {
+    return probe
+      .filter(([, , value]) =>
+        GRADE_ZH.test(value)
+          ? RECOMPUTE_ZH.test(value)
+          : GRADE_EN.test(value) && RECOMPUTE_EN.test(value),
+      )
+      .map(([side, leafPath, value]) => `${side} ${leafPath} = ${value}`);
+  }
+
+  it('两侧词典的任何叶子都不承诺「样本量分级会重算」', () => {
+    const probe = allLeaves();
+
+    // 防空跑：词典面塌成空集时「0 条承诺」是永真的（与规则 6 那条同一个下界口径）
+    expect(probe.length, '词典扫描面塌了 ⇒ 判据已失效').toBeGreaterThanOrEqual(900);
+    expect(
+      gradePromises(probe),
+      '这些文案在承诺 demo 不会做的重算（规则 9：sample_size_grade 是静态继承）⇒ 改文案，别改判据',
+    ).toEqual([]);
+  });
+
+  it('自证（对照组）：把「分级会重算」塞回去，zh 与 en 两侧都会被这套判据抓到', () => {
+    expect(
+      gradePromises([
+        ['zh-CN', 'probe.a', '删除后内容哈希与样本量分级会重算，且不可恢复。'],
+        ['en-US', 'probe.b', 'The sample-size grade is recomputed after deletion.'],
+      ]),
+    ).toHaveLength(2);
+    // 反向对照：只提哈希、不提分级 ⇒ 放行（判据不是「见到重算就红」，那样会逼出假例外）
+    expect(gradePromises([['zh-CN', 'probe.c', '删除后内容哈希会重算。']])).toEqual([]);
+    expect(gradePromises([['en-US', 'probe.d', 'The content hash is recomputed.']])).toEqual([]);
+  });
+
+  it('改后强度不减：删除确认文案两侧仍警告不可恢复，且仍指向 CSV 备份', () => {
+    const zh = zhCN.prompt.promptSet.deleteConfirmContent;
+    const en = enUS.prompt.promptSet.deleteConfirmContent;
+
+    expect(zh).toContain('不可恢复');
+    expect(zh).toContain('CSV');
+    expect(en.toLowerCase()).toContain('cannot be undone');
+    expect(en).toContain('CSV');
+    // 两侧都不是空壳（改文案时最容易把一侧漏成占位串）
+    expect(zh.trim().length).toBeGreaterThanOrEqual(10);
+    expect(en.trim().length).toBeGreaterThanOrEqual(20);
   });
 });

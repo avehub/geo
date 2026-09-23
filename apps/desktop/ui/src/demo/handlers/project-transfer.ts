@@ -5,14 +5,19 @@
  * # 🔴 两条必须逐字同构的契约（简报 A-5）
  * ① `EXPORT_FORMAT_VERSION`：demo 必须用同一个字面量，但**不许 import 后端**（跨语言）
  *   ⇒ 这里独立写死一份，注释指向 transfer:19；漂了 `project.test.ts` 与 `m1-contract.test.ts` 会红。
- *   （这类「跨语言镜像常量」的正式收口归 Task 15，见 `downstream-obligations.md`。）
+ *   （跨语言镜像常量的收口口径：`;` 那一支已经收成一份——全仓只有 `handlers/shared.ts` 的
+ *   `CSV_TAG_SEPARATOR`，「不许再长出第二份本地镜像」的判据在 `m1-contract.test.ts`。）
  * ② `counts` **恰好 7 个键**（transfer:207-214），且导入**绝不覆盖已有项目**（transfer 头注释第 4 行）
  *   ⇒ 一律新 id，同一份导出可以反复导入成多个副本。
  *
  * # 🔴 刻意不移植的东西（AGENTS 规则 9 / 简报 §B-2）
  * - `validate_project`：导入路径上的项目字段校验属领域规则，demo 不判；
- * - `PromptSet::refresh()` / `reindex()` 里的**重算**部分（`content_hash`、`sample_size_grade`）
- *   ⇒ demo 原样保留载荷里的静态值，只重排 `set_id` / `position` 这类**归属信息**。
+ * - `PromptSet::refresh()` 里的**分级重算**（`sample_size_grade`）⇒ 分级阈值是领域算法，
+ *   demo 一律继承载荷里的静态值（异常表 E-7），只重排 `set_id` / `position` 这类**归属信息**。
+ * - ⚠ `content_hash` 是**另一半，口径相反**：它不算领域算法（demo 侧是 `demoContentHash` 那个
+ *   占位派生值），所以导入不再自带一份写逻辑，而是走**唯一**的 item 级写入口 `writePromptItems`
+ *   由它定稿——与 transfer:182-183 的 `reindex()` + `refresh()` 同形，也堵掉了「内嵌副本与
+ *   归一化清单各是一份克隆、可以各漂一边」那个洞。
  *
  * # `exported_at` 与 `created_at`
  * `exported_at = now`（transfer:66）：这是**运行时产物**，行为正确而不是不确定性漏洞；
@@ -40,7 +45,9 @@ import {
   promptSetWithItems,
   revisionsOf,
 } from '../db';
+import { reindexed, writePromptItems } from './prompt';
 import {
+  CSV_TAG_SEPARATOR,
   asEnumValue,
   asFieldStatus,
   asIndustry,
@@ -61,9 +68,6 @@ import {
 
 /** 真值源 transfer:19。跨语言无法 import ⇒ 第二份副本，注释即钉子（见文件头 ①）。 */
 const EXPORT_FORMAT_VERSION = 'geo-project-export-v1';
-/** 多值单元格里的分隔符（真值源 `crates/geo-domain/src/csv_io.rs:32`），避免与 CSV 逗号混淆。 */
-const CELL_SEPARATOR = ';';
-
 /** `project_export`：项目全量导出（JSON）。竞品、资产、实体卡、修订与题库快照一起走。 */
 export const projectExport: DemoHandler = (args) => {
   const db = getDemoDb();
@@ -154,7 +158,8 @@ export const projectImport: DemoHandler = (args) => {
   // 题库：换 set id / item id，并把条目的 competitor_ids 跟着竞品一起换（映射不到的直接丢弃，
   // 真值源 transfer:151-161 —— 不重映射就会留下指向旧项目竞品的悬挂 id）。
   const importedSets: PromptSet[] = [];
-  const importedItems: PromptItem[] = [];
+  /** 每个 set 构造好的条目，写库阶段交给 `writePromptItems`（构造阶段一律不动库）。 */
+  const pendingItems: PromptItem[][] = [];
   for (const raw of asRecordList(payload.prompt_sets)) {
     const setId = newId();
     const items = asRecordList(raw.items).map((item, position) => ({
@@ -177,17 +182,20 @@ export const projectImport: DemoHandler = (args) => {
       project_id: projectId,
       version: asNumber(raw.version),
       label: asString(raw.label),
-      // 🔴 两份视图都要写（§B-12）：内嵌副本给 DTO，归一化清单给 item 级真值。
-      items: structuredClone(items),
-      // content_hash / sample_size_grade 原样保留：重算它们是领域算法（规则 9）。
+      // 🔴 内嵌视图这里**先留空**：两份视图（内嵌副本给 DTO、归一化清单给 item 级真值）
+      // 一律由写库阶段的 `writePromptItems` 同时填 ⇒ 存的是同一批对象引用，不可能各漂一边。
+      items: [],
+      // `content_hash` 的初值取载荷里那份，只为构造阶段不留空串；定稿值由写入口按 demo 的
+      // 占位算法算出（真值源 transfer:182-183 的 `reindex()` + `refresh()` 同样重算它）。
       content_hash: asString(raw.content_hash),
       engine_scope: asStringList(raw.engine_scope),
       metric_spec_version: asString(raw.metric_spec_version),
+      // 🔴 分级**原样继承**：阈值属领域算法（规则 9 / E-7），写入口也不碰它。
       sample_size_grade: asEnumValue<PromptSet['sample_size_grade']>(raw.sample_size_grade),
       created_at: now,
       notes: cleanOptional(raw.notes),
     });
-    importedItems.push(...items);
+    pendingItems.push(items);
   }
 
   // ---- 全部构造完再写库（transfer:189 的同一顺序），失败窗口只剩「构造阶段抛错」----
@@ -197,7 +205,13 @@ export const projectImport: DemoHandler = (args) => {
   if (card) db.entityCards.push(card);
   db.revisions.push(...revisions);
   db.promptSets.push(...importedSets);
-  db.promptItems.push(...importedItems);
+  // 条目走**唯一**的 item 级写入口（`handlers/prompt.ts`）：它要求 set 已在库里，所以排在
+  // `promptSets.push` 之后。构造阶段（解析 + 校验）仍然整体前置于任何写入
+  // ⇒ 「构造抛错时库一动不动」这个性质没变，变的只是条目落库那一步不再各写各的。
+  // `reindexed` 与 transfer:182 的 `set.reindex()` 同形（position 0 基连续、set_id 对齐）。
+  importedSets.forEach((set, index) => {
+    writePromptItems(db, set.id, reindexed(pendingItems[index]));
+  });
 
   // 🔴 `counts` **恰好 7 个键**（transfer:207-214，简报 A-5）：`projects` 恒为 1、
   // `entity_cards` 是 0 或 1，其余是各自落库的条数。键集由 `project.test.ts` 与
@@ -209,7 +223,7 @@ export const projectImport: DemoHandler = (args) => {
     entity_cards: card ? 1 : 0,
     revisions: revisions.length,
     prompt_sets: importedSets.length,
-    prompt_items: importedItems.length,
+    prompt_items: importedSets.reduce((total, set) => total + set.items.length, 0),
   };
   const report: ImportReport = { project_id: projectId, counts };
   return report;
@@ -228,7 +242,7 @@ export const projectExportCompetitorsCsv: DemoHandler = (args) => {
     COMPETITOR_CSV_HEADER,
     competitorsOf(db, project.id).map((row) => [
       row.name,
-      row.aliases.join(CELL_SEPARATOR),
+      row.aliases.join(CSV_TAG_SEPARATOR),
       row.website ?? '',
       row.note ?? '',
       String(row.position),

@@ -46,6 +46,8 @@ const project: ResourceBundle['project'] = {
 
     website: 'Website',
     websiteExtra: 'Auto-build crawls the homepage and internal pages, own domain only',
+    /** 与 zh-CN 同批新增（#47），值逐字相同（URL 示例语言无关，理由见 zh 侧注释）。 */
+    websitePlaceholder: 'https://www.example.com',
     corePages: 'Core pages',
     corePagesExtra: 'Enter a full URL and press Enter; more than one is fine',
     /** Task 15a 第 19 条：与 zh-CN 同批新增，值逐字相同（URL 示例语言无关，理由见 zh 侧注释）。 */

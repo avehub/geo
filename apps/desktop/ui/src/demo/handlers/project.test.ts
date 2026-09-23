@@ -33,6 +33,7 @@ import {
   SEED_COMPETITORS,
   SEED_PROJECTS,
 } from '../seed/projects';
+import { demoContentHash } from './prompt';
 import {
   SEED_BASELINE_SET_ID,
   SEED_PILOT_SET_ID,
@@ -444,6 +445,57 @@ describe('demo/handlers/project · project_export / project_import', () => {
 
     expect(first.project_id).not.toBe(second.project_id);
     expect(getDemoDb().projects).toHaveLength(SEED_PROJECTS.length + 2);
+  });
+
+  /**
+   * #21（台账 #39）：导入的题库必须走**唯一**的 item 级写入口（`handlers/prompt.ts` 的
+   * `writePromptItems`），不能再自己 `structuredClone` 一份塞进内嵌视图。
+   *
+   * 原来那份克隆让「两份独立副本」可以并存：内嵌视图与归一化清单各是一批对象，
+   * 于是「单一真值」只在 handler 内部成立，任何后续写入都可能只改到一边。
+   * 写入口的核心不变量恰恰是**两份视图存同一批对象引用**（`prompt.ts:105-107`）⇒ 这里按引用判等。
+   *
+   * ⚠ 顺带钉住两条边界，免得「收写路径」被误读成「什么都重算」：
+   * - `content_hash` 由写入口按 demo 的**占位**算法定稿（真值源 `transfer:182-183` 的
+   *   `reindex()` + `refresh()` 同样重算它，所以这一侧是**向后端靠拢**，不是新偏离）；
+   * - `sample_size_grade` 仍然**逐条继承载荷里的静态值**（AGENTS 规则 9 / 异常表 E-7：
+   *   分级阈值是领域算法，demo 不算）。
+   */
+  it('导入走唯一写入口：两份视图是同一批对象引用，content_hash 定稿、分级仍继承载荷', async () => {
+    const exported = await demoInvoke<ProjectExport>('project_export', {
+      id: SEED_ACTIVE_PROJECT_ID,
+    });
+
+    const report = await demoInvoke<ImportReport>('project_import', {
+      payload: JSON.stringify(exported),
+    });
+
+    const db = getDemoDb();
+    const importedSets = db.promptSets.filter((set) => set.project_id === report.project_id);
+    expect(importedSets.length).toBeGreaterThan(0);
+
+    for (const set of importedSets) {
+      const normalized = db.promptItems.filter((item) => item.set_id === set.id);
+
+      expect(normalized, set.id).toHaveLength(set.items.length);
+      expect(normalized.length, set.id).toBeGreaterThan(0);
+      // 单一写入口的核心不变量：按**引用**判等（克隆出来的两份内容相同但引用不同 ⇒ 这条会红）
+      expect(
+        set.items.every((item, index) => item === normalized[index]),
+        `${set.id} 的两份视图不是同一批对象引用`,
+      ).toBe(true);
+      // position 0 基连续（真值源 transfer:182 的 reindex()）
+      expect(set.items.map((item) => item.position), set.id).toEqual(
+        set.items.map((_, index) => index),
+      );
+      // content_hash 由写入口定稿（引生产函数，不在测试里抄一遍算法）
+      expect(set.content_hash, set.id).toBe(demoContentHash(set.items));
+    }
+
+    // 规则 9 / E-7 不变：分级是静态演示值，导入**不重算**
+    expect(importedSets.map((set) => set.sample_size_grade)).toEqual(
+      exported.prompt_sets.map((set) => set.sample_size_grade),
+    );
   });
 
   it('format_version 不匹配 ⇒ validation/failed（field=format_version）', async () => {

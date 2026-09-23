@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import ProjectListPage from './ProjectListPage';
 import { mockInvoke } from '../test/invoke-mock';
 import { renderWithProviders } from '../test/render';
+import { clickClickableMenuItem } from '../test/dropdown';
 import { makeProject } from '../test/fixtures';
 import type { Project } from '../api/types';
 import { demoInvoke } from '../demo/backend';
@@ -159,7 +160,7 @@ describe('ProjectListPage', () => {
 
     const row = screen.getByText('宏宇泵业 GEO').closest('tr') as HTMLElement;
     await user.click(within(row).getByRole('button', { name: /导\s*出/ }));
-    await user.click(await screen.findByText('竞品 CSV'));
+    await clickClickableMenuItem(user, '竞品 CSV');
 
     await waitFor(() =>
       expect(mockInvoke.callsOf('project_export_competitors_csv')).toHaveLength(1),
@@ -175,7 +176,7 @@ describe('ProjectListPage', () => {
     expect(await screen.findByText('竞品 CSV 已导出')).toBeInTheDocument();
 
     await user.click(within(row).getByRole('button', { name: /导\s*出/ }));
-    await user.click(await screen.findByText('资产 CSV'));
+    await clickClickableMenuItem(user, '资产 CSV');
 
     await waitFor(() => expect(mockInvoke.callsOf('project_export_assets_csv')).toHaveLength(1));
     expect(await screen.findByText('资产 CSV 已导出')).toBeInTheDocument();
@@ -191,7 +192,7 @@ describe('ProjectListPage', () => {
 
     const row = screen.getByText('南方阀门项目').closest('tr') as HTMLElement;
     await user.click(within(row).getByRole('button', { name: /导\s*出/ }));
-    await user.click(await screen.findByText('项目 JSON（全量）'));
+    await clickClickableMenuItem(user, '项目 JSON（全量）');
 
     await waitFor(() => expect(mockInvoke.callsOf('project_export')).toHaveLength(1));
     expect(mockInvoke.lastArgsOf('project_export')).toEqual({ id: 'p-valve' });
@@ -212,7 +213,7 @@ describe('ProjectListPage', () => {
 
     const row = screen.getByText('宏宇泵业 GEO').closest('tr') as HTMLElement;
     await user.click(within(row).getByRole('button', { name: /导\s*出/ }));
-    await user.click(await screen.findByText('竞品 CSV'));
+    await clickClickableMenuItem(user, '竞品 CSV');
 
     await waitFor(() => expect(mockInvoke.callsOf('export_write_file')).toHaveLength(1));
     expect(screen.queryByText('竞品 CSV 已导出')).not.toBeInTheDocument();
@@ -275,9 +276,11 @@ describe('ProjectListPage', () => {
    * `-geo-项目档案.json` → `-geo-project.json`，`-{{label}}.csv` 的 `{{label}}` 取自
    * `project.list.competitorsLabel`（zh「竞品」→ en `competitors`）。
    *
-   * 两次导出刻意走**同一行**（与上面那条 zh 用例同形）：antd 的 Dropdown 关掉后菜单仍挂在
-   * DOM 里、只是 `pointer-events: none`，换一行再开就会有**两份**同名菜单项，
-   * `findByText` 会命中关闭的那份而点击失败。
+   * 两次导出仍走**同一行**（与上面那条 zh 用例同形）。⚠ 原先这里靠「同一行」绕开一个竞态：
+   * antd 的 Dropdown 关掉后菜单仍挂在 DOM 里、只是 `pointer-events: none`，换一行再开就会有
+   * **两份**同名菜单项，`findByText` 会命中关闭的那份而点击失败。现在点菜单项一律走
+   * `src/test/dropdown.ts` 的 `clickClickableMenuItem`（等「可点」而不是等「存在」），
+   * 那个约束已经解除；保持同一行只是为了两条用例形状一致、便于对读。
    */
   it('en-US 下导出文件名走英文模板（品牌名是数据，仍为中文）', async () => {
     stubList();
@@ -293,7 +296,7 @@ describe('ProjectListPage', () => {
 
     const row = screen.getByText('宏宇泵业 GEO').closest('tr') as HTMLElement;
     await user.click(within(row).getByRole('button', { name: /Export/ }));
-    await user.click(await screen.findByText('Project JSON (full)'));
+    await clickClickableMenuItem(user, 'Project JSON (full)');
 
     await waitFor(() => expect(mockInvoke.callsOf('project_export')).toHaveLength(1));
     expect(mockInvoke.lastArgsOf('project_export')).toEqual({ id: 'p-hongyu' });
@@ -303,7 +306,7 @@ describe('ProjectListPage', () => {
     });
 
     await user.click(within(row).getByRole('button', { name: /Export/ }));
-    await user.click(await screen.findByText('Competitors CSV'));
+    await clickClickableMenuItem(user, 'Competitors CSV');
 
     await waitFor(() =>
       expect(mockInvoke.callsOf('project_export_competitors_csv')).toHaveLength(1),

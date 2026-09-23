@@ -75,7 +75,7 @@ const M2_COMMANDS: readonly IpcCommand[] = [
   'prompt_set_import_csv',
 ];
 
-/** 设置 / 密钥 / 导出 8 条（`settings_*` 2 + `secret_*` 3 + `llm_*` 2 + `export_*` 1，Task 14）。 */
+/** 设置 / 密钥 / 导出 8 条（`settings_*` 2 + `secret_*` 3 + `llm_*` 2 + `export_*` 1）。 */
 const SETTINGS_COMMANDS: readonly IpcCommand[] = [
   'settings_get',
   'settings_update',
@@ -87,7 +87,7 @@ const SETTINGS_COMMANDS: readonly IpcCommand[] = [
   'export_write_file',
 ];
 
-/** 已接线全集（② 的断言面）：随每轮落地**只增不减**；Task 14 之后就是 40 条全集。 */
+/** 已接线全集（② 的断言面）：**只增不减**；`IPC_COMMANDS` 全部接满之后就是 40 条全集。 */
 const IMPLEMENTED_COMMANDS: readonly IpcCommand[] = [
   ...M1_COMMANDS,
   ...M2_COMMANDS,
@@ -124,7 +124,7 @@ describe('demo/backend · 骨架契约', () => {
     expect(M2_COMMANDS).toHaveLength(11);
     expect(SETTINGS_COMMANDS).toHaveLength(8);
     expect(IMPLEMENTED_COMMANDS).toHaveLength(40);
-    // 账本没有漏项：`IPC_COMMANDS` 里没有一条还挂在「待实现」上（Task 14 之后这个集合恒空）。
+    // 账本没有漏项：`IPC_COMMANDS` 里没有一条还挂在「待实现」上（清单接满后这个集合恒空）。
     expect(IPC_COMMANDS.filter((cmd) => !IMPLEMENTED_COMMANDS.includes(cmd))).toEqual([]);
 
     for (const cmd of IMPLEMENTED_COMMANDS) {
@@ -137,7 +137,7 @@ describe('demo/backend · 骨架契约', () => {
   });
 
   it('demoInvoke 对契约内命令真的走到 demoBackend：已落地的那条 resolve 出内存库里的种子数据', async () => {
-    // 探针退休后的等价物（简报 §C-3）：旧断言只看「reject 的消息里带命令名」，
+    // 探针退休后的等价物：旧断言只看「reject 的消息里带命令名」，
     // 这条直接拿回**库里的种子设置** ⇒ 既证明分派穿过了守卫与延迟层到达 handler，
     // 也证明 handler 真的读到了内存库（旧探针证不了后半截，严格更强）。
     const settings = await demoInvoke<AppSettings>('settings_get');
@@ -275,7 +275,8 @@ describe('demo/db · 刷新即重置', () => {
       SEED_PROJECTS.map((project) => project.name),
     );
     expect(db.projects.map((project) => project.status)).toEqual(['active', 'archived']);
-    // Task 12 接上 project_list 之后，这条断言会从「读 db」升级成「读 handler 的返回值」。
+    // `profiles` 恒空：档案制（provider profiles）是 Plan B/C 的契约，demo 里没有任何一条命令
+    // 写这张表，所以重置之后它必然还是空的（形状与理由见 `demo/db.ts:56-57`、`demo/types.ts:75-78`）。
     expect(db.profiles).toEqual([]);
     expect(db.secrets).toHaveLength(7);
     expect(db.secrets.every((secret) => secret.configured)).toBe(false);

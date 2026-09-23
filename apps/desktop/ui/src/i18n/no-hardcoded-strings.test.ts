@@ -979,3 +979,71 @@ describe('B-4 · notes 机器行的 stage 键集（同样是扫描抓不到的�
     expect(enUS.prompt.promptSet.notes.degraded).toContain('{{detail}}');
   });
 });
+
+/**
+ * #47（15a §8-3）+ #25 的占位提示那一半：**上屏的 `placeholder` 不许是硬编码字面量**。
+ *
+ * 为什么单独开一条判据：这类字面量**全 ASCII**（`https://www.example.com`、
+ * `https://api.example.com/v1`），两遍 CJK 残留扫描结构上看不见它，而它确实会上屏
+ * ⇒ 属本文件的口径（台账 #19 的定性：「硬编码界面文案，只是恰好不含中文」）。
+ *
+ * ⚠ 值搬进词典时**逐字不动**：加「例如：」这种前缀属**改文案**，按 AGENTS 规则 8 要先在 demo
+ * 定稿并经产品负责人点头（15a §8-5 的裁定，`project.wizard.corePagesPlaceholder` 就是这么办的）。
+ *
+ * # 例外表（逐条认领，形状照 `RESIDUAL_EXCEPTIONS`）
+ * `components/ProxyForm.tsx` 的 `http://127.0.0.1:7890` 与上面两处**同性质**，但本轮范围外
+ * （#47 只点名 `WizardSteps.tsx` 的 `https://www.example.com`，简报记为 `:102`；
+ * `ProviderSelect.tsx` 的 `https://api.example.com/v1`，简报记为 `:82`，归 #25。两处本轮已进
+ * 词典，简报那两个行号随之失效）⇒ 认一条、写明理由、
+ * 交控制器裁定是否折入下一批。🔴 不许为了让这条判据变宽而把它写成「只扫某两个文件」。
+ */
+describe('#47/#25 · 上屏 placeholder 不许硬编码（ASCII 也算）', () => {
+  const PLACEHOLDER_EXCEPTIONS: ReadonlyArray<{ path: string; hits: number; reason: string }> = [
+    {
+      path: '../components/ProxyForm.tsx',
+      hits: 1,
+      reason:
+        '本机代理地址示例，与 #47/#25 同性质但本轮范围外（简报 §A-2 只点名另两处）⇒ 认领并交控制器裁定',
+    },
+  ];
+
+  /**
+   * 抽 `placeholder` 的**字面量**写法：`placeholder="…"` / `placeholder={'…'}` / `placeholder={ "…" }`。
+   * `placeholder={t('…')}` 不命中（那正是要求的形状）。
+   * ⚠ 不带 `g`：带 `g` 的正则 `.test()`/`.exec()` 有 `lastIndex` 状态，跨调用会漏。
+   */
+  const PLACEHOLDER_LITERAL =
+    /placeholder\s*=\s*(?:"[^"]*"|'[^']*'|\{\s*(?:"[^"]*"|'[^']*')\s*\})/;
+
+  function literalPlaceholders(
+    entries: ReadonlyArray<readonly [string, string]>,
+  ): Array<{ path: string; hits: number }> {
+    const out: Array<{ path: string; hits: number }> = [];
+    for (const [path, source] of entries) {
+      const hits = source.split('\n').filter((line) => PLACEHOLDER_LITERAL.test(line)).length;
+      if (hits > 0) out.push({ path, hits });
+    }
+    return out.sort((left, right) => left.path.localeCompare(right.path));
+  }
+
+  it('抽取面里 placeholder 一律走 t()：字面量只剩例外表逐条认领的那几处', () => {
+    expect(literalPlaceholders(Object.entries(EXTRACTION_SOURCES))).toEqual(
+      PLACEHOLDER_EXCEPTIONS.map(({ path, hits }) => ({ path, hits })),
+    );
+    // 例外表自己也要对得上账：每条都写明理由，且不许悄悄多出/少掉
+    expect(PLACEHOLDER_EXCEPTIONS.every((row) => row.reason.trim().length > 10)).toBe(true);
+  });
+
+  it('自证（对照组）：塞一个字面量 placeholder 会被抓，走 t() 的写法不会', () => {
+    expect(literalPlaceholders([['../planted.tsx', '<Input placeholder="https://x.example" />']])).toEqual([
+      { path: '../planted.tsx', hits: 1 },
+    ]);
+    expect(
+      literalPlaceholders([['../planted.tsx', "<Input placeholder={t('a.b')} />"]]),
+    ).toEqual([]);
+    // 防空跑：抽取面真的有 placeholder（否则「只剩例外那几处」可能是扫描面塌了的假绿）
+    expect(
+      Object.entries(EXTRACTION_SOURCES).filter(([, source]) => source.includes('placeholder')).length,
+    ).toBeGreaterThanOrEqual(8);
+  });
+});

@@ -3,9 +3,15 @@ import type { TFunction } from 'i18next';
 /**
  * 枚举 id → 展示标签（Task 9b §B-4）。
  *
- * 全仓**只有这一份**：意图 / 来源 / 行业 / 字段状态 / 样本量告警五个枚举族共用，
- * 不许在各组件里各抄一份，也不许塞进 `src/api/errors.ts`（那是错误渲染的 4 级阶梯，
- * 语义不同）。机制逐字照 `components/ProviderSelect.tsx` 的 `providerLabel`。
+ * 全仓**只有这一份**：意图 / 来源 / 行业 / 字段状态 / 样本量告警五个枚举族，加上
+ * `components/ProviderSelect.tsx` 的服务商名（它原先自带一份同形的本地 `providerLabel`，已收进这里）
+ * 共用；不许在各组件里各抄一份，也不许塞进 `src/api/errors.ts`（那是错误渲染的 4 级阶梯，
+ * 语义不同）。「只有一份」不是口头约定：判据在 `components/ProviderSelect.test.tsx`
+ * （按机制指纹扫全部生产源码，命中清单必须恰好是本文件 + 下面那处已认领的例外）。
+ *
+ * ⚠ 那处唯一例外是 `pages/PromptSetPage.tsx` 里 notes 机器行的 stage 分派：裁定**保持不动**
+ * （它拼的是 `prompt.promptSet.notes.stage.<stage>` 这条整键路径，回退语义是「露出机器记号」
+ * 而不是「显示枚举标签」，且只此一处消费），两侧注释互相点名。
  *
  * **查不到时回退 id 本身，绝不回退中文标签**：回退中文等于把泄漏面原地留着，而且会把
  * 「词典漏了一个 id」从**显眼的机器记号**变成**静默的中文串**。

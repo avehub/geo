@@ -1,33 +1,24 @@
 import { Input, Radio, Space, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 
 import type { ProviderInfo } from '../api/types';
+import { enumLabel } from '../i18n/enum-label';
 
 /** 后端 `LlmProvider::Custom.as_str()`，选中它时接口地址必须用户填。 */
 const CUSTOM_PROVIDER = 'custom';
 
 /**
- * provider 稳定 id → 展示名（计划正文那条"控制器裁定"点名的泄漏面）。
+ * provider 稳定 id → 展示名：走全仓**唯一**那份查表机制 `i18n/enum-label.ts` 的 `enumLabel`
+ * （`settings.providers.<id>`，7 个 id 逐字取自 `crates/geo-llm/src/provider.rs` 的 `as_str()`）。
  *
- * 原先这里直接渲染后端给的 `{provider.label_zh}`（`ProviderInfo.label_zh` ←
- * `LlmProvider::label_zh()`），英文 locale 下仍是中文——而组件扫描只查 CJK **字面量**，
- * 抓不到它。现在查 `settings.providers.<id>`，7 个 id 逐字取自
- * `crates/geo-llm/src/provider.rs` 的 `as_str()`。
+ * 这里原先自带一份同形的本地 `providerLabel`，现已收掉：机制细节（为什么必须 `nsSeparator: false`、
+ * 为什么查不到时**回退 id 本身而绝不回退 `label_zh`**）只写在 `enum-label.ts` 一处，
+ * 「不许再长回第二份」的判据在 `ProviderSelect.test.tsx`（命中清单恰好是 enum-label + 一处已认领例外）。
  *
- * **查不到时回退 provider id 本身，绝不回退 `label_zh`**：回退它就等于把泄漏面原地留着，
- * 而且会让"词典漏了一个 id"变成静默的中文串而不是显眼的机器记号。
- * `nsSeparator: false` 与 `src/api/errors.ts` 的 `LOOKUP_OPTIONS` 同理——key 是从后端数据
- * 拼出来的，默认的 `:` 分隔符会把带冒号的 key 切成两半，`rendered !== key` 的 miss 判据当场失效。
- *
- * `ProviderInfo.label_zh` 字段本身**不删**（删它要连带改 demo 种子、`src/test/fixtures.ts`、
- * Task 11/14），Park 到 Plan B/C；但 UI 侧任何代码都不再读它。
+ * 为什么不能直接渲染后端给的 `ProviderInfo.label_zh`：那是后端产出的自然语言，英文 locale 下
+ * 仍是中文，而组件扫描只查 CJK **字面量**、抓不到它。该字段本身**不删**（删它要连带改 demo 种子、
+ * `src/test/fixtures.ts` 与多条命令的返回契约），Park 到 Plan B/C；但 UI 侧任何代码都不再读它。
  */
-function providerLabel(t: TFunction, provider: string): string {
-  const key = `settings.providers.${provider}`;
-  const rendered = t(key, { nsSeparator: false });
-  return typeof rendered === 'string' && rendered !== '' && rendered !== key ? rendered : provider;
-}
 
 export interface ProviderSelectProps {
   providers: ProviderInfo[];
@@ -64,7 +55,7 @@ export default function ProviderSelect({
         <Space direction="vertical" size={4}>
           {providers.map((provider) => (
             <Radio key={provider.provider} value={provider.provider}>
-              {providerLabel(t, provider.provider)}
+              {enumLabel(t, 'settings.providers', provider.provider)}
             </Radio>
           ))}
         </Space>
@@ -79,7 +70,8 @@ export default function ProviderSelect({
             id="settings-base-url"
             style={{ maxWidth: 420 }}
             value={baseUrl}
-            placeholder="https://api.example.com/v1"
+            // 占位提示也会上屏 ⇒ 走词典（值逐字搬过去、不改文案；判据在 no-hardcoded-strings.test.ts）
+            placeholder={t('settings.providerForm.baseUrlPlaceholder')}
             onChange={(event) => onBaseUrlChange(event.target.value)}
           />
           <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>

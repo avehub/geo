@@ -19,6 +19,8 @@ const settings: ResourceBundle['settings'] = {
 
   providerForm: {
     baseUrl: 'Base URL',
+    // 与 zh-CN 同批新增（#25）：值逐字相同——示例地址语言无关，搬进词典是为了不留硬编码界面文案。
+    baseUrlPlaceholder: 'https://api.example.com/v1',
     baseUrlHint: 'OpenAI-compatible service; must start with http:// or https://. Required.',
     baseUrlReadonly: 'Base URL:',
     defaultModel: 'Default model',

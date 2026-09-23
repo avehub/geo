@@ -21,6 +21,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SEED_ACTIVE_COMPETITOR_IDS, SEED_ACTIVE_PROJECT_ID, SEED_ARCHIVED_PROJECT_ID, SEED_ASSETS } from '../seed/projects';
+import { CSV_TAG_SEPARATOR } from './shared';
+import { readRepoFile } from '../../test/repo-file';
 
 const INTERNALS = '__TAURI_INTERNALS__';
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -298,5 +300,69 @@ describe('demo/handlers · M1 入参键名与分派链（B-5）', () => {
     expect(Object.keys(seen[0]).sort()).toEqual([...testCase.keys].sort());
     // ② 返回值形状对（不是「随便什么 truthy」）。
     testCase.check(result);
+  });
+});
+
+/**
+ * #20（台账 #31）：`';'` 这个**跨语言镜像常量**在 demo 侧只许有一份。
+ *
+ * 原先 `handlers/project-transfer.ts` 自己写了个未导出的 `const CELL_SEPARATOR = ';'`，
+ * 与 `handlers/shared.ts` 导出的 `CSV_TAG_SEPARATOR` 是 Rust `crates/geo-domain/src/csv_io.rs`
+ * 里同一个私有 `const TAG_SEPARATOR` 的两份本地镜像 ⇒ 一份改了另一份不会红，
+ * 竞品别名列与题库标签列会各用各的分隔符（导入时就切不开）。
+ *
+ * 🔴 Rust 侧**只读**：`TAG_SEPARATOR` 是私有 const（没有 `pub`），要共享就得改 `crates/**`，
+ * 那是越界；能做的是把「前端只有一份、且逐字等于真值源」钉成断言。
+ */
+const CSV_IO_RS = readRepoFile('crates', 'geo-domain', 'src', 'csv_io.rs');
+
+/** handlers 下的生产源码（同目录、去掉测试文件）。 */
+const HANDLER_SOURCES = import.meta.glob(['./*.ts', '!./*.test.ts'], {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+
+/**
+ * 「本地又声明了一份 `';'` 常量」的形状：`const X = ';'` / `export const X: string = ';'`。
+ * ⚠ 刻意**不带 `g`**：带 `g` 的正则 `.test()` 有 `lastIndex` 状态，跨调用会漏命中。
+ */
+function separatorMirrors(entries: ReadonlyArray<readonly [string, string]>): string[] {
+  const shape =
+    /(?:^|\n)\s*(?:export\s+)?const\s+[A-Z][A-Z0-9_]*\s*(?::\s*[^=\n]+)?=\s*';'/;
+  return entries
+    .filter(([, source]) => shape.test(source))
+    .map(([path]) => path)
+    .sort();
+}
+
+describe('#20 · CSV 单元格分隔符：跨语言镜像常量在 demo 侧只有一份', () => {
+  it('CSV_TAG_SEPARATOR 逐字等于 Rust csv_io.rs 的 TAG_SEPARATOR（解析真值源，不手抄）', () => {
+    const parsed = /const TAG_SEPARATOR: char = '(.)';/.exec(CSV_IO_RS)?.[1];
+
+    expect(parsed, 'Rust 真值源解析不出来 ⇒ 下面那条比对是空的').toBeDefined();
+    expect(CSV_TAG_SEPARATOR).toBe(parsed);
+  });
+
+  it('handlers 里声明 `;` 常量的地方恰好一处，就是 shared.ts 导出的那份', () => {
+    const paths = Object.keys(HANDLER_SOURCES);
+    // 防空跑：glob 写错时「只有一处」会变成永真
+    expect(paths.length, '扫描面塌了').toBeGreaterThanOrEqual(10);
+    expect(paths).toContain('./shared.ts');
+    expect(paths).toContain('./project-transfer.ts');
+
+    expect(
+      separatorMirrors(Object.entries(HANDLER_SOURCES)),
+      '又出现第二份本地镜像 ⇒ 两份会各自漂；一律引 shared.ts 的 CSV_TAG_SEPARATOR',
+    ).toEqual(['./shared.ts']);
+  });
+
+  it('自证（对照组）：塞一份本地 `;` 常量会被扫出来，引 shared.ts 的写法不会', () => {
+    expect(separatorMirrors([['./planted.ts', "const CELL_SEPARATOR = ';';"]])).toEqual([
+      './planted.ts',
+    ]);
+    expect(
+      separatorMirrors([['./planted.ts', "import { CSV_TAG_SEPARATOR } from './shared';"]]),
+    ).toEqual([]);
   });
 });

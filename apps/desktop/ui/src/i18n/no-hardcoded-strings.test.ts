@@ -520,7 +520,13 @@ function missingKeys(source: string): string[] {
 describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净」也是永真）', () => {
   it('扫到了 src 下全部生产源码，且排除了测试文件、词典与 resources.ts', () => {
     const paths = Object.keys(SOURCES);
-    expect(paths.length).toBeGreaterThanOrEqual(38);
+    // 15b #51（15a 复审 N-1）：下界从 `>=38` 抬到 `>=60`。
+    // `>=38` 与 BASE 逐字相同、太松 —— 实测真值是 **63**（复审席用独立 `os.walk` 复刻 glob 数出，
+    // 我这里复核一致：`src/**` 的 `.ts`/`.tsx` 共 84 个，减 `locales/**` 20 个、减 `resources.ts` 1 个
+    // = 63），掉 25 个文件都不会红。抬到 60 ⇒ 掉 4 个就红。
+    // 🔴 **63 不是断言值**：这里刻意保留下界形状（扫描面只会长不会缩，写死成 `toHaveLength(63)`
+    // 会让「新增一个生产文件」变成必须回来改数字的假红）。
+    expect(paths.length, '扫描面掉了文件 ⇒ 残留判据的覆盖面缩了').toBeGreaterThanOrEqual(60);
     expect(paths.filter((path) => path.includes('.test.'))).toEqual([]);
     expect(paths.filter((path) => path.includes('/locales/'))).toEqual([]);
     expect(paths.filter((path) => path.endsWith('resources.ts'))).toEqual([]);
@@ -663,6 +669,58 @@ describe('残留判据（Task 15a 第 6/7/8/15 条）：排除数据类之后的
     for (const ascii of ["const a = 1;", "join(', ')", 'https://example.com/a?b=c', "['(', ')']"]) {
       expect(cjkLines(ascii), `纯 ASCII 被误报：${ascii}`).toEqual([]);
     }
+  });
+
+  /**
+   * 15b #52（15a 复审 N-2）**明确表态：不并入** `U+2026 …` / `U+2014 —` / `U+00B7 ·`。
+   *
+   * 复审席的关切是对的：这三个在中文文案里常见，且**都不在** `\u3000-\u303f` 与 `\uff00-\uffef`
+   * 里，所以「只含这三个符号、不含汉字」的泄漏今天扫不出来。但实测之后裁定不并，理由是
+   * **它们不是 CJK 专属字符，而是中英共用的排版符号**，并入会把合法英文判红：
+   *
+   * - `…`（U+2026）：`locales/en-US/common.ts:15` 的 `loading: 'Loading…'` —— **合法 en 文案**。
+   * - `·`（U+00B7）：`locales/en-US/common.ts:19` 的 `tagline: 'Generative Engine Optimization · local-first'`
+   *   —— **合法 en 文案**。
+   * - `—`（U+2014）：`components/entity-fields.ts:67`/`:68`/`:71`、`components/SecretStatus.tsx:91`、
+   *   `components/PromptTable.tsx:90` 用它做**语言中立的空值占位符**（en 下也照样是 `—`）；
+   *   实测骨架里非注释的 `—` 共 **5** 行（下面那条断言取 `>= 4`）。
+   *
+   * 判据本身要判的是「**这段中文没翻**」。一个只含 `…`/`—`/`·` 的串不携带任何「没翻」的信号
+   * （含汉字的串本来就由 `\u4e00-\u9fa5` 抓住，`'加载中…'` 这类靠汉字就已经红了），
+   * 而并入的代价是**每写一条带省略号或间隔号的合法英文都要进例外表**——那是把判据做钝。
+   *
+   * 🔴 所以这条用例的作用是**把「排除」从静默变成明文裁定**：谁哪天顺手把它们并进来，
+   * 这条立刻红，必须先读上面这段理由；而下面两组断言钉住了「并入会假红」的**真值源**，
+   * 一旦那两处 en 文案改了，这里也会红，逼着重新裁一次。
+   */
+  it('刻意排除的三枚排版符号（15b #52 表态）：…/—/· 不在残留字符类里，并入会把合法 en 文案判红', () => {
+    // ① 三枚符号**刻意**在类外
+    for (const [name, glyph] of [
+      ['U+2026 …', '\u2026'],
+      ['U+2014 —', '\u2014'],
+      ['U+00B7 ·', '\u00b7'],
+    ] as const) {
+      expect(CJK.test(glyph), `${name} 被并进了残留字符类 ⇒ 先读上面那段裁定理由`).toBe(false);
+      expect(cjkLines(`const label = '${glyph}';`), `${name} 不该被判成残留`).toEqual([]);
+    }
+
+    // ② 假红证据 A（真值源逐字钉住）：合法 en 文案就在词典里
+    expect(enUS.common.loading, '这条 en 文案变了 ⇒ #52 的裁定要重跑一次').toBe('Loading\u2026');
+    expect(enUS.common.tagline).toBe('Generative Engine Optimization \u00b7 local-first');
+    expect(CJK.test(enUS.common.loading as string)).toBe(false);
+    expect(CJK.test(enUS.common.tagline as string)).toBe(false);
+
+    // ③ 假红证据 B：语言中立的空值占位符真的在骨架里（非注释行）
+    const emDashLines = Object.entries(SOURCES).flatMap(([path, source]) =>
+      stripComments(source)
+        .split('\n')
+        .flatMap((line, index) => (line.includes('\u2014') ? [[path, index + 1]] : [])),
+    );
+    expect(emDashLines.length, '空值占位符 `—` 不见了 ⇒ #52 的裁定要重跑一次').toBeGreaterThanOrEqual(4);
+    expect(emDashLines.map(([path]) => path)).toContain('../components/entity-fields.ts');
+    // 反向哨兵：同一段代码里若真出现中文，照样抓得住（排除这三枚符号**没有**把判据弄瞎）
+    expect(cjkLines("const label = '\u2014';")).toEqual([]);
+    expect(cjkLines("const label = '空\u2014值';")).toEqual([1]);
   });
 
   it('自证（对照组）：往真实生产文件里塞一个 `、` 会被扫出来（复刻 Task 8 复审 #6 的漏网形态）', () => {

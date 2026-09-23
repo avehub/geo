@@ -805,10 +805,41 @@ describe('AGENTS 规则 6 · 文案合规', () => {
    * （下面那条主断言逐字未变）；变的只是「以后写一条合法序数文案不会被误判」。
    * 反过来说，前瞻词表里每多一个词都是**放过一类文案**，所以词表本身被对照组逐条钉住。
    */
+  /**
+   * `第一` 后面跟这些字时**只可能是序数**，不是名次断言 ⇒ 放行（15b #53 扩容）。
+   *
+   * 15a 那 13 支是「本仓已经撞过的」；#53 复审指出**常见量词没补齐**：`第一个` / `第一张` /
+   * `第一份` / `第一项` 这些今天都会**假红**（方向安全但会误伤，写一条合法的向导文案就得回来改词表）。
+   * 补的 20 支全是**量词 / 结构单位 / 时间单位**，语义上不可能构成「我们是第一」这种名次断言。
+   *
+   * 🔴 判据方向：假红可以修（补词），**假绿修不回来**（文案已经进仓、已经上屏）。
+   * 所以宁可在 `FIRST_RANKING_SUFFIXES` 那一侧保守，也不往这里塞有歧义的字。
+   */
+  const FIRST_ORDINAL_BRANCHES = [
+    // 15a（第 10 条）原有的 13 支
+    '次', '天', '步', '轮', '批', '版', '层', '手', '线', '季度', '条', '列', '行',
+    // 15b #53 补的 20 支
+    '个', '张', '份', '项', '页', '组', '遍', '章', '节', '段', '周', '年', '集',
+    '期', '课', '题', '点', '种', '类', '代',
+  ] as const;
+
+  /**
+   * 🔴 **刻意不放行**的后缀（15b #53）：跟在「第一」后面时**仍然可能是名次断言**，
+   * 放进白名单就是假绿。复审席已核过最危险的 `第一名` 确实被抓（`名` 不在白名单）；
+   * 这里把同风险的另外几支也一并钉住，并在对照组里逐支验「必须判红」。
+   *
+   * - `名`：第一名 = 名次
+   * - `位`：「行业第一位」「首位」同族，是名次
+   * - `号`：第一号 = No.1，是名次
+   * - `军` / `档` / `梯队` / `流` / `品牌`：同理（「第一梯队」「第一品牌」都是广告法红线）
+   */
+  const FIRST_RANKING_SUFFIXES = ['名', '位', '号', '军', '档', '梯队', '流', '品牌'] as const;
+
   const bannedZh: readonly RegExp[] = [
     /保证/,
     /霸屏/,
-    /第一(?!次|天|步|轮|批|版|层|手|线|季度|条|列|行)/,
+    // 由白名单**生成**（不手写第二份），下面对照组再把 `source` 逐字钉死 ⇒ 两边不许漂移。
+    new RegExp(`第一(?!${FIRST_ORDINAL_BRANCHES.join('|')})`),
     /最好/,
     /最强/,
     /最优/,
@@ -833,21 +864,66 @@ describe('AGENTS 规则 6 · 文案合规', () => {
     return offenders;
   }
 
-  /** 今天的词典面：errors + fields 两个 namespace、两侧全部叶子。 */
+  /**
+   * 合规扫描面覆盖的 namespace（15b #49 / 15a 复审 M-2）。
+   *
+   * 🔴 **M-2 是存量缺口**：AGENTS 规则 6 的扫描原先只覆盖 `errors` + `fields` 两个 namespace，
+   * 而 `locales/zh-CN/` 有 **9** 个 ⇒ 其余七个（`common` / `nav` / `project` / `prompt` /
+   * `entity` / `settings` / `demo`）的**用户可见文案根本不过合规扫描**。15c 的 #22（改
+   * `deleteConfirmContent`）与 #23（钥匙串文案）正要往未覆盖区加文案 ⇒ 必须先扩面。
+   *
+   * 顺序照 `locales/zh-CN/index.ts` 的资源树（计划正文固定的那个顺序）。
+   */
+  const COMPLIANCE_NAMESPACES = [
+    'common',
+    'nav',
+    'errors',
+    'fields',
+    'project',
+    'prompt',
+    'entity',
+    'settings',
+    'demo',
+  ] as const;
+
+  /**
+   * 今天的词典面：**全部 9 个 namespace**、两侧全部叶子（15b #49 扩面，原先只有 errors + fields）。
+   *
+   * 从资源树**现算**（`leaves(zhCN[ns], ns)`），不手抄键名：`ENTRIES` / `FIELD_ENTRIES` 那两个
+   * 预算好的常量继续留给「errors 与 fields 的键集双向相等」那组用（它们的判据是**键集**，
+   * 不是合规），本函数不再复用它们，免得「合规面 = 那两个常量」这个隐含等式再回来。
+   *
+   * path 一律带 namespace 前缀（`common.loading`），所以 offenders 能直接指到键。
+   */
   function dictionaryProbe(): ComplianceEntry[] {
     const probe: ComplianceEntry[] = [];
     for (const side of SIDES) {
-      for (const [path, value] of [...ENTRIES[side], ...FIELD_ENTRIES[side]]) {
-        probe.push([side, path, value]);
+      const tree: Record<string, unknown> = side === 'zh-CN' ? zhCN : enUS;
+      for (const namespace of COMPLIANCE_NAMESPACES) {
+        for (const [path, value] of leaves(tree[namespace], namespace)) {
+          probe.push([side, path, value]);
+        }
       }
     }
     return probe;
   }
 
-  it('errors / fields 两侧的文案都没有绝对化用语', () => {
+
+  it('全部 9 个 namespace、两侧的文案都没有绝对化用语', () => {
     const probe = dictionaryProbe();
-    // 防空跑：词典面塌成空集时「0 条违规」是永真的
-    expect(probe.length, '合规扫描面为空 ⇒ 判据已失效').toBeGreaterThanOrEqual(100);
+    // 防空跑：词典面塌成空集时「0 条违规」是永真的。912 = 9 个 namespace × 两侧各 456 个叶子。
+    expect(probe.length, '合规扫描面塌了 ⇒ 判据已失效').toBeGreaterThanOrEqual(900);
+    // 🔴 覆盖面自查（15b #49 的本体）：probe 里出现的 namespace 必须**恰好**是词典的全部 9 个。
+    // 少了 ⇒ 又回到 M-2 那个缺口；多了 ⇒ 说明 path 前缀被谁改坏了。
+    expect(
+      [...new Set(probe.map(([, path]) => path.split('.')[0]))].sort(),
+      '合规扫描没覆盖全部 namespace ⇒ 那片文案不过 AGENTS 规则 6（15a 复审 M-2）',
+    ).toEqual([...COMPLIANCE_NAMESPACES].sort());
+    // 词典长出第 10 个 namespace 时，上面那条会**静默绿**（新 ns 不在 probe 里，两边都不提它）
+    // ⇒ 再钉一条：清单必须与资源树的键集逐字相等。
+    expect(Object.keys(zhCN).sort(), '词典新增了 namespace，合规扫描面必须同步扩').toEqual(
+      [...COMPLIANCE_NAMESPACES].sort(),
+    );
     expect(scanCompliance(probe)).toEqual([]);
   });
 
@@ -858,28 +934,46 @@ describe('AGENTS 规则 6 · 文案合规', () => {
   it('自证（对照组）：`第一` 的负向前瞻只放过序数，名次断言照旧判红', () => {
     const first = bannedZh.find((pattern) => pattern.source.startsWith('第一'));
     if (first === undefined) throw new Error('bannedZh 里必须有「第一」那一条');
-    expect(first.source).toBe('第一(?!次|天|步|轮|批|版|层|手|线|季度|条|列|行)');
+    // 前瞻词表**逐字**钉死：多一支（放过一类名次断言）或少一支（误伤一类序数）都红。
+    expect(first.source).toBe(
+      '第一(?!次|天|步|轮|批|版|层|手|线|季度|条|列|行' +
+        '|个|张|份|项|页|组|遍|章|节|段|周|年|集|期|课|题|点|种|类|代)',
+    );
+    // 词表本体也逐字钉住（正则由它生成 ⇒ 两边不许漂移）
+    expect([...FIRST_ORDINAL_BRANCHES]).toEqual([
+      '次', '天', '步', '轮', '批', '版', '层', '手', '线', '季度', '条', '列', '行',
+      '个', '张', '份', '项', '页', '组', '遍', '章', '节', '段', '周', '年', '集',
+      '期', '课', '题', '点', '种', '类', '代',
+    ]);
+    expect(first.source).toBe(`第一(?!${FIRST_ORDINAL_BRANCHES.join('|')})`);
 
-    // ① 名次断言：必须命中（含句末光杆的「第一」）
-    for (const claim of ['第一', '排名第一', '全网第一', '行业第一', '第一品牌', '销量第一', '第一名']) {
+    // ① 名次断言：必须命中（含句末光杆的「第一」，以及 15b #53 明令**不放行**的那几支）
+    for (const claim of [
+      '第一', '排名第一', '全网第一', '行业第一', '第一品牌', '销量第一',
+      '第一名', '第一位', '第一号', '第一军', '第一档', '第一梯队', '第一流',
+    ]) {
       expect(first.test(claim), `名次断言「${claim}」漏判了`).toBe(true);
     }
-    // ② 序数用法：必须放过（前瞻词表逐条钉住，少一个词就红）
-    for (const ordinal of [
-      '第一次', '第一天', '第一步', '第一轮', '第一批', '第一版', '第一层',
-      '第一手', '第一线', '第一季度', '第一条', '第一列', '第一行',
-    ]) {
-      expect(first.test(ordinal), `序数「${ordinal}」被误判成绝对化用语了`).toBe(false);
+    // ② 序数用法：必须放过。**逐支**验（不是抽样），少一支就红
+    for (const branch of FIRST_ORDINAL_BRANCHES) {
+      expect(first.test(`第一${branch}`), `序数「第一${branch}」被误判成绝对化用语了`).toBe(false);
+    }
+    // ③ 白名单与「刻意不放行」那份不许重叠（有人往白名单里塞 `名` ⇒ 这条红）
+    for (const ranking of FIRST_RANKING_SUFFIXES) {
+      expect(FIRST_ORDINAL_BRANCHES, `「${ranking}」是名次断言后缀，不许进序数白名单`).not.toContain(
+        ranking,
+      );
+      expect(first.test(`第一${ranking}`), `「第一${ranking}」必须判红`).toBe(true);
     }
 
-    // ③ 端到端：把一条名次断言塞进扫描面 ⇒ offenders 必须点名它
+    // ④ 端到端：把一条名次断言塞进扫描面 ⇒ offenders 必须点名它
     expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '排名第一']])).toEqual([
       `zh-CN errors.reasons.probe → ${first}`,
     ]);
     // 同一条判据喂序数 ⇒ 干净
     expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '第一条记录不合法']])).toEqual([]);
 
-    // ④ 其余 zh 词与 en 词也各验一条（证明换成 RegExp 之后整张表还在工作，不是只剩 `第一`）
+    // ⑤ 其余 zh 词与 en 词也各验一条（证明换成 RegExp 之后整张表还在工作，不是只剩 `第一`）
     expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '保证排名']])).toHaveLength(1);
     expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '业内最先进']])).toHaveLength(1);
     expect(scanCompliance([['en-US', 'errors.reasons.probe', 'Guaranteed ranking']])).toHaveLength(1);

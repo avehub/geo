@@ -599,7 +599,25 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
   it('总扫：把每条错误路径全部触发一遍，逐条比对契约词表，并证明触发面没有漏', async () => {
     // 条数写死在这里而不是标题里：将来加一条路径必须同时改这个数，改不动就是没真的加。
     expect(SCENARIOS).toHaveLength(47);
-    const payloads = await Promise.all(SCENARIOS.map((scenario) => emit(scenario)));
+    // 🔴 **顺序执行**，不是 `Promise.all`（15b #45 / Task 14 R1 复审 M-1）。
+    //
+    // `emit` 的形状是「先 `scenario.setup?.()`，再 `demoInvoke`」，而 `demo/backend.ts:170-171`
+    // 在**分派之前**就 `await withLatency()` ⇒ `Promise.all(map(...))` 下 47 个 setup 会**全部**
+    // 先于任何 handler 跑完，于是「后一条场景的前提」污染「前一条场景的调用」。
+    // 实测后果：`custom without a base url` 拿到了下一条 setup 填进去的 base_url，
+    // 发的是 `missing_model` 而不是 `missing_base_url`；而总扫原先只比 **code + 键集**、
+    // 不比键值 ⇒ 两条 payload 逐字相同也**静默通过**（下面那条 reason 哨兵就是为此加的）。
+    //
+    // ⚠ 复审席明确警告过：**给它补一个「清空 base_url」的 setup 不管用**——污染是全局顺序造成的，
+    // 不是那条 setup 缺前提。改成顺序执行后，setup_i 与 invoke_i 之间不再有任何别的 setup 插入，
+    // 这一类污染**结构上不可能**发生（今天 SCENARIOS 里只有 1 处 setup，就是肇事那一处）。
+    //
+    // ⚠ 分支级覆盖并没有丢：`settings.test.ts:372` 用 `toEqual` 钉了**全 payload**，
+    // 那才是真正抓住 `missing_base_url` 这个分支的断言 ⇒ 修总扫时**没有**动它。
+    const payloads: IpcErrorPayload[] = [];
+    for (const scenario of SCENARIOS) {
+      payloads.push(await emit(scenario));
+    }
 
     expect(payloads).toHaveLength(SCENARIOS.length);
     const codes = [...new Set(payloads.map((payload) => payload.code))].sort();
@@ -638,6 +656,28 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
         .reduce((acc, key) => `${acc} ${key}=${params[key]}`, payload.code);
       expect(payload.message).toBe(expectedMessage);
     }
+
+    // 🔴 15b #45（Task 14 R1 复审 M-1）：**场景名与它实际发出的 reason 必须对得上**。
+    //
+    // 复审席注入探针实测：`custom without a base url` 那条名字叫「没有 base_url」，
+    // 但它实际发的是 `missing_model` —— 因为 `emit` 先跑 `setup`、而 `demo/backend.ts:170-171`
+    // 是 `await withLatency()` **在分派之前**，总扫用 `Promise.all(map(...))` ⇒
+    // **全部 47 个 setup 先于任何 handler 跑完**，于是下一条场景的 setup（填 base_url）
+    // 污染了这一条。总扫原先只断言 **code + 键集**、不比键值 ⇒ 最后两条 payload 完全相同却静默通过。
+    const reasonOf = (name: string): string => {
+      const index = SCENARIOS.findIndex((scenario) => scenario.name === name);
+      expect(index, `SCENARIOS 里找不到「${name}」`).toBeGreaterThan(-1);
+      return payloads[index]?.params?.reason ?? '';
+    };
+    expect(
+      reasonOf('llm_provider_test on custom without a base url'),
+      '这条场景名说的是「没有 base_url」，发出的 reason 就必须是 missing_base_url（顺序脆弱性哨兵，15b #45）',
+    ).toBe('missing_base_url');
+    expect(reasonOf('llm_provider_test on custom with a base url but no model')).toBe('missing_model');
+    // 两条 payload 必须**互不相同**（复审席实测：Promise.all 下它们逐字相同）
+    expect(reasonOf('llm_provider_test on custom without a base url')).not.toBe(
+      reasonOf('llm_provider_test on custom with a base url but no model'),
+    );
 
     // 词表本身没被本轮改动（contracts/** 禁改）：validation/failed 仍是那 5 个键。
     expect(vocabularyOf('validation/failed')).toEqual([

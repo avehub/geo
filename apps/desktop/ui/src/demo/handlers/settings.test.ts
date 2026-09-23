@@ -238,6 +238,54 @@ describe('demo/handlers/settings · llm_providers', () => {
     expect(rows.find((row) => row.provider === 'custom')?.base_url).toBe('');
   });
 
+  /**
+   * 🔴 15b #46（Task 14 R1 复审 §11.8 #3）：**model 回落前提哨兵**。
+   *
+   * demo 的 model 回落逻辑（`demo/handlers/settings.ts`，镜像 `state.rs:72-119`）依赖一个前提：
+   * **预设厂商都有默认模型名**。真值源 `apps/desktop/src-tauri/src/state.rs:111` 的注释原文是
+   * 「`Custom` 没有默认模型名，不填就会在发请求时才报「模型名为空」」——
+   * 也就是说「没有默认模型名」这件事**只对 `custom` 成立**。
+   *
+   * 这条哨兵把前提钉住：将来往种子表里加一个**没有** `default_model` 的预设，
+   * `llm_provider_test` 的回落行为会**静默改变**（从「用该厂商的 default_model」变成
+   * 「报 `missing_model`」），而今天没有任何断言会红。
+   *
+   * ⚠ 只读后端、**不改**后端（Rust 是真值源，AGENTS 规则 4 / 简报 §H-3）。
+   */
+  it('回落前提哨兵（15b #46）：6 条预设的 base_url 与 default_model 都非空，只有 custom 允许空', async () => {
+    const rows = await demoInvoke<ProviderInfo[]>('llm_providers');
+
+    // ① 「6 条预设」是哪 6 条：id 逐字钉死（它们镜像 `LlmProvider::as_str()`，不是可漂移的展示名）
+    const presets = rows.filter((row) => row.provider !== CUSTOM_PROVIDER);
+    expect(
+      presets.map((row) => row.provider),
+      '预设厂商表变了 ⇒ 「预设有默认模型名」这个回落前提要重新裁一次',
+    ).toEqual([
+      'deep_seek',
+      'moonshot',
+      'volcengine_ark',
+      'ali_bailian',
+      'baidu_qianfan',
+      'tencent_hunyuan',
+    ]);
+
+    // ② 前提本体：两个字段都非空（`trim` 后判，空白串等同没有——读侧 trim 镜像 state.rs:99）
+    for (const row of presets) {
+      expect(row.base_url.trim(), `${row.provider} 的 base_url 空了`).not.toBe('');
+      expect(
+        row.default_model.trim(),
+        `${row.provider} 的 default_model 空了 ⇒ model 回落会静默改变（15b #46 守的就是这个）`,
+      ).not.toBe('');
+    }
+
+    // ③ 唯一的例外是 custom：真值源明写它没有默认模型名（state.rs:111）
+    const custom = rows.find((row) => row.provider === CUSTOM_PROVIDER);
+    expect(custom?.base_url).toBe('');
+    expect(custom?.default_model).toBe('');
+    // 防空跑：②③ 判的不是同一批对象（否则「预设非空 + custom 空」可以同时永真）
+    expect(rows).toHaveLength(presets.length + 1);
+  });
+
   it('交出去的是副本：改返回值不会动库', async () => {
     const rows = await demoInvoke<ProviderInfo[]>('llm_providers');
     rows[0].default_model = 'mutated-by-test';

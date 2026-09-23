@@ -85,7 +85,16 @@ export function foldAsciiCase(value: string): string {
  *   建议后端改用 `json_each` 做精确成员匹配。
  *
  * `ESCAPE '\'` 让 `%` / `_` / `\` 按字面匹配，而 JS 的 `includes` 本来就是字面 ⇒ 不需要再转义一次。
- * `JSON.stringify` 与 serde_json 的默认序列化同形（无空格分隔），所以两侧的列文本逐字相同。
+ * 更准确地说，真值源那侧是**两次转义互相抵消**：`repo/project.rs:146-153`（pattern 那行是 `:149`）把
+ * `escape_like`（`:229-238`）套在 `codec::encode_json`（`codec.rs:64-66` = `serde_json::to_string`）外面，
+ * 而 `escape_like` 给 `%` `_` `\` 各再加一个 `\`、`ESCAPE '\'` 又把它解回来 ⇒ 净语义就是
+ * 「**json 编码后的 tag** 作为字面子串，去匹配 **json 编码后的 tags 列文本**」，正是下面这一行。
+ *
+ * ⚠ 所以这条镜像的正确性**只**取决于 `JSON.stringify` 与 serde_json 的编码是否同形（都无空格分隔，
+ * `"` `\` 与 C0 控制字符的转义规则一致，非 ASCII 都不转义）。这一点在 15c-2 里只是**假设**（报告 §10-3
+ * 自陈未逐一实测），现由 `project.test.ts` 的「#30② 转义同形」用例按手算期望值逐条钉住
+ * （含双引号、反斜杠、制表符、C0 控制字符、DEL）。唯一已知的编码分岐面是**孤立代理项**
+ * （JS 会输出 `\ud800` 形式），而它在 Rust `String` 里根本不可表示 ⇒ 对**可达输入**同形成立。
  */
 export function matchesTagsLike(tags: readonly string[], tag: string): boolean {
   return foldAsciiCase(JSON.stringify(tags)).includes(foldAsciiCase(JSON.stringify(tag)));

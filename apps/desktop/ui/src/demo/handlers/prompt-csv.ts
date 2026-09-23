@@ -54,19 +54,24 @@ const CARRIAGE_RETURN = '\r';
 /**
  * 一条已解析的 CSV 记录。
  *
- * `line` 是**物理行号**（表头为第 1 行），但**两个口径**，与真值源一一对应（#31）：
- * - `error === null` ⇒ 记录**起始**行 = `record.position().line()`（csv_io:175-178）。csv crate 在
- *   **读记录之前**就把 position 定住了（`csv-1.4.0/src/reader.rs:1626`；实测跨行记录报 line=2、
- *   下一条报 line=4）⇒ 引号里含换行时，域错误报的是这条记录**开头**那一行。
- * - `error !== null` ⇒ **出错**那一行 = `err.position().line()`（csv_io:168）。
- * 两支在**跨行引号记录**上不同，而 `row` 会上屏（前端渲染成「第 N 行」）⇒ 各按各的口径，不混用。
+ * `line` 是**物理行号**（表头为第 1 行），口径 = 这条记录的**起始行**，而且**两支同值**（#31 R1 的 I-1）：
+ * 真值源 `csv_io:168`（语法错误支，`err.position()`）与 `csv_io:175-178`（域错误支，`record.position()`）
+ * 装的是**同一个**位置。理由是 csv 1.4.0 里**所有带位置的错误**装的都是**记录起始**位置：
+ * - `error.rs:105-112` 的 `ErrorKind::position()` 只对 `Utf8` / `UnequalLengths` / `Deserialize` 返回内层
+ *   `pos`，其余一律 `None` ⇒ csv 里**没有**「带位置的引号语法错误」这种东西；
+ * - 而这三处取 `pos` 的时机都在**读记录之前**（`string_record.rs:636` 的 `let pos = rdr.position().clone();`
+ *   在 `read_byte_record` 之前）或直接就是记录自己的 position（`reader.rs:1890-1891` 的
+ *   `UnequalLengths { pos: record.position() }`、`reader.rs:1332-1333` 的表头 `Utf8`）；
+ *   记录的 position 同样在读取之前就定住了（`reader.rs:1626` 的 `record.set_position(...)`）。
+ * ⇒ 「语法错误报出错行、域错误报起始行」是**假的**；`row` 会上屏（前端渲染成「第 N 行」），口径必须一致。
  *
  * `error` 非空表示这一条在**语法层**就读不出来 ⇒ 走 `row_invalid`。
  * ⚠ 这一支 demo 比后端**严**：实测 csv 1.4.0（`has_headers(true).flexible(true)`，即 csv_io:135-138
  * 的配置）对「收口引号后还有数据」和「引号未闭合到 EOF」都**不报错**——前者把多余字符并进单元格
  * （`"closed"xx` → `closedxx`），后者把剩余全文当成一个单元格。demo 保留 `row_invalid` 这一支是为了
- * **演错误契约**（`contracts/error-codes.json` 登记了这个 reason，csv_io:163-172 也有那支防御分支），
- * 已写进 15c-2 报告交底。
+ * **演错误契约**（`contracts/error-codes.json` 登记了这个 reason，csv_io:163-172 也有那支防御分支）。
+ * 这条「demo 更严」已由复审席复跑探针**证实成立**（15c-2 报告 E-8 的撤回被反转）；放宽 demo 还是后端加
+ * 校验属**产品负责人决策**，已升级登记，代码侧本轮不动。
  */
 interface CsvRecord {
   cells: string[];
@@ -308,13 +313,18 @@ function parseCsv(body: string): CsvRecord[] {
     recordLine = lineNumber;
   };
   const fail = (reason: string): void => {
-    // 🔴 `row` 用**出错那一物理行**（`lineNumber`），不是记录起始行（`recordLine`）：真值源
-    // csv_io:168 装的是 `err.position().line()`，即 csv crate **检测到错误的位置**；域错误那支
-    // （csv_io:175-178）才用记录起始行。跨行引号记录上两者不同，而 `row` 会上屏（#31）。
+    // 🔴 `row` 用**记录起始行**（`recordLine`），与域错误那支**同值**：csv 1.4.0 里所有带位置的错误装的
+    // 都是记录起始位置（`error.rs:105-112` 只有 `Utf8`/`UnequalLengths`/`Deserialize` 有 `pos`；
+    // `reader.rs:1890-1891`、`reader.rs:1332-1333`、`string_record.rs:636`），所以真值源 csv_io:168 与
+    // :175-178 产出同一个行号，而 `row` 会上屏（#31 R1 的 I-1）。
+    // ⚠ 诊断串是 demo 自拟的 ASCII 替身（E-8）：只报**起始行**，绝不声称自己是「出错那一行」。
+    // ⚠ 后端那一支还带 `.unwrap_or(0)`（csv_io:168）：错误**不带位置**时 `row` = 0。demo 的词法器
+    //   **总知道**行号 ⇒ 这里恒有 `row >= 1`，`unwrap_or(0)` 那一支在 demo 里**不可构造**
+    //   （15c-2 复审 Minor-1：只注不改，已登记进交底清单）。
     records.push({
       cells: [],
-      line: lineNumber,
-      error: `csv parse error: line ${lineNumber} (record starts at line ${recordLine}): ${reason}`,
+      line: recordLine,
+      error: `csv parse error: record starts at line ${recordLine}: ${reason}`,
     });
     // 错误恢复：跳到下一个换行、复位记录级状态，让后续行还能被读到（csv_io:172 的 `continue`）。
     while (index < body.length && body[index] !== '\n') index += 1;

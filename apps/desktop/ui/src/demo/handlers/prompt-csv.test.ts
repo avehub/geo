@@ -251,44 +251,74 @@ describe('demo/handlers/prompt-csv · 行错误与默认值', () => {
   });
 
   /**
-   * #31（Hegel Task 14 Nit）· **跨行引号记录**的 `row` 口径。
+   * #31（Hegel Task 14 Nit）· **R1 的 I-1 更正** · `row` 的行号口径。
    *
-   * 真值源那侧有**两个**不同的行号口径，不能混：
-   * - 域错误（`required` / `invalid_format`）用 `record.position().line()`（csv_io:175-178）
-   *   = 记录**起始**行——csv crate 在**读记录之前**就把 position 定住了（`csv-1.4.0/src/reader.rs:1626`，实测：
-   *   跨行记录报 line=2，下一条报 line=4）；
-   * - 语法错误（`row_invalid`）用 `err.position().line()`（csv_io:168）= **检测到错误**那一行。
+   * 🔴 15c-2 曾把这一组写成「真值源有**两个**口径」（域错误 = 记录起始行、语法错误 = 出错行）。
+   * 复审席与控制器各自独立核 csv 1.4.0 源码后判定**那是错的**，本轮改回「两支同值」：
+   * - `ErrorKind::position()` 只对 `Utf8` / `UnequalLengths` / `Deserialize` 三种返回内层 `pos`，
+   *   其余一律 `None`（`csv-1.4.0/src/error.rs:105-112`）⇒ csv 里**没有**「带位置的引号语法错误」这种东西；
+   * - 而那三种装的都是**记录起始**位置：`reader.rs:1890-1891`（`UnequalLengths { pos: record.position() }`）、
+   *   `reader.rs:1332-1333`（表头 `Utf8 { pos: headers.byte_record.position() }`）、
+   *   `string_record.rs:636`（`let pos = rdr.position().clone();` 在 `read_byte_record` **之前**取）；
+   *   记录自己的 position 同样是在读取之前定住的（`reader.rs:1626`）。
    *
-   * demo 原先两支都用记录起始行 ⇒ 跨行记录的第二支与后端分岐，而 `row` 是**会上屏**的
-   * （前端渲染成「第 N 行」）⇒ 这条把语法错误那支对齐到出错行。
+   * ⇒ 后端 `csv_io.rs:168`（错误支）与 `:175-178`（域支）产出**同一个行号**；demo 两支都用
+   * **记录起始行**才是镜像。`row` 会上屏（前端渲染成「第 N 行」），所以这不是内部细节。
+   * 下面四条钉的就是这件事：跨行记录上语法错误与域错误**都报起始行**、且**同值**；单行记录上两者重合。
    */
-  it('#31 跨行引号记录：语法错误的 row 是**出错那一行**，不是记录起始行', async () => {
-    // 记录从第 2 行开始、引号里带一个换行；收口引号后面还有数据 ⇒ 错误发生在第 3 行。
+  it('#31(R1) 跨行引号记录：语法错误的 row 是**记录起始行**，不是检测到错误那一行', async () => {
+    // 记录从第 2 行开始、引号里带一个换行；收口引号后面还有数据 ⇒ 词法错误在**第 3 行**被检测到。
+    // 但真值源那侧带位置的错误装的一律是**记录起始**位置（error.rs:105-112 + string_record.rs:636）⇒ 报 2。
     const result = await importCsv(
       csv('"multi', 'line"xx,pricing_plan,3,,,,1', 'tail,local_service,3,,,,1'),
     );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]!.reason).toBe('row_invalid');
-    // 🔴 这一行就是 #31 的判据：改回记录起始行（2）本用例立刻红。
-    expect(result.errors[0]!.row).toBe(3);
+    // 🔴 这一行就是 I-1 的判据：改成「检测行」（3）本用例立刻红。
+    expect(result.errors[0]!.row).toBe(2);
     expect(result.errors[0]!.params?.value).toMatch(/^[\x20-\x7e]+$/);
+    // 诊断串是 demo 自拟的 ASCII 替身（E-8）：可以带**起始行**，但不许再声称自己是「出错行」。
+    expect(result.errors[0]!.params?.value).toContain('record starts at line 2');
+    expect(result.errors[0]!.params?.value).not.toContain('line 3');
     // 错误恢复照旧：出错那条之后仍然读得到（csv_io:172 的 `continue`）。
     expect(result.items.map((item) => item.text)).toEqual(['tail']);
   });
 
-  it('#31 单行记录的 row 仍是它自己那一行（对齐口径不许把既有的两条推歪）', async () => {
+  it('#31(R1) 同一条跨行记录上，语法错误与域错误报**同一个起始行**（两支同值的直接判据）', async () => {
+    // 第 2-3 行是一条以语法错误收场的跨行记录；第 4-5 行是一条以域错误（intent 非法）收场的跨行记录。
+    // 两支的行号都取自**各自记录的起始行** ⇒ 2 与 4，而不是检测行 3 与 5。
+    const result = await importCsv(
+      csv(
+        '"multi',
+        'line"xx,pricing_plan,3,,,,1',
+        '"other',
+        'line",not_an_intent,3,,,,1',
+        'ok,local_service,3,,,,1',
+      ),
+    );
+
+    expect(result.errors.map((error) => [error.row, error.reason])).toEqual([
+      [2, 'row_invalid'],
+      [4, 'invalid_format'],
+    ]);
+    expect(result.errors[1]!.params).toEqual({ value: 'not_an_intent' });
+    expect(result.items.map((item) => item.text)).toEqual(['ok']);
+  });
+
+  it('#31(R1) 单行记录：起始行与检测行重合，row 就是它自己那一行', async () => {
     const result = await importCsv(
       csv('ok-one,pricing_plan,3,,,,1', '"closed"xx,pricing_plan,3,,,,1', 'ok-two,local_service,3,,,,1'),
     );
 
-    // 表头是第 1 行 ⇒ 三条数据分别是第 2/3/4 行；出错的那条起始行与出错行**同为 3**。
+    // 表头是第 1 行 ⇒ 三条数据分别是第 2/3/4 行。这条**单行**记录起始行与检测行同为 3，
+    // 所以它在 I-1 更正前后都是 3 ⇒ 专门用来守住「改口径不许把既有的两条推歪」。
     expect(result.errors.map((error) => error.row)).toEqual([3]);
     expect(result.items.map((item) => item.text)).toEqual(['ok-one', 'ok-two']);
   });
 
-  it('#31 域错误仍用**记录起始行**（csv_io:175-178 的另一个口径，不许被上一条带跑）', async () => {
-    // 第 2-3 行是同一条跨行记录，域错误（intent 非法）要报**起始行 2**，不是出错行 3。
+  it('#31(R1) 域错误也用**记录起始行**（csv_io:175-178 与 :168 同值，两支不许分家）', async () => {
+    // 第 2-3 行是同一条跨行记录，域错误（intent 非法）报**起始行 2**——与上面语法错误那条同口径。
     // 末尾带一条合法行：一条都解析不出来会走 `prompt_set/empty_import`（那是另一条契约）。
     const result = await importCsv(
       csv('"multi', 'line",not_an_intent,3,,,,1', 'ok,local_service,3,,,,1'),

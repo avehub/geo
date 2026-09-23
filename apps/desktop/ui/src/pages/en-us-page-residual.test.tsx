@@ -226,7 +226,10 @@ describe('常驻守卫（第 9 条）· 5 个页面在 en-US 下整页无非数�
       DATA_STRINGS.length,
       `减法清单涨过 ${DATA_STRINGS_UPPER_BOUND} 条 ⇒ 放行面变宽了，必须回来过审（15b #50）`,
     ).toBeLessThanOrEqual(DATA_STRINGS_UPPER_BOUND);
-    // 🔴 短尾（≤4 字）逐字钉死：这是 M-1 的真正风险面（62 个两字通用词，见 SHORT_DATA_PINNED 的注释）。
+    // 🔴 短尾（≤4 字）逐字钉死：这是 M-1 的真正风险面。条数与长度分布**只在** SHORT_DATA_PINNED（:129）
+    // 上方那段 docblock（:106-126）里维护，这里刻意**不抄第二份数字**：本行原先写着「62 个两字通用词」，
+    // 可被钉的清单按 `SHORT_DATA_MAX_LENGTH` 收的是 ≤4 字那一档 —— 两个数根本不是同一个集合，于是这句
+    // 注释成了过期陈述（15c-2 复审 Nit-1，与台账 #12/#47 同一缺陷类）。只改注释，判据一个字未动。
     const shortOnes = DATA_STRINGS.filter((value) => value.length <= SHORT_DATA_MAX_LENGTH).sort();
     expect(
       shortOnes,

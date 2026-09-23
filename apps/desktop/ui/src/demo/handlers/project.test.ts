@@ -35,6 +35,7 @@ import {
 } from '../seed/projects';
 import { RUST_EXPORT_FORMAT_VERSION } from '../../test/truth-source';
 import { demoContentHash } from './prompt';
+import { matchesTagsLike } from './shared';
 import {
   SEED_BASELINE_SET_ID,
   SEED_PILOT_SET_ID,
@@ -268,6 +269,58 @@ describe('demo/handlers/project · project_list', () => {
     expect(byTag.map((project) => project.id)).toEqual([SEED_ARCHIVED_PROJECT_ID]);
   });
 
+  /**
+   * 15c-2 复审 **Minor-2 + Nit-2** · `JSON.stringify` ↔ `serde_json` 同形此前只是**假设**
+   * （报告 §10-3 自陈「控制字符一类未逐一实测」）⇒ 这里把它变成判据。
+   *
+   * 真值源的净语义（`repo/project.rs:146-153`（pattern 那行是 `:149`） → `:229-238` 的 `escape_like` → `codec.rs:64-66` 的
+   * `serde_json::to_string`）：pattern = `'%' + escape_like(json(tag)) + '%' ESCAPE '\'`，
+   * 而 `escape_like` 给 `%` `_` `\` 各**再加**一个 `\`、`ESCAPE '\'` 又把它**解回来** ⇒ 两次转义
+   * 互相抵消，净效果就是「**json 编码后的 tag** 作为字面子串，去匹配 **json 编码后的 tags 列文本**」。
+   * 所以两侧的 JSON 编码规则同形 ⇒ 结果同形。下面每条期望值都按这条净语义**手算**，不是照抄实现。
+   *
+   * 唯一已知的编码分岐面是**孤立代理项**（JS 会输出 `\ud800`），而它在 Rust `String` 里根本不可表示
+   * ⇒ 对**可达输入**同形成立（复审席的独立判断，本席同意）。
+   */
+  it('#30② 转义同形：标签含 `"` 与 `\\` 时，matchesTagsLike 与手算的 LIKE 子串语义一致', async () => {
+    const rows: ReadonlyArray<readonly [string[], string, boolean, string]> = [
+      [['quote"tag', 'plain'], 'quote"tag', true, '两侧都把 " 编码成 \\"，逐字相同'],
+      [['quote"tag', 'plain'], 'quote"ta', false, '截断后少了收尾引号 ⇒ 引号锚点仍然有效'],
+      [['back\\slash', 'plain'], 'back\\slash', true, '两侧都把 \\ 编码成 \\\\'],
+      [['back\\slash', 'plain'], 'back\\slas', false, '同上，截断后不成立'],
+      [['ab', 'cd'], 'b","c', false, '跨元素子串：列文本里有 b","c，但 tag 的 json 编码把两个引号转义了 ⇒ 不命中'],
+      [['ab', 'cd'], ',', true, '既有怪癖照旧：元素之间的 "," 被裸逗号命中（上一条用例的口径）'],
+      [['a\tb'], 'a\tb', true, '制表符两侧都用短转义 \\t'],
+      [['a\u0001b'], 'a\u0001b', true, 'C0 控制字符两侧都用 \\u0001'],
+      [['a\u007fb'], 'a\u007fb', true, 'DEL 不是 C0 控制字符 ⇒ 两侧都原样输出'],
+    ];
+    for (const [tags, tag, expected, why] of rows) {
+      expect(matchesTagsLike(tags, tag), `${JSON.stringify(tags)} / ${JSON.stringify(tag)} · ${why}`).toBe(expected);
+    }
+
+    // 🔴 反向对照（证明上面那组不是永真）：`b","c` 这条只有「tag 也走 json 编码」才会 false。
+    // 把 `matchesTagsLike` 里的 `JSON.stringify(tag)` 换成裸 `tag`（一个可判别的变异），它立刻变 true ⇒ 红。
+    expect(JSON.stringify(['ab', 'cd'])).toContain('b","c');
+    expect(matchesTagsLike(['ab', 'cd'], 'b","c')).toBe(false);
+
+    // 端到端：同一个标签经 project_update 写进库、再用 project_list 过滤，结果与手算一致
+    // （证明 handler 走的就是这个谓词，不是测试里另算一套）。
+    const detail = await demoInvoke<ProjectDetail>('project_get', { id: SEED_ARCHIVED_PROJECT_ID });
+    await demoInvoke<Project>('project_update', {
+      project: { ...detail.project, tags: ['quote"tag', 'back\\slash'] },
+    });
+
+    const hit = await demoInvoke<Project[]>('project_list', {
+      filter: { include_archived: true, tags: ['quote"tag'] },
+    });
+    expect(hit.map((project) => project.id)).toEqual([SEED_ARCHIVED_PROJECT_ID]);
+
+    const miss = await demoInvoke<Project[]>('project_list', {
+      filter: { include_archived: true, tags: ['b","c'] },
+    });
+    expect(miss).toEqual([]);
+  });
+
   it('filter 整个缺省时也不炸（args 里没有 filter 键）', async () => {
     const rows = await demoInvoke<Project[]>('project_list', {});
 
@@ -418,6 +471,8 @@ describe('demo/handlers/project · project_export / project_import', () => {
     expect(exported.format_version).toBe(RUST_EXPORT_FORMAT_VERSION);
     // 防空跑：解析出来的真值源不是空串（正则会因后端改名而静默匹配到 undefined → 抛，
     // 但万一有人给它加了回落，这一条会红）。
+    // 🔴 这行**必须**是字面量、**不许 DRY**：改成 `RUST_EXPORT_FORMAT_VERSION` 就变成「自己等于自己」
+    // 的永真式，整条防空跑判据当场失效（同形钉子见 m1-contract.test.ts 的 #28 那组）。
     expect(RUST_EXPORT_FORMAT_VERSION).toBe('geo-project-export-v1');
     // A-5：exported_at 是**运行时产物**，只断言合法 RFC3339 + 非空，不断言具体值。
     expect(exported.exported_at).not.toBe('');

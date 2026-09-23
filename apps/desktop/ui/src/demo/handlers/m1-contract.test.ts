@@ -402,6 +402,10 @@ describe('#28 · 导出格式版本：生产侧一份副本，且等于 Rust 真
   }
 
   it('真值源解析出来的就是那个已知值（后端改版本号时，这里会**显眼地**红，而不是静默跟着漂）', () => {
+    // 🔴 这行**必须**是字面量、**不许 DRY**（15c-2 复审 Nit-3）：它钉的就是「解析器真的解析出了那个
+    // 已知值」。换成任何由真值源推导出来的表达式（例如再引一次 `RUST_EXPORT_FORMAT_VERSION`）就成了
+    // 「自己等于自己」的永真式，整条反永真判据当场失效。同形钉子见 project.test.ts 里
+    // `project_export` 那组的防空跑断言。
     expect(RUST_EXPORT_FORMAT_VERSION).toBe('geo-project-export-v1');
   });
 

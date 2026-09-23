@@ -7,6 +7,8 @@
 - 产品定义：`docs/GEO客户端-MVP产品定义-v1.md`（唯一需求真值源）
 - 架构设计：`docs/superpowers/specs/`
 - 实施计划：`docs/superpowers/plans/`（执行时按计划的 task/step 顺序推进）
+- demo 与真后端的已知差异：`docs/superpowers/specs/2026-09-23-demo-vs-backend-known-divergences.md`
+  （**改 demo 前必读**；发现新差异按该文件 §1 的判据登记，编号续 E-33 起）
 
 ## 工具链与命令
 

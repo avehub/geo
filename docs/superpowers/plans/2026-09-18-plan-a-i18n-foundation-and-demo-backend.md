@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **执行状态（2026-09-23 控制器补记）**：本计划已按 `superpowers:subagent-driven-development` 执行完毕，分支 `feat/settings-redesign-demo-i18n`（基线 `main` = `73afef9`，全分支复审在 `b893fd9` 上做的），复审裁定 **Approved with minors · 可合并**。
+> **正文那 88 个 `- [ ]` 勾选框刻意未回填**：执行走的是「每任务一份简报 + 一份报告 + 一份复审」的台账流程，逐步状态记在 gitignored 的 `.superpowers/sdd/` 下，回填勾选框只会造出第二份需要人工同步的真相。
+> **要看结果请看**：门禁 `mise run check`（cargo 22 targets / 515 passed / 0 failed；vitest 42 files / 635 tests）· 已知差异与后续待办 `docs/superpowers/specs/2026-09-23-demo-vs-backend-known-divergences.md`（E-1…E-32 + §5 后端待办 + §6 工程债 + §7 常驻条款）。
+> **唯一未关闭的验收项**是下面 Task「手动验收（需真人）」那一步 ⇒ 已路由到上述清单 **§8**。
+
 **Goal:** 让 `mise run web` 打开即是可用的纯前端 demo（静态数据、可走完 建项目→实体卡→题库→导出 全流程），并建立中英双语基座：后端错误只返回稳定 `code + params`，文案由前端按当前语言渲染，存量页面文案全部迁入词典。
 
 **Architecture:** 前端在 `src/api/client.ts` 单点分派运行时——Tauri WebView 走 `invoke`，浏览器走 `src/demo/backend.ts`（纯 TS 内存假后端，实现同一份 `IPC_COMMANDS` 契约）；组件与页面完全不感知。i18n 用 `react-i18next`，词典按 namespace 组织在 `src/i18n/locales/{zh-CN,en-US}/`，错误码清单以 `contracts/error-codes.json` 作为前后端**共享真值源**（Rust 侧 `include_str!` 断言，TS 侧类型化导入）。后端 `IpcError` 新增语言中立 `params`，`GeoError` 的自由文本 `reason` 改为稳定 reason key。
@@ -393,7 +398,8 @@ fn every_code_the_backend_emits_is_in_the_shared_catalog() {
 - [ ] 改完 `SecretStatus` 后**重跑 Task 8 的 `no-hardcoded-strings` 扫描测试**，确认没把硬编码中文带回来
 - [ ] 残留扫描：`rg -n '[\u4e00-\u9fa5]' apps/desktop/ui/src --glob '!**/*.test.*' --glob '!**/locales/**'` 结果必须只剩注释；有则回到 Task 8/9 补
 - [ ] 全量门禁：`mise run check`（无 mise 激活时 `export PATH="/opt/homebrew/bin:$PATH"` 后执行），把完整输出存 `/tmp/plan_a_check.log`
-- [ ] 手动验收（需真人）：`mise run web` → 浏览器走完 建项目 → 自动建档 → 生成题库 → 导出 CSV；切 English 全站无中文残留；切回中文正常
+- [ ] 手动验收（需真人，**尚未执行**）：`mise run web` → 浏览器走完 建项目 → 自动建档 → 生成题库 → 导出 CSV；切 English 全站无中文残留；切回中文正常。
+      👉 **完整走查清单见 `docs/superpowers/specs/2026-09-23-demo-vs-backend-known-divergences.md` §8**（8 项，含 `REVOKE_DELAY_MS = 0` 的真浏览器走查、E-28 的 CSV 严格度决策、桌面端不该出现钥匙串提示等本行覆盖不到的项）
 - [ ] Commit `chore: 收尾成本展示口径、demo 入口说明与门禁`
 
 ---

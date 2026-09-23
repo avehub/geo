@@ -61,7 +61,7 @@
 | E-24 | 命令入参由 serde 反序列化成 `AppSettings`，半包入参会被**拒**（类型层） | 入参经 `settingsFromUnknown` **收窄**成完整 `AppSettings`（`settings.ts:131-168`；`asNumber` 非有限值 → 0），然后照常过体检 | demo 没有 serde。代价：空入参不会像真后端那样报「缺字段」，而是撞 provider 体检（`settings.test.ts:200` 钉住「不会把库改成半包」）⇒ 不会静默写进半包数据 |
 | E-25 | 真后端写**裸字节**，由扩展名决定打开方式（`export.rs:62-67`） | Blob 带 `text/plain;charset=utf-8`（`export.ts:51-55`） | 浏览器下载需要 MIME；BOM + charset 两道都对上，Excel/记事本都不乱码。代价：下载下来的文件在操作系统层的类型识别与桌面端不完全一致 |
 | E-26 | 「代理与超时影响的是已构造好的 HTTP 客户端，变更在应用重启后生效」（`service:121-123`，落库后还会 `tracing::info!` 一句） | **不演**（demo 无「重启」概念，也没有已构造的客户端） | A-3 逐字授权「不用演」。代价：demo 里改代理立刻「生效」（其实什么都不发生）；这条语义只能靠桌面端走查 |
-| E-27 | —（这一条是**简报前提的更正**，不是后端偏离） | 简报 §A-1 说「jsdom 没实现 `createObjectURL`（打印 Not implemented）」；实测 vitest 的 jsdom 环境里全局 `URL` 是 **Node 的**，`createObjectURL` 存在但与 jsdom 的 `Blob` 不同 realm（`ERR_INVALID_ARG_TYPE`），且 jsdom 27 的 `Blob.prototype` 只有 `slice/size/type`（没有 `.text()`） | 所以 `export.test.ts` 用 `vi.stubGlobal('Blob', RecordingBlob)` 记录内容，用显式 `undefined` 造「运行环境不支持」那一支（`export.test.ts:245-249`）。守卫本身（`export.ts:77-80`）不变，仍然是「宁可抛开发者诊断，也不发一个假的『已导出』」 |
+| E-27 | —（这一条是**简报前提的更正**，不是后端偏离） | 简报 §A-1 说「jsdom 没实现 `createObjectURL`（打印 Not implemented）」；实测 vitest 的 jsdom 环境里全局 `URL` 是 **Node 的**，`createObjectURL` 存在但与 jsdom 的 `Blob` 不同 realm（`ERR_INVALID_ARG_TYPE`），且 jsdom 27 的 `Blob.prototype` 只有 `slice/size/type`（没有 `.text()`） | 所以 `export.test.ts` 用 `vi.stubGlobal('Blob', RecordingBlob)` 记录内容，用显式 `undefined` 造「运行环境不支持」那一支（`export.test.ts:245-249`）。守卫本身（`export.ts:77-80`）不变，仍然是「宁可抛开发者诊断，也不发一个假的『已导出』」 | ⚠ **口径更正（Task 14 R1 §11.2，全分支复审 MIN-2 要求补入）**：上文把「Node 的 `URL` 与 jsdom 的 `Blob` 撞 realm」说成了**环境的普遍性质**，这已被推翻——realm 冲突**只发生在 `export.test.ts` 内**，因为那份文件把全局 `Blob` 换成了自造的 `RecordingBlob`；**不替换 `Blob` 时整条链是通的**。由此得出一个更重要的结论：`export.ts:77-80` 那道 `typeof URL.createObjectURL !== 'function'` 守卫在测试里**自然走不到**，所以那条永久探针是**自己造前提**的（`vi.stubGlobal` + 显式 `undefined`）。后人不要照本行上半句去「无谓地桩 `Blob`」，也不要以为那道守卫能被自然触发 |
 ## §4 Task 15c 收口后新增的差异条目（E-28 … E-32）
 
 > **编号规则**：`E-*` **只**登记「demo ↔ 真后端的行为差异」。后端自身的待办进 §5，
@@ -94,6 +94,13 @@
    `apps/desktop/src-tauri/src/services/settings_service.rs:227-243`）demo **不演**（E-16），`message` 恒 `null`。
    这条**不是 demo 的问题**，是产品链路本身待重设计；且 `message` 装的是**中文原因**，
    与规则 7「后端只回语言中立 params」也冲突，重设计时一并处理。
+   🔴 **中文散文的生产站点是 `crates/geo-llm/src/transport.rs:185`**
+   （`.map_err(|err| TransportError::Other(format!("代理地址无效：{err}")))`，代理装配失败路径）。
+   复审席扫遍 `crates/` + `apps/desktop/src-tauri/src/` 的全部非注释行，**这是唯一一处**出现在
+   **错误消息构造路径**上的生产 CJK 字面量（其余 73 处命中全在测试 / 断言消息 / `testutil.rs` 里；
+   `transport.rs:271`/`:275`/`:286` 那三处「fixture 目录读取失败」属 `FixtureTransport`，测试专用）。
+   👉 G5 重设计时**连源头一起改成稳定 reason key**，不要只改 `LlmTestResult` 的形状——
+   否则 `TransportError::Other` 仍带中文 prose，这些串会**改道**进日志或别的新字段，问题换皮重生。
 
 ## §6 工程债与判据纪律（不是差异，但下一个人必须知道）
 
@@ -131,6 +138,28 @@
     **不**保证每个 handler 在具体输入下发出**正确的键值**——那是各模块自己的 `*.test.ts` 的职责。
     **别把 `error-contract.test.ts` 当全能哨兵。**
 
+11. 🔴 **`Rust generate_handler!` ↔ `TS IPC_COMMANDS` 的同集性没有自动守卫**（全分支复审 MIN-1）。
+    `apps/desktop/src-tauri/src/ipc/mod.rs:5-6` 只有一句注释「命令清单以 `client.ts` 的 `IPC_COMMANDS` 为准：
+    漏注册会在前端表现为 `ipc/internal` 拒绝，加命令时两边一起改」，`:17` 起是 `generate_handler![…]`。
+    demo 侧有**编译期**（`Record<IpcCommand, DemoHandler>`）+ **运行期**（`backend.test.ts:113`/`:126`
+    两枚 `toHaveLength(40)` 与键集相等）**双守卫**；**Rust 侧什么都没有**。
+    ⇒ 谁在 `client.ts` 加一条命令、在 demo 接上、却忘了注册进 `generate_handler!`，`mise run check` **全绿**，
+    缺陷只在**桌面运行时**表现为 `ipc/internal`，而桌面端不在 CI 里跑。
+    三方同集今天实测是 **40 / 40 / 40**（Rust 注册 / TS 清单 / demo 实现，集合差全空），**但这个等式没有守卫**。
+    👉 修法与 `apps/desktop/src-tauri/src/error.rs:251` 读契约 JSON **完全同一套手法**：在 `ipc/mod.rs` 加一个 `#[test]`，
+    `include_str!("../../../ui/src/api/client.ts")` 读进来、正则抽 `IPC_COMMANDS = [ … ]` 的字面量，
+    与注册清单做**集合相等**断言（加一条不注册 ⇒ 红；注册一条不在清单里 ⇒ 红）。**建议合并后第一件事补。**
+12. **AGENTS 规则 5 的「bundled SQLite」只是**传递性**满足**（全分支复审 NIT-2，控制器已核过特性链）。
+    workspace `Cargo.toml:39` 写的是 `features = ["runtime-tokio", "sqlite", "macros", "migrate", "chrono", "uuid"]`，
+    **没有**显式 `bundled`，也没有显式 `libsqlite3-sys` pin；实际链路是
+    `sqlx 0.9.0` 的 `sqlite = ["sqlite-bundled", …]`（`sqlx-0.9.0/Cargo.toml:181-182`）→
+    `sqlite-bundled = […, "sqlx-sqlite/bundled", …]`（`:187-189`）→ `libsqlite3-sys/bundled`
+    （`sqlx-sqlite-0.9.0/Cargo.toml:59`），当前解析到 `libsqlite3-sys 0.37.0`（`Cargo.lock:2616-2618`）。
+    ⇒ **今天规则 5 是满足的**，但 sqlx 同时提供 `sqlite-unbundled`（`:198-201`），
+    一次 sqlx 升级若改掉 `sqlite` 的默认含义，就会**静默**改链系统 sqlite（走 `pkg-config`/`vcpkg`），
+    而在 macOS 上**照样编译通过**（系统自带 sqlite3）⇒ 本地看不出来，可复现性与跨平台打包会坏。
+    👉 修法（很便宜）：把 `"sqlite-bundled"` 显式写进 features，或加一条
+    `libsqlite3-sys = { version = "0.37", features = ["bundled"] }` 的 workspace pin + 一个断言特性开启的构建期检查。
 ## §7 流程常驻条款（写代码的人与复审的人都要遵守）
 
 1. **变异证据的补强口径**：凡「变异**不是**由本轮存活的代理亲手跑出来的」（例如实现席中途被限流打死、

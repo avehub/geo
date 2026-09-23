@@ -37,7 +37,9 @@ export default function ProxyForm({ value, onChange }: ProxyFormProps) {
             style={{ maxWidth: 420 }}
             value={url}
             status={invalid ? 'error' : undefined}
-            placeholder="http://127.0.0.1:7890"
+            // 占位提示也会上屏 ⇒ 走词典（#54，值逐字搬过去、不改文案；判据在
+            // `i18n/no-hardcoded-strings.test.ts` 与 `components/ProxyForm.test.tsx`）。
+            placeholder={t('settings.proxy.placeholder')}
             onChange={(event) => onChange({ enabled: true, url: event.target.value })}
           />
           <Typography.Text type={invalid ? 'danger' : 'secondary'} style={{ fontSize: 12 }}>

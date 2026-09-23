@@ -193,6 +193,24 @@ describe('demo/handlers/entity-card · entity_card_update_field 的 field_path �
     ['[0].name', { field: 'field_path', reason: 'invalid_format', value: '[0].name' }],
     ['nope', { field: 'field_path', reason: 'unknown_field', value: 'nope' }],
     ['nope.deep[0]', { field: 'field_path', reason: 'unknown_field', value: 'nope' }],
+    /**
+     * #30① · **退化路径**：整条 path 一个段都解析不出来 ⇒ 后端在 `entity_card.rs:426-427`
+     * 发 `required`，而且是**2 键**（没有 `value`）。demo 原先在这里发 `unknown_field` + `value:''`
+     * （`"..."`）或 `invalid_format` + `value:path`（`"[]"`）——**3 键**，与真值源不同构，
+     * 而 `params` 的键集是会渲染到界面上的（多一个 `value` 就多一段括号文案）。
+     */
+    ['...', { field: 'field_path', reason: 'required' }],
+    ['..', { field: 'field_path', reason: 'required' }],
+    ['[]', { field: 'field_path', reason: 'required' }],
+    ['.[].[]', { field: 'field_path', reason: 'required' }],
+    // ⚠ 不是退化路径：`' . . '` trim 成 `'. .'`，中间那段是**一个空格**，而后端只跳过
+    // `key.is_empty()`（`entity_card.rs:410`），空格不是空 ⇒ 它是一个 Key，于是走 `unknown_field`。
+    [' . . ', { field: 'field_path', reason: 'unknown_field', value: ' ' }],
+    // 首段是 Index（不是 Key）⇒ `invalid_format` + `value` = 整个 path（`entity_card.rs:429-431`）。
+    ['[0]', { field: 'field_path', reason: 'invalid_format', value: '[0]' }],
+    ['[0].name', { field: 'field_path', reason: 'invalid_format', value: '[0].name' }],
+    // 下标非数字 ⇒ `invalid_format` + `value` = 那个 chunk（`entity_card.rs:419-421`）。
+    ['products[-1].name', { field: 'field_path', reason: 'invalid_format', value: '-1' }],
   ];
 
   for (const [path, params] of cases) {

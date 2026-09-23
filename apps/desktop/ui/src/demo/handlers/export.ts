@@ -83,6 +83,16 @@ export const exportWriteFile: DemoHandler = (args) => {
   const anchor = document.createElement('a');
   anchor.href = objectUrl;
   // 文件名整份来自调用方（词典渲染好的）：demo 不替用户编名字，空串就原样交给浏览器。
+  //
+  // ⚠ #32（Task 14 Nit 1）· 空串这一支，返回值与浏览器**真实**下载名不一致：`download=''` 时浏览器
+  // 自己挑一个名字，而下面仍然 `return defaultName`（空串）。**刻意不改**：
+  // - 编一个名字（`export.csv` / `download`）是**假信息**，比空串更糟；
+  // - 抛错也不行——真后端那一侧同形：`src-tauri/src/ipc/export.rs:40` 把 `default_name` 只当保存
+  //   对话框的**默认名**，空串就是不预填，真名字由用户在对话框里挑，两侧都不报错；
+  // - 今天不可达：三个调用方传的都是词典渲染好的非空名，且模板都带**字面后缀**
+  //   （`components/CsvToolbar.tsx:83` 的 `-prompts.csv`、`pages/ProjectListPage.tsx:73-74` 与 `:90-91`
+  //   的 `project.list.export*FileName`），那两条页面级用例已把渲染结果逐字钉住。
+  // 现状由 `handlers/export.test.ts` 的 #32 用例钉住（返回空串、锚点 download 也是空串、不抛、不编名字）。
   anchor.download = defaultName;
   // 挂进 DOM 再点：Firefox 对游离锚点的 `download` 不生效。点完立刻摘掉，不在文档里留垃圾。
   document.body.appendChild(anchor);

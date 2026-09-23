@@ -990,22 +990,16 @@ describe('B-4 · notes 机器行的 stage 键集（同样是扫描抓不到的�
  * ⚠ 值搬进词典时**逐字不动**：加「例如：」这种前缀属**改文案**，按 AGENTS 规则 8 要先在 demo
  * 定稿并经产品负责人点头（15a §8-5 的裁定，`project.wizard.corePagesPlaceholder` 就是这么办的）。
  *
- * # 例外表（逐条认领，形状照 `RESIDUAL_EXCEPTIONS`）
- * `components/ProxyForm.tsx` 的 `http://127.0.0.1:7890` 与上面两处**同性质**，但本轮范围外
- * （#47 只点名 `WizardSteps.tsx` 的 `https://www.example.com`，简报记为 `:102`；
- * `ProviderSelect.tsx` 的 `https://api.example.com/v1`，简报记为 `:82`，归 #25。两处本轮已进
- * 词典，简报那两个行号随之失效）⇒ 认一条、写明理由、
- * 交控制器裁定是否折入下一批。🔴 不许为了让这条判据变宽而把它写成「只扫某两个文件」。
+ * # 例外表（形状照 `RESIDUAL_EXCEPTIONS`）：**现在是空的**
+ * 三处同性质的硬编码占位提示都已进词典：`WizardSteps.tsx` 的 `https://www.example.com`（#47）、
+ * `ProviderSelect.tsx` 的 `https://api.example.com/v1`（#25）、`ProxyForm.tsx` 的
+ * `http://127.0.0.1:7890`（#54，判据在 `components/ProxyForm.test.tsx`）。
+ *
+ * 🔴 表**刻意保留**（而不是把机制删掉）：将来谁要认领新例外，必须往表里加一条带理由的记录，
+ * 而下面那条 `toEqual` 会立刻逼他对账——机制在，才不会有人图省事把判据写成「只扫某两个文件」。
  */
-describe('#47/#25 · 上屏 placeholder 不许硬编码（ASCII 也算）', () => {
-  const PLACEHOLDER_EXCEPTIONS: ReadonlyArray<{ path: string; hits: number; reason: string }> = [
-    {
-      path: '../components/ProxyForm.tsx',
-      hits: 1,
-      reason:
-        '本机代理地址示例，与 #47/#25 同性质但本轮范围外（简报 §A-2 只点名另两处）⇒ 认领并交控制器裁定',
-    },
-  ];
+describe('#47/#25/#54 · 上屏 placeholder 不许硬编码（ASCII 也算）', () => {
+  const PLACEHOLDER_EXCEPTIONS: ReadonlyArray<{ path: string; hits: number; reason: string }> = [];
 
   /**
    * 抽 `placeholder` 的**字面量**写法：`placeholder="…"` / `placeholder={'…'}` / `placeholder={ "…" }`。
@@ -1026,11 +1020,13 @@ describe('#47/#25 · 上屏 placeholder 不许硬编码（ASCII 也算）', () =
     return out.sort((left, right) => left.path.localeCompare(right.path));
   }
 
-  it('抽取面里 placeholder 一律走 t()：字面量只剩例外表逐条认领的那几处', () => {
+  it('抽取面里 placeholder 一律走 t()：字面量一处不剩（例外表已清空）', () => {
     expect(literalPlaceholders(Object.entries(EXTRACTION_SOURCES))).toEqual(
       PLACEHOLDER_EXCEPTIONS.map(({ path, hits }) => ({ path, hits })),
     );
-    // 例外表自己也要对得上账：每条都写明理由，且不许悄悄多出/少掉
+    // 🔴 比原先的 `.every(理由够长)` **更强**：空数组上 `.every()` 是永真的，对不上账；
+    // 直接钉「表就是空的」⇒ 新增例外必须**同时**改这一条，改的人会看见自己在放宽判据。
+    expect(PLACEHOLDER_EXCEPTIONS).toEqual([]);
     expect(PLACEHOLDER_EXCEPTIONS.every((row) => row.reason.trim().length > 10)).toBe(true);
   });
 

@@ -30,6 +30,8 @@ const settings: ResourceBundle['settings'] = {
 
   proxy: {
     enable: 'Enable proxy',
+    // 与 zh-CN 同批新增（#54）：值逐字相同——示例地址语言无关，搬进词典是为了不留硬编码界面文案。
+    placeholder: 'http://127.0.0.1:7890',
     invalidUrl: 'The proxy URL must start with http://, https:// or socks5://',
     hint: 'Site crawling and model calls both go through this proxy. Changes take effect after the app restarts.',
   },

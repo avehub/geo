@@ -60,6 +60,37 @@ const MUST_QUOTE = /[",\n\r]/;
  */
 export const CSV_TAG_SEPARATOR = ';';
 
+/** ASCII 大写字母。只折这一段：SQLite 的 `LIKE` 只对 ASCII 大小写不敏感。 */
+const ASCII_UPPER = /[A-Z]/g;
+
+/**
+ * SQLite `LIKE` 的 ASCII 大小写折叠（真值源 `crates/geo-store/src/repo/project.rs:138` 的注释：
+ * 「LIKE 对 ASCII 大小写不敏感，中文按原样匹配」）。
+ *
+ * ⚠ 不用 `String.prototype.toLowerCase()`：它连非 ASCII 一起折（`'İ'.toLowerCase()` 是两个字符），
+ * 那就比后端**宽**了，反而造出新的分岐。
+ */
+export function foldAsciiCase(value: string): string {
+  return value.replace(ASCII_UPPER, (char) => char.toLowerCase());
+}
+
+/**
+ * `tags LIKE '%"<json(tag)>"%' ESCAPE '\'` 的镜像（真值源 `repo/project.rs:146-153`：`tags` 列存的
+ * 是 JSON 数组文本，形如 `["SaaS","GEO"]`）。
+ *
+ * 🔴 语义是**对序列化文本做 ASCII 大小写不敏感的子串匹配**，不是成员判定（#30②）。两条可观测后果：
+ * - 引号让部分匹配失效（`"Saa"` 不命中 `"SaaS"`——后端注释点名的就是这件事）；
+ * - 但两个元素之间的 `","` 会被标签 `,` 命中。这不是我们**想要**的语义，是后端 SQL 的**既有**语义；
+ *   demo 的职责是与后端**不可区分**，不是替后端修正（Rust 只读）。这条怪癖已写进 15c-2 报告交底，
+ *   建议后端改用 `json_each` 做精确成员匹配。
+ *
+ * `ESCAPE '\'` 让 `%` / `_` / `\` 按字面匹配，而 JS 的 `includes` 本来就是字面 ⇒ 不需要再转义一次。
+ * `JSON.stringify` 与 serde_json 的默认序列化同形（无空格分隔），所以两侧的列文本逐字相同。
+ */
+export function matchesTagsLike(tags: readonly string[], tag: string): boolean {
+  return foldAsciiCase(JSON.stringify(tags)).includes(foldAsciiCase(JSON.stringify(tag)));
+}
+
 /** 运行时新建对象的 id：uuid v4（仓库口径，AGENTS「ID 统一 uuid::Uuid（v4）」）。 */
 export function newId(): string {
   return crypto.randomUUID();

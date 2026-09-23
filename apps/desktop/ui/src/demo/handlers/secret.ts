@@ -55,6 +55,12 @@ export const secretSet: DemoHandler = (args) => {
   if (existing === undefined) {
     // 种子里 7 条与预设表一一对应 ⇒ 正常走不到这一支；补一条只是不让写操作炸在 undefined 上
     // （§B-2③ 的收窄口径：demo 不自造「表里没有这一行」这种校验）。
+    //
+    // 🔴 交叉引用（#33）：这一支是**写路径的全域性守卫**，不是缺陷、也不是"表里没有就报错"的校验。
+    // `provider` 到这里已经被 `requireKnownProvider`（`handlers/settings.ts`）挡过一道——非法 provider
+    // 早就抛 `validation/failed {field:'provider', reason:'unknown_provider'}` 了；能走到这里说明
+    // provider 合法、只是 `db.secrets` 里恰好没有那一行（种子不变量被打破时才可能）。
+    // 读路径（`secret_list`）不做这种补行：它只报告库里**实际有**的行，两边职责不同，别互相"对齐"。
     db.secrets.push({ provider, configured: true, secret_ref: demoSecretRef(provider) });
   } else {
     existing.configured = true;

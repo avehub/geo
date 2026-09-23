@@ -66,8 +66,8 @@ const ALLOWED_SCHEMES: readonly string[] = ['http', 'https'];
 const HOST_TERMINATORS = /[/?#]/;
 /** IPv4 形状（点号与数字）。 */
 const IPV4_SHAPED = /^[\d.]+$/;
-/** 下标括号里的内容。 */
-const SUBSCRIPTS = /\[([^\]]*)\]/g;
+/** `trim_end_matches(']')` 的等价物：去掉 chunk 尾部**连续**的 `]`（`entity_card.rs:415`）。 */
+const TRAILING_BRACKETS = /\]+$/;
 /** 纯数字下标。 */
 const DIGITS_ONLY = /^\d+$/;
 
@@ -216,10 +216,25 @@ function isAcceptedHost(host: string): boolean {
   return host.includes('.');
 }
 
+/** `parse_path` 解析出来的一段（`entity_card.rs:394-397` 的 `Segment`）。 */
+type PathSegment = { kind: 'key'; name: string } | { kind: 'index' };
+
 /**
- * 🔴 **demo 近似，不是 `parse_path` 的端口，也不主张等价**（简报 §B-2 / A-6）。
- * 真值源 `domain:399` 的 `parse_path` 与同文件的 `root_field`。只覆盖 A-6 真值表的四种情形，
- * 判定顺序与后端一致（下标 → 首段形状 → 根字段名）；表外的路径一律放行。
+ * `parse_path` + `root_field` 的**端口**（真值源 `domain:399-433` 与 `domain:435-447`）。
+ *
+ * 🔴 #30① 之前这里是「只覆盖 A-6 真值表四种情形」的**近似**，于是表外输入会分岐：整条 path
+ * 一个段都解析不出来时（`"..."` / `"[]"`），后端在 `domain:426-427` 发 `required` 且**只有 2 个
+ * params 键**，近似版发的却是 `unknown_field` + `value:''`（`"..."`）或 `invalid_format` +
+ * `value:path`（`"[]"`）——**3 键**。`params` 的键集是会上屏的（多一个 `value` 就多一段括号文案）
+ * ⇒ 现在照后端的分段算法抄，判定顺序逐字一致：
+ * ① 下标非数字 → `invalid_format` + `value`=那个 chunk（`domain:419-421`）；
+ * ② 段集为空 → `required`（`domain:426-427`，**2 键**）；
+ * ③ 首段不是 Key → `invalid_format` + `value`=整个 path（`domain:429-431`）；
+ * ④ 根字段名不在白名单 → `unknown_field` + `value`=根字段名（`domain:440-442`）。
+ *
+ * ⚠ 已知残留分岐（**不是**台账点名的那两条，本轮**未改**，已写进 15c-2 报告交底）：
+ * Rust 的 `chunk.parse::<usize>()` 还接受前导 `+`（`[+1]` 后端算合法下标，这里算非法），
+ * 且超出 `usize` 会解析失败（`[99999999999999999999]` 后端报 `invalid_format`，这里放行）。
  *
  * @returns 根字段名（顶层字段），调用方用它更新 `field_status`。
  */
@@ -228,44 +243,54 @@ function inspectFieldPath(path: string): string {
   if (trimmed === '') {
     throw demoError('validation/failed', { field: 'field_path', reason: 'required' });
   }
-  // 首段必须是 Key 不能是 Index（domain:429-431）：`value` 是**整个 path**（原样，不 trim）。
-  if (trimmed.startsWith('[')) {
+
+  // domain:404-425 的分段：每个 '.' 段里，'[' 之前**非空**才算一个 Key（domain:410-412，
+  // 注意后端只判 `is_empty()`，一个空格也算 Key）；'[' 之间的内容去掉尾部连续 ']' 之后必须是数字，
+  // 空 chunk 跳过（domain:416-418 的 `continue`，`products[]` 因此合法）。
+  const segments: PathSegment[] = [];
+  for (const part of trimmed.split('.')) {
+    const bracket = part.indexOf('[');
+    const key = bracket === -1 ? part : part.slice(0, bracket);
+    if (key !== '') segments.push({ kind: 'key', name: key });
+    if (bracket === -1) continue;
+    for (const raw of part.slice(bracket).split('[')) {
+      const chunk = raw.replace(TRAILING_BRACKETS, '');
+      if (chunk === '') continue;
+      if (!DIGITS_ONLY.test(chunk)) {
+        throw demoError('validation/failed', {
+          field: 'field_path',
+          reason: 'invalid_format',
+          value: chunk,
+        });
+      }
+      segments.push({ kind: 'index' });
+    }
+  }
+
+  // ② domain:426-427：一个段都没解析出来 ⇒ `required`，**没有 `value` 键**。
+  if (segments.length === 0) {
+    throw demoError('validation/failed', { field: 'field_path', reason: 'required' });
+  }
+
+  // ③ domain:429-431：首段必须是 Key 不能是 Index，`value` 是**整个 path**（原样，不 trim）。
+  const first: PathSegment | undefined = segments[0];
+  if (first === undefined || first.kind !== 'key') {
     throw demoError('validation/failed', {
       field: 'field_path',
       reason: 'invalid_format',
       value: path,
     });
   }
-  // 下标必须是数字（domain:419-422）：`value` 是**那个 chunk**，不是整个 path。
-  // 空 chunk（`products[]`）后端是 `continue` 跳过 ⇒ 这里也跳过。
-  for (const match of trimmed.matchAll(SUBSCRIPTS)) {
-    const chunk = match[1];
-    if (chunk === '' || DIGITS_ONLY.test(chunk)) continue;
-    throw demoError('validation/failed', {
-      field: 'field_path',
-      reason: 'invalid_format',
-      value: chunk,
-    });
-  }
-  const root = rootFieldName(trimmed);
-  if (!ENTITY_ROOT_FIELDS.includes(root)) {
+
+  // ④ domain:435-442：根字段名必须在白名单里，`value` 是**那个名字**。
+  if (!ENTITY_ROOT_FIELDS.includes(first.name)) {
     throw demoError('validation/failed', {
       field: 'field_path',
       reason: 'unknown_field',
-      value: root,
+      value: first.name,
     });
   }
-  return root;
-}
-
-/**
- * 根字段名 = 首个非空段里、首个 `.` 或 `[` 之前的部分
- * （`service:333` 的 `root_field_name` + `parse_path` 跳过空段的行为）。
- */
-function rootFieldName(trimmed: string): string {
-  const firstNamed = trimmed.split('.').find((part) => part !== '') ?? '';
-  const bracket = firstNamed.indexOf('[');
-  return bracket === -1 ? firstNamed : firstNamed.slice(0, bracket);
+  return first.name;
 }
 
 /**

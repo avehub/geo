@@ -23,11 +23,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SEED_ACTIVE_COMPETITOR_IDS, SEED_ACTIVE_PROJECT_ID, SEED_ARCHIVED_PROJECT_ID, SEED_ASSETS } from '../seed/projects';
 import { CSV_TAG_SEPARATOR } from './shared';
 import { readRepoFile } from '../../test/repo-file';
+import { RUST_EXPORT_FORMAT_VERSION } from '../../test/truth-source';
 
 const INTERNALS = '__TAURI_INTERNALS__';
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-/** 导出格式版本，真值源 `apps/desktop/src-tauri/src/services/project_transfer.rs:19`。 */
-const EXPORT_FORMAT_VERSION = 'geo-project-export-v1';
+/**
+ * 导出格式版本 = **运行时从 Rust 真值源解析出来的那一份**（#28）。
+ * 真值源 `apps/desktop/src-tauri/src/services/project_transfer.rs:19`；跨语言 import 不可能，
+ * 但「测试各自手抄一个字面量」也不是唯一选项——抄的份数越多，漂了越不容易被发现。
+ */
+const EXPORT_FORMAT_VERSION = RUST_EXPORT_FORMAT_VERSION;
 
 type WindowBag = Record<string, unknown>;
 
@@ -364,5 +369,61 @@ describe('#20 · CSV 单元格分隔符：跨语言镜像常量在 demo 侧只�
     expect(
       separatorMirrors([['./planted.ts', "import { CSV_TAG_SEPARATOR } from './shared';"]]),
     ).toEqual([]);
+  });
+});
+
+/**
+ * #28 · `EXPORT_FORMAT_VERSION`：demo 侧**只有一份**副本，而且钉在 Rust 真值源上。
+ *
+ * # 为什么不能真「收成一份」
+ * 后端是 `pub const EXPORT_FORMAT_VERSION: &str`（Rust），demo 是 TS，跨语言 import 不可能
+ * （`demo/handlers/project-transfer.ts:6` 早就写明了这一点）⇒ 字面量必然存在两份。
+ * 能收的是**份数**与**漂移可见性**：
+ * - 生产侧只许 `project-transfer.ts` 那一份（下面第 3 条判据在数）；
+ * - 测试侧一律走 `test/truth-source.ts` 的运行时解析值，不再各自手抄（#28 之前有 3 处手抄）；
+ * - 那份生产副本 === 解析出来的真值源（下面第 2 条判据在钉）。
+ *
+ * 与 `#20`（`CSV_TAG_SEPARATOR` ↔ `csv_io.rs` 的 `TAG_SEPARATOR`）同一个手法。
+ */
+describe('#28 · 导出格式版本：生产侧一份副本，且等于 Rust 真值源', () => {
+  /** 前端生产源码全集（测试文件排除）：数「同字面量副本」的份数。 */
+  const UI_SOURCES = import.meta.glob(['../../**/*.{ts,tsx}', '!../../**/*.test.*'], {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>;
+
+  /** 生产源码里出现这个字面量的地方（`[path, 次数]`，按 path 排序）。 */
+  function literalCopies(literal: string, entries: ReadonlyArray<readonly [string, string]> = Object.entries(UI_SOURCES)) {
+    return entries
+      .map(([path, source]) => [path, source.split(literal).length - 1] as const)
+      .filter(([, hits]) => hits > 0)
+      .sort((left, right) => left[0].localeCompare(right[0]));
+  }
+
+  it('真值源解析出来的就是那个已知值（后端改版本号时，这里会**显眼地**红，而不是静默跟着漂）', () => {
+    expect(RUST_EXPORT_FORMAT_VERSION).toBe('geo-project-export-v1');
+  });
+
+  it('demo 生产侧那份副本逐字等于真值源', async () => {
+    // 动态 import：本文件的分派配方依赖 `vi.resetModules()` 之后才加载 demo 模块图，
+    // 顶层静态 import 会把 `../db` 提前装成另一份实例 ⇒ 只在使用点上取这个常量。
+    const { EXPORT_FORMAT_VERSION: demoVersion } = await import('./project-transfer');
+
+    expect(demoVersion).toBe(RUST_EXPORT_FORMAT_VERSION);
+  });
+
+  it('生产源码里这个字面量**恰好一处**（不许再长出第二份副本）', () => {
+    // ⚠ key 是 Vite 归一化后的**最短相对路径**（`./project-transfer.ts`），不是 glob 里写的 `../../…`。
+    expect(literalCopies(RUST_EXPORT_FORMAT_VERSION)).toEqual([['./project-transfer.ts', 1]]);
+  });
+
+  it('自证（对照组）：塞第二份副本会被抓，引真值源的写法不会', () => {
+    const planted: Array<[string, string]> = [
+      ['./planted.ts', "const V = 'geo-project-export-v1';"],
+      ['./clean.ts', "import { RUST_EXPORT_FORMAT_VERSION } from '../../test/truth-source';"],
+    ];
+
+    expect(literalCopies('geo-project-export-v1', planted)).toEqual([['./planted.ts', 1]]);
   });
 });

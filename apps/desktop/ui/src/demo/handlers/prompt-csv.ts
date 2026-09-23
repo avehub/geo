@@ -54,9 +54,19 @@ const CARRIAGE_RETURN = '\r';
 /**
  * 一条已解析的 CSV 记录。
  *
- * `line` 是**物理行号**（表头为第 1 行，与 csv_io 的 `record.position().line()` 同口径）；
- * 引号里含换行时，物理行号取该记录**起始**那一行（诊断定位到"这一行有问题"比定位到 EOF 更有用）。
- * `error` 非空表示 csv 库那一层就读不出这条记录 ⇒ 走 `row_invalid`。
+ * `line` 是**物理行号**（表头为第 1 行），但**两个口径**，与真值源一一对应（#31）：
+ * - `error === null` ⇒ 记录**起始**行 = `record.position().line()`（csv_io:175-178）。csv crate 在
+ *   **读记录之前**就把 position 定住了（`csv-1.4.0/src/reader.rs:1626`；实测跨行记录报 line=2、
+ *   下一条报 line=4）⇒ 引号里含换行时，域错误报的是这条记录**开头**那一行。
+ * - `error !== null` ⇒ **出错**那一行 = `err.position().line()`（csv_io:168）。
+ * 两支在**跨行引号记录**上不同，而 `row` 会上屏（前端渲染成「第 N 行」）⇒ 各按各的口径，不混用。
+ *
+ * `error` 非空表示这一条在**语法层**就读不出来 ⇒ 走 `row_invalid`。
+ * ⚠ 这一支 demo 比后端**严**：实测 csv 1.4.0（`has_headers(true).flexible(true)`，即 csv_io:135-138
+ * 的配置）对「收口引号后还有数据」和「引号未闭合到 EOF」都**不报错**——前者把多余字符并进单元格
+ * （`"closed"xx` → `closedxx`），后者把剩余全文当成一个单元格。demo 保留 `row_invalid` 这一支是为了
+ * **演错误契约**（`contracts/error-codes.json` 登记了这个 reason，csv_io:163-172 也有那支防御分支），
+ * 已写进 15c-2 报告交底。
  */
 interface CsvRecord {
   cells: string[];
@@ -298,10 +308,13 @@ function parseCsv(body: string): CsvRecord[] {
     recordLine = lineNumber;
   };
   const fail = (reason: string): void => {
+    // 🔴 `row` 用**出错那一物理行**（`lineNumber`），不是记录起始行（`recordLine`）：真值源
+    // csv_io:168 装的是 `err.position().line()`，即 csv crate **检测到错误的位置**；域错误那支
+    // （csv_io:175-178）才用记录起始行。跨行引号记录上两者不同，而 `row` 会上屏（#31）。
     records.push({
       cells: [],
-      line: recordLine,
-      error: `csv parse error: record ${recordLine} (line: ${recordLine}): ${reason}`,
+      line: lineNumber,
+      error: `csv parse error: line ${lineNumber} (record starts at line ${recordLine}): ${reason}`,
     });
     // 错误恢复：跳到下一个换行、复位记录级状态，让后续行还能被读到（csv_io:172 的 `continue`）。
     while (index < body.length && body[index] !== '\n') index += 1;

@@ -22,6 +22,7 @@ import type { Mock } from 'vitest';
 
 import { isIpcErrorPayload } from '../../api/types';
 import { demoInvoke } from '../backend';
+import { RUST_EXPORT_FORMAT_VERSION } from '../../test/truth-source';
 import { getDemoDb, resetDemoDb } from '../db';
 
 /** jsdom 里这两个静态方法要么缺失、要么是 Node 那一份 ⇒ 用一个只含可选成员的视图来装/卸桩。 */
@@ -47,7 +48,8 @@ const urlApi = URL as unknown as BlobUrlApi;
 const OBJECT_URL = 'blob:demo-export';
 const BOM = '\uFEFF';
 const CSV_BODY = 'brand,intent\nDemo Brand,pricing_plan\n';
-const JSON_BODY = JSON.stringify({ format_version: 'geo-project-export-v1' }, null, 2);
+// #28：版本串不再手抄，用运行时从 Rust 真值源解析出来的那一份（`test/truth-source.ts`）。
+const JSON_BODY = JSON.stringify({ format_version: RUST_EXPORT_FORMAT_VERSION }, null, 2);
 const FILE_NAME = 'demo-prompts.csv';
 const CJK = /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/;
 
@@ -196,6 +198,31 @@ describe('demo/handlers/export · 下载这一支（浏览器里唯一可用的�
     // `default_name` 给空串就原样回空串：demo 不替用户编文件名（编出来的是**假**信息）。
     expect(unnamed).toBe('');
     expect(createObjectURL).toHaveBeenCalledTimes(3);
+  });
+
+  /**
+   * #32（Task 14 Nit 1）· `default_name` 是空串时的返回值。
+   *
+   * 现状是**刻意**的：demo 把空串原样交给浏览器（`anchor.download = ''`），浏览器于是自己挑一个
+   * 下载名 ⇒ 这一刻返回的 `''` **不是**用户最终看到的文件名。真后端那一侧同形：
+   * `src-tauri/src/ipc/export.rs:40` 把 `default_name` 只当**保存对话框的默认名**，空串就是不预填，
+   * 真名字由用户在对话框里挑 ⇒ 两侧都不"编"名字，也都不报错。
+   *
+   * 今天不可达：三个调用方传的都是词典渲染好的非空名，且模板里都带**字面后缀**
+   * （`components/CsvToolbar.tsx:83` 的 `-prompts.csv`、`pages/ProjectListPage.tsx:73-74` 的
+   * `project.list.exportJsonFileName`、`:90-91` 的 `project.list.exportCsvFileName`）；
+   * 那两条页面级用例已经把渲染出来的名字逐字钉住了。这里把"不可达时也不许乱来"钉死。
+   */
+  it('#32 default_name 空串：原样回空串、锚点 download 也是空串，不抛也不编名字', async () => {
+    const saved = await write({ default_name: '', content: CSV_BODY, with_bom: true });
+
+    // 契约要求返回**文件名**且永不为 null（空串也是"如实说我给不出名字"，编一个是假信息）。
+    expect(saved).toBe('');
+    expect(saved).not.toBeNull();
+    // 交给浏览器的就是空串 ⇒ 真实下载名由浏览器定，这一支的分歧是**浏览器行为**，不是 demo 编的。
+    expect(clicks).toEqual([{ download: '', href: OBJECT_URL, attached: true }]);
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(document.body.querySelectorAll('a[download]')).toHaveLength(0);
   });
 
   it('入参键名是 snake_case：写成驼峰就读不到（`m1-contract.test.ts` 那条防线的同族守卫）', async () => {

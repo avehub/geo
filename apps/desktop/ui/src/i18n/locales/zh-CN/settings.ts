@@ -47,6 +47,13 @@ const settings = {
 
   proxy: {
     enable: '启用代理',
+    /**
+     * 代理地址输入框的占位提示（#54）。与 `project.wizard.websitePlaceholder`（#47）、
+     * `settings.providerForm.baseUrlPlaceholder`（#25）**同性质、同裁定**：原先硬编码在
+     * `components/ProxyForm.tsx` 上，全 ASCII ⇒ 两遍 CJK 残留扫描都看不见它，但它确实会上屏。
+     * 值**逐字搬进词典、不改文案**（加「例如：」这种前缀属改文案，AGENTS 规则 8 要先经产品负责人点头）。
+     */
+    placeholder: 'http://127.0.0.1:7890',
     invalidUrl: '代理地址需以 http:// / https:// / socks5:// 开头',
     hint: '抓取官网与调用模型都会走这个代理；改动在应用重启后生效。',
   },

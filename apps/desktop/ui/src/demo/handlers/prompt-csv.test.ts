@@ -250,6 +250,57 @@ describe('demo/handlers/prompt-csv · 行错误与默认值', () => {
     expect(result.errors[0]!.params?.value).toMatch(/^[\x20-\x7e]+$/);
   });
 
+  /**
+   * #31（Hegel Task 14 Nit）· **跨行引号记录**的 `row` 口径。
+   *
+   * 真值源那侧有**两个**不同的行号口径，不能混：
+   * - 域错误（`required` / `invalid_format`）用 `record.position().line()`（csv_io:175-178）
+   *   = 记录**起始**行——csv crate 在**读记录之前**就把 position 定住了（`csv-1.4.0/src/reader.rs:1626`，实测：
+   *   跨行记录报 line=2，下一条报 line=4）；
+   * - 语法错误（`row_invalid`）用 `err.position().line()`（csv_io:168）= **检测到错误**那一行。
+   *
+   * demo 原先两支都用记录起始行 ⇒ 跨行记录的第二支与后端分岐，而 `row` 是**会上屏**的
+   * （前端渲染成「第 N 行」）⇒ 这条把语法错误那支对齐到出错行。
+   */
+  it('#31 跨行引号记录：语法错误的 row 是**出错那一行**，不是记录起始行', async () => {
+    // 记录从第 2 行开始、引号里带一个换行；收口引号后面还有数据 ⇒ 错误发生在第 3 行。
+    const result = await importCsv(
+      csv('"multi', 'line"xx,pricing_plan,3,,,,1', 'tail,local_service,3,,,,1'),
+    );
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.reason).toBe('row_invalid');
+    // 🔴 这一行就是 #31 的判据：改回记录起始行（2）本用例立刻红。
+    expect(result.errors[0]!.row).toBe(3);
+    expect(result.errors[0]!.params?.value).toMatch(/^[\x20-\x7e]+$/);
+    // 错误恢复照旧：出错那条之后仍然读得到（csv_io:172 的 `continue`）。
+    expect(result.items.map((item) => item.text)).toEqual(['tail']);
+  });
+
+  it('#31 单行记录的 row 仍是它自己那一行（对齐口径不许把既有的两条推歪）', async () => {
+    const result = await importCsv(
+      csv('ok-one,pricing_plan,3,,,,1', '"closed"xx,pricing_plan,3,,,,1', 'ok-two,local_service,3,,,,1'),
+    );
+
+    // 表头是第 1 行 ⇒ 三条数据分别是第 2/3/4 行；出错的那条起始行与出错行**同为 3**。
+    expect(result.errors.map((error) => error.row)).toEqual([3]);
+    expect(result.items.map((item) => item.text)).toEqual(['ok-one', 'ok-two']);
+  });
+
+  it('#31 域错误仍用**记录起始行**（csv_io:175-178 的另一个口径，不许被上一条带跑）', async () => {
+    // 第 2-3 行是同一条跨行记录，域错误（intent 非法）要报**起始行 2**，不是出错行 3。
+    // 末尾带一条合法行：一条都解析不出来会走 `prompt_set/empty_import`（那是另一条契约）。
+    const result = await importCsv(
+      csv('"multi', 'line",not_an_intent,3,,,,1', 'ok,local_service,3,,,,1'),
+    );
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.reason).toBe('invalid_format');
+    expect(result.errors[0]!.params).toEqual({ value: 'not_an_intent' });
+    expect(result.errors[0]!.row).toBe(2);
+    expect(result.items.map((item) => item.text)).toEqual(['ok']);
+  });
+
   it('空列落默认值：weight 3 · repeat_count 1 · source imported · group_name null', async () => {
     const result = await importCsv(csv('只填必填项,brand_comparison,,,,,'));
 

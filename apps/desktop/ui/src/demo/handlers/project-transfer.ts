@@ -67,7 +67,13 @@ import {
 } from './shared';
 
 /** 真值源 transfer:19。跨语言无法 import ⇒ 第二份副本，注释即钉子（见文件头 ①）。 */
-const EXPORT_FORMAT_VERSION = 'geo-project-export-v1';
+/**
+ * 🔴 demo 侧**只许有这一份**副本（#28）：跨语言 import 不可能，但份数可以收、漂移可以钉。
+ * 判据在 `handlers/m1-contract.test.ts` 的 #28（生产源码里这个字面量恰好一处，且逐字等于
+ * 运行时从 `project_transfer.rs:19` 解析出来的真值源）；测试侧一律走 `test/truth-source.ts`，
+ * 不再各自手抄。
+ */
+export const EXPORT_FORMAT_VERSION = 'geo-project-export-v1';
 /** `project_export`：项目全量导出（JSON）。竞品、资产、实体卡、修订与题库快照一起走。 */
 export const projectExport: DemoHandler = (args) => {
   const db = getDemoDb();
@@ -262,19 +268,27 @@ export const projectExportAssetsCsv: DemoHandler = (args) => {
 };
 
 /**
- * 解析导入载荷。失败一律 `validation/failed` + `{field:'payload', reason:'parse_failed', value:<原文>}`
- * （A-5 / transfer:80-82：`value` 装**序列化库原文**，不自己拼句子）。
- * ⚠ 规则 3：`value` 里装的是解析器的报错文本，不是载荷本身——绝不把用户数据整段回显。
+ * 解析导入载荷。失败一律 `validation/failed` + `{field:'payload', reason:'parse_failed', value:<固定 ASCII 诊断>}`。
+ *
+ * 🔴 `value` **绝不回显用户输入**（#29，AGENTS 规则 3 的同族纪律）：`params.value` 会被前端渲染出来
+ * （`errors.reasons.*` 的括号文案），是**会上屏**的。真值源 transfer:80-82 装的是 serde_json 的
+ * `Display`——它只说「第几行第几列期望什么」，**不含**载荷片段；而 V8 的 `JSON.parse` 报错
+ * **会**把出错位置附近的原文抄进 message（`Unexpected token 'x', "{not json"… is not valid JSON`）
+ * ⇒ 直接转发它就是回显用户数据。所以两支都用**固定 ASCII 串**，与兄弟分支同形。
+ *
+ * ⚠ 代价：`value` 不再逐字等于后端的 serde_json 原文（demo 拿不到那份位置信息，硬凑一份就是新的漂移面）。
+ * 契约只要求 `value` 是语言中立的诊断串，两侧都满足；这一点已写进 15c-2 报告交底。
  */
 function parsePayload(payload: string): Record<string, unknown> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload);
-  } catch (error) {
+  } catch {
+    // 刻意**不接** error 对象：接了就有人会顺手把 `error.message` 塞进 `value`（那正是 #29 的回显）。
     throw demoError('validation/failed', {
       field: 'payload',
       reason: 'parse_failed',
-      value: error instanceof Error ? error.message : String(error),
+      value: 'expected valid JSON',
     });
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {

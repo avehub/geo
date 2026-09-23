@@ -38,6 +38,7 @@ import {
   cleanOptional,
   makeAsset,
   makeCompetitor,
+  matchesTagsLike,
   newId,
   nowIso,
   requireProject,
@@ -95,7 +96,9 @@ export const projectCreate: DemoHandler = (args) => {
  * - `include_archived` 缺省 false ⇒ 默认只看未归档（界面上的「显示已归档」复选框）；
  * - `query` 同时模糊匹配项目名与品牌名；SQLite 的 `LIKE` 对 ASCII 大小写不敏感、
  *   中文按原样匹配 ⇒ 这里用 `toLowerCase()` 复现同一口径；
- * - `tags` 是 **AND** 语义（需同时含全部给定标签）；
+ * - `tags` 是 **AND** 语义（需同时含全部给定标签），且每个标签的匹配是 `repo/project.rs:146-153`
+ *   那条 `tags LIKE '%"<json(tag)>"%' ESCAPE '\'` 的镜像（ASCII 大小写不敏感的**子串**匹配，
+ *   不是成员判定）⇒ 走 `shared.matchesTagsLike`，判据在 `project.test.ts` 的 #30②；
  * - 排序 `updated_at DESC, id ASC`。
  */
 export const projectList: DemoHandler = (args) => {
@@ -114,7 +117,7 @@ export const projectList: DemoHandler = (args) => {
           project.name.toLowerCase().includes(query) ||
           project.brand_name.toLowerCase().includes(query),
       )
-      .filter((project) => tags.every((tag) => project.tags.includes(tag)))
+      .filter((project) => tags.every((tag) => matchesTagsLike(project.tags, tag)))
       .sort(
         (left, right) =>
           Date.parse(right.updated_at) - Date.parse(left.updated_at) ||

@@ -33,6 +33,7 @@ import {
   SEED_COMPETITORS,
   SEED_PROJECTS,
 } from '../seed/projects';
+import { RUST_EXPORT_FORMAT_VERSION } from '../../test/truth-source';
 import { demoContentHash } from './prompt';
 import {
   SEED_BASELINE_SET_ID,
@@ -48,10 +49,11 @@ const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})
 /** 一个库里一定不存在的 project id（uuid v4 形状，避免撞上守卫之外的分支）。 */
 const MISSING_PROJECT_ID = '00000000-0000-4000-8000-0000000000aa';
 /**
- * 导出格式版本。真值源 `apps/desktop/src-tauri/src/services/project_transfer.rs:19`
- * （跨语言无法 import ⇒ 这里独立写死一份，漂了本文件会红）。
+ * 导出格式版本不再在这里手抄（#28）：`RUST_EXPORT_FORMAT_VERSION` 是运行时从
+ * `apps/desktop/src-tauri/src/services/project_transfer.rs:19` 解析出来的那一份
+ * （`test/truth-source.ts`）。手抄的副本漂了不会红，解析出来的会。
+ * 「生产侧只许一份副本」的判据在 `m1-contract.test.ts` 的 #28。
  */
-const EXPORT_FORMAT_VERSION = 'geo-project-export-v1';
 /** CSV 的 BOM。写成转义序列，源码里不出现非 ASCII 字面量（门禁 7）。 */
 const BOM = '\uFEFF';
 
@@ -195,6 +197,75 @@ describe('demo/handlers/project · project_list', () => {
       filter: { include_archived: true, tags: ['SaaS', 'no-such-tag'] },
     });
     expect(two).toEqual([]);
+  });
+
+  /**
+   * #30② · `tags` 过滤必须与后端**同构**：真值源 `crates/geo-store/src/repo/project.rs:146-153`
+   * 是 `tags LIKE '%"<json(tag)>"%' ESCAPE '\'`（`tags` 列存的是 JSON 数组文本），
+   * 不是「成员判定」。两条可观测后果，都得照抄：
+   * - **ASCII 大小写不敏感**（SQLite `LIKE` 的默认口径，同文件 `:138` 的注释）；
+   * - 匹配的是**序列化文本的子串**，所以两个元素之间的 `","` 会被标签 `,` 命中。
+   *   这不是我们想要的语义，是后端 SQL 的语义；demo 的职责是**不可区分**，不是替后端修正
+   *   （Rust 只读 ⇒ 这条怪癖已写进交底清单，建议后端改用 `json_each` 精确匹配）。
+   */
+  it('#30② tags 过滤按 ASCII 大小写不敏感（镜像 SQLite LIKE），中文不受影响', async () => {
+    const lower = await demoInvoke<Project[]>('project_list', {
+      filter: { include_archived: true, tags: ['saas'] },
+    });
+    expect(lower.map((project) => project.id)).toEqual([SEED_ARCHIVED_PROJECT_ID]);
+
+    const upper = await demoInvoke<Project[]>('project_list', {
+      filter: { include_archived: true, tags: ['SAAS'] },
+    });
+    expect(upper.map((project) => project.id)).toEqual([SEED_ARCHIVED_PROJECT_ID]);
+
+    // 中文没有大小写 ⇒ 照旧精确匹配。
+    const cjk = await demoInvoke<Project[]>('project_list', {
+      filter: { include_archived: true, tags: ['协作办公'] },
+    });
+    expect(cjk.map((project) => project.id)).toEqual([SEED_ARCHIVED_PROJECT_ID]);
+  });
+
+  it('#30② 引号让部分匹配失效：`Saa` 不许命中 `SaaS`（后端注释里点名的那件事）', async () => {
+    const partial = await demoInvoke<Project[]>('project_list', {
+      filter: { include_archived: true, tags: ['Saa'] },
+    });
+    expect(partial).toEqual([]);
+
+    // `ESCAPE '\'` 让 `%` / `_` 按字面匹配；JS 的 includes 本来就是字面 ⇒ 两侧都不命中。
+    for (const tag of ['%', '_']) {
+      const wildcard = await demoInvoke<Project[]>('project_list', {
+        filter: { include_archived: true, tags: [tag] },
+      });
+      expect(wildcard, `tag ${tag}`).toEqual([]);
+    }
+  });
+
+  it('#30② 序列化的**子串**语义照抄：标签 `,` 命中任何有两个以上标签的项目', async () => {
+    const hit = await demoInvoke<Project[]>('project_list', {
+      filter: { include_archived: true, tags: [','] },
+    });
+    // 两个种子项目的 tags 都有 ≥2 个元素 ⇒ JSON 文本里都有 `","`。
+    expect(hit.map((project) => project.id).sort()).toEqual(
+      [SEED_ACTIVE_PROJECT_ID, SEED_ARCHIVED_PROJECT_ID].sort(),
+    );
+
+    // 🔴 反向对照（证明上一条不是永真）：把其中一个项目改成**单标签**，它就不再被 `,` 命中
+    // （序列化文本里已经没有 `","` 了），而它自己的新标签照常命中。
+    const detail = await demoInvoke<ProjectDetail>('project_get', { id: SEED_ARCHIVED_PROJECT_ID });
+    await demoInvoke<Project>('project_update', {
+      project: { ...detail.project, tags: ['only-one'] },
+    });
+
+    const after = await demoInvoke<Project[]>('project_list', {
+      filter: { include_archived: true, tags: [','] },
+    });
+    expect(after.map((project) => project.id)).toEqual([SEED_ACTIVE_PROJECT_ID]);
+
+    const byTag = await demoInvoke<Project[]>('project_list', {
+      filter: { include_archived: true, tags: ['only-one'] },
+    });
+    expect(byTag.map((project) => project.id)).toEqual([SEED_ARCHIVED_PROJECT_ID]);
   });
 
   it('filter 整个缺省时也不炸（args 里没有 filter 键）', async () => {
@@ -344,7 +415,10 @@ describe('demo/handlers/project · project_export / project_import', () => {
       id: SEED_ACTIVE_PROJECT_ID,
     });
 
-    expect(exported.format_version).toBe(EXPORT_FORMAT_VERSION);
+    expect(exported.format_version).toBe(RUST_EXPORT_FORMAT_VERSION);
+    // 防空跑：解析出来的真值源不是空串（正则会因后端改名而静默匹配到 undefined → 抛，
+    // 但万一有人给它加了回落，这一条会红）。
+    expect(RUST_EXPORT_FORMAT_VERSION).toBe('geo-project-export-v1');
     // A-5：exported_at 是**运行时产物**，只断言合法 RFC3339 + 非空，不断言具体值。
     expect(exported.exported_at).not.toBe('');
     expectTimestamp(exported.exported_at);
@@ -521,15 +595,22 @@ describe('demo/handlers/project · project_export / project_import', () => {
     expect(getDemoDb().projects).toHaveLength(SEED_PROJECTS.length);
   });
 
-  it('payload 不是合法 JSON ⇒ validation/failed（field=payload, reason=parse_failed）', async () => {
-    const cause = await capture(() => demoInvoke('project_import', { payload: '{not json' }));
+  it('payload 不是合法 JSON ⇒ validation/failed，且 value 是**固定 ASCII**、绝不回显用户输入（#29）', async () => {
+    // 🔴 载荷里放一个独特哨兵：它只要出现在 params 里，就是「把用户数据回显进错误载荷」
+    // （AGENTS 规则 3 的同族纪律；`params.value` 会被前端渲染出来，是会**上屏**的）。
+    const payload = '{not json SENTINEL-9f3a';
+    const cause = await capture(() => demoInvoke('project_import', { payload }));
 
     expect(isIpcErrorPayload(cause)).toBe(true);
     if (!isIpcErrorPayload(cause)) throw new Error('unreachable');
     expect(cause.code).toBe('validation/failed');
     expect(cause.params?.field).toBe('payload');
     expect(cause.params?.reason).toBe('parse_failed');
-    expect(cause.params?.value).not.toBe('');
+    // 与兄弟分支（「不是 JSON 对象」那支的 'expected a JSON object'）同形：固定 ASCII 诊断串。
+    expect(cause.params?.value).toBe('expected valid JSON');
+    expect(cause.params?.value).toMatch(/^[\x20-\x7e]+$/);
+    expect(cause.params?.value).not.toContain('SENTINEL-9f3a');
+    expect(JSON.stringify(cause.params ?? {})).not.toContain('SENTINEL-9f3a');
     expect(getDemoDb().projects).toHaveLength(SEED_PROJECTS.length);
   });
 });

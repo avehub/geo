@@ -126,6 +126,7 @@ const prompt: ResourceBundle['prompt'] = {
 
   promptSet: {
     title: 'Prompt Library',
+    selectAria: 'Select prompt library version',
     loadFailed: 'Failed to load the prompt library',
     empty: 'No prompt library yet. Set the generation parameters and start a generation; the system produces 60–100 conversational Chinese prompts covering the 7 intent categories and saves them as a version snapshot with a content hash.',
     version: 'Version {{version}}',

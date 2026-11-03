@@ -75,14 +75,14 @@ const EXTRACTION_SOURCES = Object.fromEntries(
 /**
  * 两个子集都从 `EXTRACTION_SOURCES` 派生（而不是从 `SOURCES`）：这样「把某一层的 root 从
  * `EXTRACTION_ROOTS` 里拿掉」会**同时**打红该层的点名断言与总量断言。
- * 若从 `SOURCES` 派生，缩小抽取面时点名断言仍然数得出那 5 个页面文件 ⇒ 变异自证抓不到。
+ * 若从 `SOURCES` 派生，缩小抽取面时点名断言仍然数得出那 10 个页面文件 ⇒ 变异自证抓不到。
  */
-/** Task 8 的抽取面：`src/components/` 下的 19 个文件（17 个 .tsx + 2 个数据模块）。 */
+/** Task 8 的抽取面：`src/components/` 下的 36 个文件（33 个 .tsx + 3 个数据/格式化模块）。 */
 const COMPONENT_SOURCES = Object.fromEntries(
   Object.entries(EXTRACTION_SOURCES).filter(([path]) => path.startsWith('../components/')),
 );
 
-/** Task 9 新纳入的抽取面：`src/pages/` 下的 5 个页面（页面测试已被 `SOURCES` 排除）。 */
+/** Task 9 新纳入的抽取面：`src/pages/` 下的 10 个页面（页面测试已被 `SOURCES` 排除）。 */
 const PAGE_SOURCES = Object.fromEntries(
   Object.entries(EXTRACTION_SOURCES).filter(([path]) => path.startsWith('../pages/')),
 );
@@ -373,12 +373,37 @@ const DEMO_SEED_PREFIX = '../demo/seed/';
 
 /** 今天属于语义类 1 的文件集（钉死；多一个少一个都红 ⇒ 前缀不会被悄悄放宽）。 */
 const DEMO_SEED_EXPECTED = [
+  // M1/M2 的 6 个（Task 11–14）
   '../demo/seed/entity-cards.ts',
   '../demo/seed/projects.ts',
   '../demo/seed/prompt-items-insufficient.ts',
   '../demo/seed/prompt-items-sufficient.ts',
   '../demo/seed/prompt-sets.ts',
   '../demo/seed/settings.ts',
+  // M3–M7 demo 闭环那一轮加的 8 个（采集 / 证据 / 解析核查 / 诊断 / 处方 / 文稿 / 报告）
+  '../demo/seed/actions.ts',
+  '../demo/seed/collection-records-retest.ts',
+  '../demo/seed/collection-records.ts',
+  '../demo/seed/collection-rounds.ts',
+  '../demo/seed/contents.ts',
+  '../demo/seed/diagnosis.ts',
+  '../demo/seed/insights.ts',
+  '../demo/seed/reports.ts',
+  // Plan B Task 4 加的 1 个（每家厂商/中转站的预置模型清单；整份是 ASCII 机器记号）
+  '../demo/seed/model-catalogs.ts',
+  // M1.5 素材层加的 2 个（关键词库 / FAQ 库的种子与各自的生成池；词面与答案都是中文语料）
+  '../demo/seed/faqs.ts',
+  '../demo/seed/keywords.ts',
+  // M6.5 站点接入加的 1 个（站点通道与补丁的中文语料）。
+  '../demo/seed/site.ts',
+  // M1.2 知识库加的 1 个（25 条初始知识 + 6 行生成池；案例 / 卖点 / 话术与多媒体说明都是中文语料）。
+  '../demo/seed/kb.ts',
+  // M6 文章管理加的 1 个（方向 / 模板 / 排期 / 文章四组种子；文章正文是中文语料）。
+  '../demo/seed/articles.ts',
+  // M5.5 站长数据加的 1 个（7 个源的绑定与自检说明、30 行关键词指标、6 条机会的 `basis`、
+  // C 类留档的 `label`——都是"平台会怎么回话"的中文语料；🔴 平台官方**表头**不在这里，
+  // 在 `api/search-mapping.ts` 的 `NATIVE_COLUMNS`，由例外表逐条认领）。
+  '../demo/seed/search-data.ts',
 ] as const;
 
 /**
@@ -419,15 +444,17 @@ type ResidualException = {
 
 const RESIDUAL_EXCEPTIONS: readonly ResidualException[] = [
   {
-    // 台账 #11（第 8 条）：7 处，逐处点名。
+    // 台账 #11（第 8 条）：8 处，逐处点名。
     paths: [
       '../components/EntityFieldCard.tsx',
+      // M1.2b 知识库的条目录入侧滑抽屉（标签输入框，spec 2026-10-10 · DR-77）。
+      '../components/KbEntryDrawer.tsx',
       '../components/ProjectTable.tsx',
       '../components/PromptItemEditor.tsx',
       '../components/WizardSteps.tsx',
     ],
     line: /tokenSeparators=\{\[',', '，'\]\}/,
-    hits: 7,
+    hits: 8,
     reason:
       'antd `Select mode="tags"` 的**输入契约**，不是语言相关文案：用户敲半角 `,` 或全角 `，` 都要能切成 token，' +
       '两个分隔符必须同时写死。改成词典键反而会让「能切什么」随界面语言漂移（en 下敲全角逗号就切不动了），' +
@@ -456,6 +483,29 @@ const RESIDUAL_EXCEPTIONS: readonly ResidualException[] = [
     reason:
       '`problemsOf` 的**开发者诊断**标签（BASE 既有；本文件顶部那段「刻意不含 `src/api/`」的注释讲的就是它）：' +
       '只进 `console.warn` 与门禁断言消息，**永不上屏**，因此不进词典。',
+  },
+  {
+    // M5.5 站长数据（spec 2026-10-12 · DR-107 / DR-98）：**平台官方导出的表头原文**。
+    paths: ['../api/search-mapping.ts'],
+    line: /^\s*(?:关键词|页面|AI引用量|AI曝光量|AI点击量|AI点击率|展现量|点击量): '/,
+    hits: 12,
+    reason:
+      '`NATIVE_COLUMNS` 的键 = 平台后台/导出文件里**逐字的列名**，是"认列"的输入契约而不是上屏文案：' +
+      '百度《AI 流量分析》导出的就是 `关键词|AI引用量|AI曝光量|AI点击量|AI点击率`（一级出处：2026-10-12 ' +
+      '产品负责人本机导出的两份 xlsx，已录 `fixtures/search/`），百度统计与头条后台导出的是 `展现量 / 点击量`。' +
+      '翻成英文就等于**认不出客户粘进来的那一列**（DR-113 的认列靠表头文字，不靠列序）。' +
+      '🔴 全部集中在这一处：`search-catalog.ts` 的 `alias_columns` 经 `aliasColumnsOf` 投影它，' +
+      'mapping / paste / seed 没有各写一份（例外表因此能互斥认领）。',
+  },
+  {
+    // M5.5 站长数据（spec 2026-10-12 · DR-113 ④）：**中文数字后缀**的解析。
+    paths: ['../api/search-paste.ts'],
+    line: /万|亿/,
+    hits: 2,
+    reason:
+      '`parseNumericCell` 认的是客户从后台粘进来的写法：`1.2万` → `12000`、`3亿` → `300000000`。' +
+      '这两个字是**输入格式**（与全角数字、千分位逗号、百分号同一族），不是文案 ⇒ 不进词典；' +
+      '进词典反而会让"能认什么写法"随界面语言漂移（en 界面下就认不出 `1.2万` 了），那才是真缺陷。',
   },
   {
     // 台账 #16（第 15 条）。
@@ -537,27 +587,97 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     expect(paths).toContain('../main.tsx');
   });
 
-  it('components/ 下扫到了 19 个文件（17 个 .tsx + entity-fields.ts + wizard-steps.ts）', () => {
+  it('components/ 下扫到了 109 个文件（99 个 .tsx + 10 个非组件模块：entity-fields / wizard-steps / format / library-generate-defaults / kb-view / kb-import / kb-fields / site-patch-filters / article-slots / article-studio-view）', () => {
     const paths = Object.keys(COMPONENT_SOURCES);
-    expect(paths).toHaveLength(19);
-    expect(paths.filter((path) => path.endsWith('.tsx'))).toHaveLength(17);
+    // Plan B Task 6 新增 `components/SideNav.tsx`（导航从 AppLayout 搬出来）⇒ 34 个 .tsx；
+    // M1.5 素材层再加 8 个（关键词/FAQ 各一套表格 + 录入 + 生成弹窗，外加两个共用弹窗）⇒ 42 个。
+    // M6.5 站点接入再加 9 个 .tsx 与 1 个非组件模块（`site-patch-filters.ts`）⇒ 51 个 .tsx；
+    // M1.2 知识库再加 6 个 .tsx（条目卡 / 模块面板 / 录入弹窗 / 生成弹窗 / 统计条 / 工具条）
+    // 与 1 个非组件模块 `kb-view.ts`（同步块 → 界面行的视图模型，被页面与 `api/kb-compose.ts`
+    // 共用 ⇒ 同样不能住在组件文件里，`react-refresh/only-export-components` 会点名）
+    // ⇒ 57 个 .tsx / 63 个文件。
+    // M1.2b 重构：录入弹窗改侧滑抽屉、新增表格视图 / 导入弹窗 / 预览抽屉（+4 −1 = 60 个 .tsx），
+    // 再加非组件模块 `kb-import.ts`（导入草稿组装，标签词语言相关 ⇒ 与 `kb-view.ts` 同裁定）。
+    // M6 文章管理再加 10 个 .tsx（方向卡 / 两个录入弹窗 / 模板表与抽屉 / 排期表与弹窗 /
+    // 评审表与工具条 / 预览抽屉 / 流水线面板）与 2 个非组件模块（`article-slots.ts` 槽位替换、
+    // `article-studio-view.ts` 三工作区的视图模型）⇒ 72 个 .tsx / 81 个文件。
+    // DR-119（知识库修订留痕）再加 1 个非组件模块 `kb-fields.ts`：字段标签表 +
+    // `kbFieldLabelKey` resolver，与 `entity-fields.ts` 同族（数据与组件分离，且
+    // `RevisionTimeline.tsx` 泛化后要由调用方把 resolver 传进去 ⇒ 不能住在组件文件里，
+    // `react-refresh/only-export-components` 会点名）⇒ 72 个 .tsx / 82 个文件。
+    // M5.5 站长数据再加 8 个 .tsx（数据源墙 `SearchSourceCards` / 配置侧滑 `SearchSourceDrawer` /
+    // 导入弹窗 `SearchImportModal` / 粘贴弹窗 `SearchPasteModal` / 汇总条 `AggregateSummaryBar` /
+    // 指标与 C 类面板 `SearchMetricPanels` / 机会卡 `OpportunityCard` / 自动采集状态卡
+    // `AutoCollectStatusCard`），**零个非组件模块**：认列、归一与求和全在 `api/search-*.ts`
+    // （纯函数层），视图模型没有语言相关的标签词 ⇒ 80 个 .tsx / 90 个文件。
+    // ⚠ 规格里点名的是 6 个组件，这里多出的 2 个（`SearchSourceCards` / `SearchMetricPanels`）
+    // 是为了守 AGENTS「单文件约 400 行」那条软线拆出来的（页面本体 381 行）。
+    // 2026-10-29 项目概览再加 5 个 .tsx（锚条 / KPI / 竞品 / 风险 / 行动），零个非组件模块：
+    // 组装逻辑全在 `api/overview-compose.ts`（纯函数），视图里只有词典键与数据。
+    // M9 组合总览再加 1 个 .tsx（分布卡），组装与筛选在 `api/portfolio-compose.ts`。
+    // P1 站外对账 / 交付进度再加 2 个 .tsx（`OverviewStationCard` / `OverviewDeliveryCard`）。
+    expect(paths).toHaveLength(109);
+    expect(paths.filter((path) => path.endsWith('.tsx'))).toHaveLength(99);
+    expect(paths).toContain('../components/SideNav.tsx');
+    expect(paths).toContain('../components/LibraryReferenceModal.tsx');
+    expect(paths).toContain('../components/KbModulePanels.tsx');
+    expect(paths).toContain('../components/kb-view.ts');
+    expect(paths).toContain('../components/kb-fields.ts');
+    expect(paths).toContain('../components/SearchSourceCards.tsx');
+    expect(paths).toContain('../components/AggregateSummaryBar.tsx');
   });
 
   // 裁定 B-1 要求的那条点名断言：抽取面里 `pages/` 恰好是 5 个页面文件。
   // 用 `toEqual` 而不是 `toHaveLength`：多一个页面（或 glob 意外把测试文件放进来）同样要报。
-  it('B-1 · pages/ 下扫到的恰好是 5 个页面文件（把 pages 从抽取面拿掉，这条必须红）', () => {
+  it('B-1 · pages/ 下扫到的恰好是这 28 个文件（把 pages 从抽取面拿掉，这条必须红）', () => {
     expect(Object.keys(PAGE_SOURCES).sort()).toEqual([
+      // 断言的是 `.sort()` 之后的顺序，所以这里按文件名字典序排（M1/M2 与 M3–M7 交错）：
+      // Action / Collection / Diagnosis / Insight / Report 是 M3–M7 那 5 个页面。
+      '../pages/ActionPage.tsx',
+      // M6 文章管理（spec 2026-10-10 · DR-83）：方向 → 模板 → 排期与评审三工作区。
+      '../pages/ArticleStudioPage.tsx',
+      // Plan B Task 7：新建项目的两屏（模式选择 + 填网址自动采集）。
+      '../pages/AutoBuildProjectPage.tsx',
+      '../pages/CollectionPage.tsx',
+      // 2026-10-30 视觉重做的设计样张（dev-only；仍在 pages/ 扫描面里）。
+      '../pages/DesignGalleryPage.tsx',
+      '../pages/DiagnosisPage.tsx',
       '../pages/EntityCardPage.tsx',
+      // M1.5 素材层那两个页面（关键词库 / FAQ 常见问题库）。
+      '../pages/FaqLibraryPage.tsx',
+      '../pages/InsightPage.tsx',
+      '../pages/KeywordLibraryPage.tsx',
+      // M1.2 知识层（spec 2026-10-01 · DR-69）。
+      '../pages/KnowledgeBasePage.tsx',
+      '../pages/NewProjectPage.tsx',
+      // 项目概览（2026-10-29）：项目下第一项，结果区按轮次锚定、待办区跨轮累计。
+      '../pages/OverviewPage.tsx',
+      // M9 组合总览（2026-10-29）：跨项目摘要、筛选与下钻。
+      '../pages/PortfolioPage.tsx',
       '../pages/ProjectListPage.tsx',
       '../pages/ProjectWizardPage.tsx',
       '../pages/PromptSetPage.tsx',
+      '../pages/ReportPage.tsx',
       '../pages/SettingsPage.tsx',
+      // M6.5 站点接入（spec 2026-09-30 · DR-54）。
+      '../pages/SitePage.tsx',
+      // M5.5 站长数据（spec 2026-10-12 · DR-91）：排在解析与核查之后、诊断与归因之前。
+      '../pages/WebmasterDataPage.tsx',
+      // Plan B Task 2：设置页拆成 `/settings/:section` 五分段 + 骨架 + 分段清单数据模块。
+      // `SettingsPage.tsx` 留在清单里：它退化成"数据与保存态的持有者"，但仍然是生产源码。
+      '../pages/settings/AboutSection.tsx',
+      '../pages/settings/CollectionSection.tsx',
+      '../pages/settings/GeneralSection.tsx',
+      '../pages/settings/ModelsSection.tsx',
+      '../pages/settings/SettingsLayout.tsx',
+      '../pages/settings/StorageSection.tsx',
+      '../pages/settings/sections.ts',
     ]);
   });
 
-  it('B-1 · 抽取面 = components(19) + pages(5) + App.tsx + main.tsx，且不含 api/', () => {
+  it('B-1 · 抽取面 = components(109) + pages(28) + App.tsx + main.tsx，且不含 api/', () => {
     const paths = Object.keys(EXTRACTION_SOURCES);
-    expect(paths).toHaveLength(26);
+    expect(paths).toHaveLength(139);
     expect(paths.filter((path) => path.startsWith('../api/'))).toEqual([]);
     expect(paths.filter((path) => EXTRACTION_ROOTS.some((root) => !path.startsWith(root))).length)
       .toBeGreaterThan(0);
@@ -566,7 +686,7 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
 
 describe('残留判据（Task 15a 第 6/7/8/15 条）：排除数据类之后的骨架无 CJK + 例外表', () => {
   /**
-   * 主判据。扫描面是**整张 glob 扫描面**（63 个生产文件），不再只是抽取面那 26 个：
+   * 主判据。扫描面是**整张 glob 扫描面**（224 个生产文件），不再只是抽取面那 117 个：
    * 台账 #02 #05 #12 #14 点名的是「残留」这件事本身，而 `src/api/`、`src/demo/`、`src/store/`、
    * `src/test/` 里的中文一样会上屏（`api/error-text.ts` 的诊断串只是恰好不上屏，那是**逐条认领**
    * 出来的结论，不是"这个目录不用扫"）。
@@ -591,20 +711,22 @@ describe('残留判据（Task 15a 第 6/7/8/15 条）：排除数据类之后的
     const data = all.filter((hit) => dataClassOf(hit.path) !== null);
     const skeleton = all.filter((hit) => dataClassOf(hit.path) === null);
 
-    // 实测 186 行 = 语义类 164（demo/seed 146 + test/fixtures.ts 18）+ 例外表 22。
-    // 前两条用下界：新增一行中文种子数据不该把门禁打红；整张扫描面塌成 0 必须红。
+    // 🔴 2026-10-13 重新实测（此前这几行账自 M5.5 之前就漂移了，只有下界断言在挡）：
+    // 全扫描面 1165 行 = 语义类 1128（`demo/seed/**` 1112 + `test/fixtures.ts` 16）+ 例外表 37。
+    // 前两条**刻意用下界**：新增一行中文种子数据不该把门禁打红；整张扫描面塌成 0 必须红。
     expect(all.length, '扫描面一行 CJK 都数不出来 ⇒ 判据已失效').toBeGreaterThanOrEqual(180);
     expect(data.length, '语义类一行都覆盖不到 ⇒ 前缀写错了').toBeGreaterThanOrEqual(160);
-    // 这条**精确**：骨架里被认领的残留就是例外表那 22 行。多一处 ⇒ 必须回来改例外表并补理由。
-    expect(skeleton.length, '骨架里的 CJK 残留数变了 ⇒ 例外表已过期（逐条重新认领）').toBe(22);
+    // 这条**精确**：骨架里被认领的残留就是例外表那 37 行（既有 23 + M5.5 的 12 表头 + 2 数字后缀）。
+    // 多一处 ⇒ 必须回来改例外表并补理由。
+    expect(skeleton.length, '骨架里的 CJK 残留数变了 ⇒ 例外表已过期（逐条重新认领）').toBe(37);
   });
 
-  it('语义类形状钉死（第 7 条）：「演示种子数据」恰好是 src/demo/seed/ 下这 6 个文件', () => {
+  it('语义类形状钉死（第 7 条）：「演示种子数据」恰好是 src/demo/seed/ 下这 21 个文件', () => {
     const inClass = Object.keys(SOURCES)
       .filter((path) => path.startsWith(DEMO_SEED_PREFIX))
       .sort();
     expect(inClass).toEqual([...DEMO_SEED_EXPECTED].sort());
-    expect(DEMO_SEED_EXPECTED).toHaveLength(6);
+    expect(DEMO_SEED_EXPECTED).toHaveLength(21);
 
     // 🔴 反向哨兵：形状**不许**被放宽成 `src/demo/`（台账 #14 原话）。
     // 这些是 demo 的骨架文件，必须留在扫描面里、且不属于任何数据类。
@@ -875,11 +997,19 @@ describe('B-1 · 字面量 i18n key 的拼写保护', () => {
 
     // 点名样本：先钉 glob 键路径（写错一个字符 ⇒ 下一行取到 undefined 直接抛），再钉一个具体 key
     expect(Object.keys(SOURCES)).toContain('../components/AppLayout.tsx');
-    expect(literalTKeys(SOURCES['../components/AppLayout.tsx'])).toContain('nav.projects');
+    expect(literalTKeys(SOURCES['../components/AppLayout.tsx'])).toContain('common.appName');
+    // Plan B Task 6：导航搬进 `components/SideNav.tsx` ⇒ 导航文案的点名样本跟着搬。
+    // 只钉 AppLayout 的话，「抽取器在导航源码上失效」这件事三条守卫一条都抓不到。
+    expect(Object.keys(SOURCES)).toContain('../components/SideNav.tsx');
+    expect(literalTKeys(SOURCES['../components/SideNav.tsx'])).toContain('nav.projects');
     // Task 9 扩面后补一个**页面层**的点名样本：只钉 `components/` 的话，
     // 「抽取器在 pages/ 上失效」这件事三条守卫一条都抓不到。
     expect(Object.keys(SOURCES)).toContain('../pages/SettingsPage.tsx');
-    expect(literalTKeys(SOURCES['../pages/SettingsPage.tsx'])).toContain('settings.page.save');
+    expect(literalTKeys(SOURCES['../pages/SettingsPage.tsx'])).toContain('settings.page.saved');
+    // Plan B Task 2 把设置页拆成五分段之后，保存条搬进了 `ModelsSection` ⇒ 再钉一个**子目录**样本：
+    // 只钉 `pages/` 顶层的话，「抽取器在 pages/settings/ 上失效」这件事没人抓得到。
+    expect(Object.keys(SOURCES)).toContain('../pages/settings/ModelsSection.tsx');
+    expect(literalTKeys(SOURCES['../pages/settings/ModelsSection.tsx'])).toContain('settings.page.save');
   });
 
   it('自证（对照组）：只抓字面量，模板串与变量入参被跳过', () => {
@@ -904,7 +1034,12 @@ describe('B-1 · 字面量 i18n key 的拼写保护', () => {
 
 describe('B-4 · 词典条目必须跟得上数据表（扫描抓不到从数据表读出的变量 key）', () => {
   it('防空跑：两张数据表的规模与文件注释一致', () => {
-    expect(ENTITY_FIELDS).toHaveLength(11);
+    // 🔴 本轮由 11 收窄到 **7**（spec 2026-10-01 · DR-59）：报价并进 `products[].price`，
+    // 案例 / 差异化卖点 / 官方口径迁进知识库。词典里那四个已迁出字段的标签**刻意保留**
+    // （DR-62：真后端 `ALL_FIELDS` 仍是 11，历史修订留痕与事实核查记录里仍会出现这些
+    // `field_path`，`RevisionTimeline` / `FactCheckPanel` 查不到标签就会露出裸记号），
+    // 所以下面那条 `labelKey` 覆盖断言仍是**单向**的（表 → 词典），不是键集相等。
+    expect(ENTITY_FIELDS).toHaveLength(7);
     expect(WIZARD_STEPS).toHaveLength(5);
   });
 
@@ -943,7 +1078,7 @@ describe('B-4 · 词典条目必须跟得上数据表（扫描抓不到从数据
  * 忘建词条是静默的——前者会退化成 raw passthrough 露出机器记号，后者会退化成 provider id。
  * 所以这两处各自的键集在这里被逐个钉住。
  *
- * （`ProviderSelect` 那 7 个 id 的哨兵断言在 `src/components/ProviderSelect.test.tsx`，
+ * （`ProviderSelect` 那 12 个 id 的哨兵断言在 `src/components/ProviderSelect.test.tsx`，
  * 因为它的判据是"渲染结果里不出现 `label_zh`"，必须渲染组件才测得到。）
  */
 describe('B-4 · notes 机器行的 stage 键集（同样是扫描抓不到的动态 key）', () => {

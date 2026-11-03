@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { Alert, App, Button, Card, Col, Empty, Progress, Row, Space, Typography } from 'antd';
+import { Alert, App, Card, Col, Empty, Progress, Row, Space, Typography } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -8,8 +8,9 @@ import * as client from '../api/client';
 import { describeIpcError } from '../api/errors';
 import type { EntityCard, FieldStatus } from '../api/types';
 import AutoBuildPanel from '../components/AutoBuildPanel';
+import PageHeader from '../components/ui/PageHeader';
 import EntityFieldCard from '../components/EntityFieldCard';
-import { ENTITY_FIELDS } from '../components/entity-fields';
+import { ENTITY_FIELDS, entityFieldLabelKey } from '../components/entity-fields';
 import RevisionTimeline from '../components/RevisionTimeline';
 
 function fieldValue(card: EntityCard, path: string): unknown {
@@ -35,9 +36,17 @@ export default function EntityCardPage() {
     enabled: projectId !== '',
   });
 
+  /**
+   * 🔴 顺带把知识库的 board 一起失效（spec 2026-10-01 · DR-67 的**接线**那一半）。
+   *
+   * 同步块不落库、`kb_board` 每次现场投影，所以"自动更新"本来就是结构性成立的；
+   * 这一行解决的是**缓存**：不改它的话，从实体卡切回知识库会先看到 React Query 里的旧 board
+   * （`staleTime` 默认 0 ⇒ 会后台重取，但首帧仍是旧值），走查第 4 步就会看起来"要刷两次"。
+   */
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['entity-card', projectId] });
     void queryClient.invalidateQueries({ queryKey: ['entity-card-revisions', projectId] });
+    void queryClient.invalidateQueries({ queryKey: ['kb-board', projectId] });
   }, [queryClient, projectId]);
 
   const updateMutation = useMutation({
@@ -66,9 +75,7 @@ export default function EntityCardPage() {
 
   return (
     <div>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
-        {t('entity.card.title')}
-      </Typography.Title>
+      <PageHeader title={t('entity.card.title')} />
 
       <AutoBuildPanel
         projectId={projectId}
@@ -76,21 +83,13 @@ export default function EntityCardPage() {
           // 直接把新卡写进缓存：比 invalidate 后再 get 少一次往返，也不会闪回旧完整率
           queryClient.setQueryData(['entity-card', projectId], card);
           void queryClient.invalidateQueries({ queryKey: ['entity-card-revisions', projectId] });
+          void queryClient.invalidateQueries({ queryKey: ['kb-board', projectId] });
         }}
       />
 
       {card === null ? (
         <Card>
-          <Empty description={t('entity.card.empty')}>
-            <Button
-              type="primary"
-              onClick={() =>
-                updateMutation.mutate({ path: 'standard_name', value: '', status: 'pending' })
-              }
-            >
-              {t('entity.card.createBlank')}
-            </Button>
-          </Empty>
+          <Empty description={t('entity.card.empty')} />
         </Card>
       ) : (
         <Row gutter={16}>
@@ -136,7 +135,11 @@ export default function EntityCardPage() {
           </Col>
           <Col span={7}>
             <Card size="small" title={t('entity.card.revisions')}>
-              <RevisionTimeline revisions={revisionQuery.data ?? []} />
+              {/* DR-119：时间线组件已泛化（知识库那侧共用同一个），字段标签表由调用方传。 */}
+              <RevisionTimeline
+                revisions={revisionQuery.data ?? []}
+                labelKeyOf={entityFieldLabelKey}
+              />
             </Card>
           </Col>
         </Row>

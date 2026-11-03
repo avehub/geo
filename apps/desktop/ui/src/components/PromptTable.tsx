@@ -50,6 +50,7 @@ export default function PromptTable({
       title: 'Prompt',
       dataIndex: 'text',
       key: 'text',
+      width: 320,
       render: (_, item) => (
         <Typography.Text style={{ whiteSpace: 'pre-wrap' }}>{item.text}</Typography.Text>
       ),
@@ -153,6 +154,8 @@ export default function PromptTable({
     <Table<PromptItem>
       rowKey="id"
       size="small"
+      tableLayout="fixed"
+      scroll={{ x: 1240 }}
       loading={loading}
       columns={columns}
       dataSource={items}

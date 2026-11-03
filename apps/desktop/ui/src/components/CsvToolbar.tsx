@@ -5,6 +5,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
 import * as client from '../api/client';
+import type { CsvRowErrorLike } from '../api/errors';
 import { describeCsvRowError, describeIpcError } from '../api/errors';
 import { PROMPT_CSV_HEADER } from '../api/constants';
 
@@ -12,6 +13,18 @@ export interface CsvToolbarProps {
   setId: string;
   filenamePrefix: string;
   onChanged: () => void;
+}
+
+/** `IpcRequestError.detail` 里那串逐行原因（`prompt_set/empty_import` 的口径）。 */
+function csvRowErrorsOf(error: unknown): CsvRowErrorLike[] {
+  if (!(error instanceof client.IpcRequestError) || !Array.isArray(error.detail)) return [];
+  return error.detail.filter(
+    (entry): entry is CsvRowErrorLike =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      Number.isFinite((entry as CsvRowErrorLike).row) &&
+      typeof (entry as CsvRowErrorLike).reason === 'string',
+  );
 }
 
 /**
@@ -38,6 +51,9 @@ export default function CsvToolbar({ setId, filenamePrefix, onChanged }: CsvTool
   const [mode, setMode] = useState<'export' | 'import' | null>(null);
   const [csv, setCsv] = useState('');
   const [importText, setImportText] = useState('');
+
+  // 没有 active 题库时 `setId` 是空串：按钮必须置灰，否则每次点击都稳定报 `prompt_set/not_found`。
+  const disabled = setId.trim() === '';
 
   const exportMutation = useMutation({
     mutationFn: () => client.promptSetExportCsv(setId),
@@ -74,7 +90,26 @@ export default function CsvToolbar({ setId, filenamePrefix, onChanged }: CsvTool
       setImportText('');
       onChanged();
     },
-    onError: (error) => message.error(describeIpcError(error, t)),
+    onError: (error) => {
+      const rows = csvRowErrorsOf(error);
+      if (rows.length === 0) {
+        message.error(describeIpcError(error, t));
+        return;
+      }
+      // `prompt_set/empty_import` 把逐行原因放进 `detail`：主文案保持稳定 code 的词典句，
+      // 行级原因复用 `describeCsvRowError`（与部分成功那条路同一个渲染器）。
+      modal.error({
+        title: describeIpcError(error, t),
+        width: 560,
+        content: (
+          <ul>
+            {rows.slice(0, 20).map((row) => (
+              <li key={row.row}>{describeCsvRowError(row, t)}</li>
+            ))}
+          </ul>
+        ),
+      });
+    },
   });
 
   /** 走系统「另存为」对话框写文件；用户取消则不提示成功。 */
@@ -96,6 +131,7 @@ export default function CsvToolbar({ setId, filenamePrefix, onChanged }: CsvTool
       <Space>
         <Button
           icon={<DownloadOutlined />}
+          disabled={disabled}
           loading={exportMutation.isPending}
           onClick={() => exportMutation.mutate()}
         >
@@ -103,6 +139,7 @@ export default function CsvToolbar({ setId, filenamePrefix, onChanged }: CsvTool
         </Button>
         <Button
           icon={<UploadOutlined />}
+          disabled={disabled}
           onClick={() => {
             setImportText('');
             setMode('import');

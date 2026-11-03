@@ -49,6 +49,41 @@ async function importWithErrors(errors: unknown[]): Promise<string[]> {
     .map((item) => item.textContent ?? '');
 }
 
+describe('CsvToolbar · 整批失败时 detail 里的逐行原因', () => {
+  it('prompt_set/empty_import 的 detail 逐行经 describeCsvRowError 上屏', async () => {
+    const rowError = { row: 2, reason: 'required', params: {} };
+    mockInvoke.stubAlways(
+      'prompt_set_import_csv',
+      {
+        code: 'prompt_set/empty_import',
+        params: {},
+        message: 'prompt_set/empty_import',
+        detail: [rowError],
+      },
+      'reject',
+    );
+    const user = userEvent.setup();
+
+    renderToolbar();
+    await user.click(screen.getByRole('button', { name: /导入 CSV/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByRole('textbox'), {
+      target: { value: 'text,intent,weight,group_name,tags,source,repeat_count\n坏行' },
+    });
+    await user.click(screen.getByRole('button', { name: /确认导入/ }));
+
+    // 主文案仍是稳定 code 的词典句；逐行原因不能丢。
+    // antd 的 confirm modal 会把 title 渲染成两处（.ant-modal-title 与 .ant-modal-confirm-title）。
+    expect(
+      (await screen.findAllByText('CSV 里没有可导入的有效条目，题库未改动')).length,
+    ).toBeGreaterThan(0);
+    expect(
+      await screen.findByText(describeCsvRowError(rowError, i18n.getFixedT('zh-CN'))),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('CsvToolbar · 行错误经词典渲染', () => {
   it('not_allowed 的命中词不上屏，且整行与 describeCsvRowError 的输出逐字相等', async () => {
     const error = {

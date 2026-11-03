@@ -135,6 +135,60 @@ const project = {
   },
 
   /**
+   * 新建项目的**模式选择屏**（Plan B Task 7 · spec §7 / DR-36）。
+   *
+   * `/projects/new` 只负责让用户选一条录入路径：两张卡片的动作分别去
+   * `/projects/new/auto`（填网址自动采集）与 `/projects/new/wizard`（沿用既有 5 步向导）。
+   *
+   * `sameFields` 那句是裁定 3「录入信息数据和页面可以根据自动采集流程」的上屏表达。
+   * 🔴 它只是**文案**：真正的判据是 `components/wizard-steps.test.ts` 里那四条
+   * （向导字段集 == 草稿契约、映射表落在真实实体卡字段上、两张清单合起来覆盖 11 个字段）。
+   * 只留这句承诺而没有判据，等于把一致性交给走查时的人眼。
+   */
+  new: {
+    title: '新建项目',
+    subtitle: '选一条录入方式，两条路最后都落在同一张品牌实体卡上',
+    autoTitle: '填网址自动采集',
+    autoDesc: '填官网网址，走一遍抓取与抽取的流程；抽出来的字段由你在实体卡里逐个确认',
+    /** 🔴 与 `autoTitle` 刻意不同字：卡片标题与按钮同串时 `getByText` 会一次命中两个元素。 */
+    autoAction: '用网址建项',
+    manualTitle: '手动录入',
+    manualDesc: '5 步向导：品牌与别名 → 官网与核心页 → 产品与服务范围 → 地域与行业 → 竞品',
+    manualAction: '打开 5 步向导',
+    sameFields: '两条路的字段口径一致：向导收的建项资料与自动建档的产出映射到同一组实体卡字段',
+  },
+
+  /**
+   * 自动采集屏（Plan B Task 7 · spec §7）。
+   *
+   * 🔴 `demoNotice` 全程**常驻**，不是只在跑完之后出现：demo 不联网、不真抓网页
+   * （AGENTS 规则 2 / 9），少了这句，走查的人会以为刚才那三段进度真的抓了站点。
+   * 与 M3「不采集」、M4「不跑模型」同一口径。
+   *
+   * 三段进度是**演出**：真后端抓取要几十秒，"等待形态"本身就是这轮要验收的东西，
+   * 所以分三段而不是一步跳完（`stageCrawling` → `stageExtracting` → `stageDone`）。
+   * `{{percent}}` 由抽出来的卡的 `completeness` 插值，那是种子里的静态演示值（规则 9）。
+   */
+  autobuild: {
+    title: '填网址自动采集',
+    urlLabel: '官网网址',
+    urlPlaceholder: 'https://www.example.com',
+    urlExtra: '只抓自有域名；演示模式不发任何网络请求',
+    start: '开始采集',
+    demoNotice: '演示模式不抓取网页，抽取结果是预置数据',
+    stepCrawl: '抓取网页',
+    stepExtract: '抽取字段',
+    stepConfirm: '逐字段确认',
+    stageCrawling: '抓取中：正在读取官网首页与站内页面',
+    stageExtracting: '抽取中：正在把网页内容结构化成实体卡字段',
+    stageDone: '完成 {{percent}}% 字段，正在打开品牌实体卡',
+    emptyUrl: '请先填写官网网址',
+    failed: '自动建档未成功，请检查网址后重试',
+    backToModes: '返回选择录入方式',
+    confirmHint: '抽取结果一律是「待确认」，请在实体卡里逐字段核对后改成「官方口径」',
+  },
+
+  /**
    * 项目列表页（Task 9）。
    *
    * # 导出文件名也是文案
@@ -151,12 +205,13 @@ const project = {
    */
   list: {
     title: '项目',
+    count: '共 {{count}} 个项目',
     searchPlaceholder: '搜索项目名或品牌名',
     showArchived: '显示已归档',
     refresh: '刷新',
     newProject: '新建项目',
     loadFailed: '加载项目失败',
-    hint: '提示：标签列可直接输入后回车增删（最多 20 个）；每行「导出」可下载项目 JSON（含实体卡、竞品、资产与题库），或单独的竞品 / 资产 CSV。',
+    hint: '提示：标签列可直接输入后回车增删（最多 20 个）；每行「导出」可下载项目 JSON（当前含实体卡、竞品、资产与题库，不含知识库 / 采集 / 站点 / 站长数据），或单独的竞品 / 资产 CSV。',
     archived: '已归档',
     unarchived: '已取消归档',
     deleted: '项目已删除',
@@ -184,6 +239,7 @@ const project = {
     archived: '已归档',
     active: '进行中',
     updatedAt: '更新时间',
+    updatedShort: '更新于 {{time}}',
     openEntityCard: '实体卡',
     openPrompts: '题库',
     archive: '归档',
@@ -211,7 +267,7 @@ const project = {
   },
 
   export: {
-    json: '项目 JSON（全量）',
+    json: '项目 JSON（M1/M2 档案）',
     competitorsCsv: '竞品 CSV',
     assetsCsv: '资产 CSV',
   },

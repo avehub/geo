@@ -16,6 +16,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type {
+  EntityCard,
   ImportReport,
   Project,
   ProjectDetail,
@@ -30,7 +31,9 @@ import {
   SEED_ACTIVE_PROJECT_ID,
   SEED_ARCHIVED_PROJECT_ID,
   SEED_ASSETS,
+  SEED_CHENGCHUAN_PROJECT_ID,
   SEED_COMPETITORS,
+  SEED_HEYE_PROJECT_ID,
   SEED_PROJECTS,
 } from '../seed/projects';
 import { RUST_EXPORT_FORMAT_VERSION } from '../../test/truth-source';
@@ -115,7 +118,7 @@ describe('demo/handlers/project · project_create', () => {
     expect(listed[0].id).toBe(created.id);
   });
 
-  it('建项会把草稿里的竞品与自有页面落成资产，但不造实体卡（规则 9：不移植 fields_from_draft）', async () => {
+  it('建项会把草稿里的竞品与自有页面落成资产，并用草稿生成初始实体卡', async () => {
     const created = await demoInvoke<Project>('project_create', {
       draft: makeDraft({ core_pages: ['https://demo-brand.example.com/about', '   '] }),
     });
@@ -141,6 +144,35 @@ describe('demo/handlers/project · project_create', () => {
       ['https://demo-brand.example.com', 'https://demo-brand.example.com/about'].sort(),
     );
 
+    const card = await demoInvoke<EntityCard | null>('entity_card_get', { project_id: created.id });
+    expect(card).not.toBeNull();
+    expect(card!.fields.standard_name).toBe('Demo Brand');
+    expect(card!.fields.aliases).toEqual(['Demo']);
+    expect(card!.fields.products.map((product) => product.name)).toEqual(['Demo Product']);
+    expect(card!.fields.service_regions).toEqual(['Jiangsu']);
+    // 官网存在时 contact 是一个三项全空的对象（与 Rust `fields_from_draft` 同形），
+    // 但 `Contact::is_meaningful` 为 false ⇒ 该字段仍是 pending。
+    expect(card!.fields.contact).toEqual({ phone: null, email: null, address: null });
+    expect(card!.field_status.standard_name).toBe('official');
+    expect(card!.field_status.contact).toBe('pending');
+    expect(card!.field_status.founded_year).toBe('pending');
+    expect(card!.completeness).toBeGreaterThan(0);
+    expect(card!.completeness).toBeLessThan(1);
+  });
+
+  it('自动建档草稿（无竞品 / 无产品 / 无地域）不预置实体卡，交给 entity_card_autobuild', async () => {
+    const created = await demoInvoke<Project>('project_create', {
+      draft: makeDraft({
+        aliases: [],
+        products: [],
+        region: null,
+        core_pages: [],
+        service_scope: null,
+        tags: [],
+        competitors: [],
+      }),
+    });
+
     expect(await demoInvoke('entity_card_get', { project_id: created.id })).toBeNull();
   });
 
@@ -163,14 +195,23 @@ describe('demo/handlers/project · project_create', () => {
 describe('demo/handlers/project · project_list', () => {
   it('默认只看未归档，include_archived 才带出归档项目，且按 updated_at 倒序', async () => {
     const active = await demoInvoke<Project[]>('project_list', { filter: {} });
-    expect(active.map((project) => project.id)).toEqual([SEED_ACTIVE_PROJECT_ID]);
+    // 三个 active 项目按 updated_at 倒序：禾野(9/29) → 澄川(9/28) → 澜舟(9/18)。
+    expect(active.map((project) => project.id)).toEqual([
+      SEED_HEYE_PROJECT_ID,
+      SEED_CHENGCHUAN_PROJECT_ID,
+      SEED_ACTIVE_PROJECT_ID,
+    ]);
 
     const all = await demoInvoke<Project[]>('project_list', {
       filter: { include_archived: true },
     });
     expect(all).toHaveLength(SEED_PROJECTS.length);
-    // 种子里归档项目的 updated_at 更晚 ⇒ 倒序排在前（真值源：repo/project.rs 的 ORDER BY）。
-    expect(all[0].id).toBe(SEED_ARCHIVED_PROJECT_ID);
+    expect(all.map((project) => project.id)).toEqual([
+      SEED_HEYE_PROJECT_ID,
+      SEED_CHENGCHUAN_PROJECT_ID,
+      SEED_ARCHIVED_PROJECT_ID,
+      SEED_ACTIVE_PROJECT_ID,
+    ]);
     const stamps = all.map((project) => Date.parse(project.updated_at));
     expect(stamps).toEqual([...stamps].sort((left, right) => right - left));
   });
@@ -246,9 +287,14 @@ describe('demo/handlers/project · project_list', () => {
     const hit = await demoInvoke<Project[]>('project_list', {
       filter: { include_archived: true, tags: [','] },
     });
-    // 两个种子项目的 tags 都有 ≥2 个元素 ⇒ JSON 文本里都有 `","`。
+    // 四个种子项目的 tags 都有 ≥2 个元素 ⇒ JSON 文本里都有 `","`。
     expect(hit.map((project) => project.id).sort()).toEqual(
-      [SEED_ACTIVE_PROJECT_ID, SEED_ARCHIVED_PROJECT_ID].sort(),
+      [
+        SEED_ACTIVE_PROJECT_ID,
+        SEED_ARCHIVED_PROJECT_ID,
+        SEED_CHENGCHUAN_PROJECT_ID,
+        SEED_HEYE_PROJECT_ID,
+      ].sort(),
     );
 
     // 🔴 反向对照（证明上一条不是永真）：把其中一个项目改成**单标签**，它就不再被 `,` 命中
@@ -261,7 +307,9 @@ describe('demo/handlers/project · project_list', () => {
     const after = await demoInvoke<Project[]>('project_list', {
       filter: { include_archived: true, tags: [','] },
     });
-    expect(after.map((project) => project.id)).toEqual([SEED_ACTIVE_PROJECT_ID]);
+    expect(after.map((project) => project.id).sort()).toEqual(
+      [SEED_ACTIVE_PROJECT_ID, SEED_CHENGCHUAN_PROJECT_ID, SEED_HEYE_PROJECT_ID].sort(),
+    );
 
     const byTag = await demoInvoke<Project[]>('project_list', {
       filter: { include_archived: true, tags: ['only-one'] },
@@ -324,7 +372,11 @@ describe('demo/handlers/project · project_list', () => {
   it('filter 整个缺省时也不炸（args 里没有 filter 键）', async () => {
     const rows = await demoInvoke<Project[]>('project_list', {});
 
-    expect(rows.map((project) => project.id)).toEqual([SEED_ACTIVE_PROJECT_ID]);
+    expect(rows.map((project) => project.id)).toEqual([
+      SEED_HEYE_PROJECT_ID,
+      SEED_CHENGCHUAN_PROJECT_ID,
+      SEED_ACTIVE_PROJECT_ID,
+    ]);
   });
 });
 
@@ -417,8 +469,10 @@ describe('demo/handlers/project · project_update / project_archive', () => {
     expect(archived.status).toBe('archived');
     expect(archived.archived_at).not.toBeNull();
     expectTimestamp(archived.archived_at ?? '');
-    // 归档后默认列表里就不该再出现。
-    expect(await demoInvoke<Project[]>('project_list', { filter: {} })).toEqual([]);
+    // 归档后默认列表里就不该再出现，但另外两个 active 项目仍在。
+    expect(
+      (await demoInvoke<Project[]>('project_list', { filter: {} })).map((project) => project.id),
+    ).toEqual([SEED_HEYE_PROJECT_ID, SEED_CHENGCHUAN_PROJECT_ID]);
 
     const restored = await demoInvoke<Project>('project_archive', {
       id: SEED_ACTIVE_PROJECT_ID,
@@ -426,8 +480,11 @@ describe('demo/handlers/project · project_update / project_archive', () => {
     });
     expect(restored.status).toBe('active');
     expect(restored.archived_at).toBeNull();
+    // 取消归档会把 updated_at 写回「现在」⇒ 澜舟重新排到最前。
     expect((await demoInvoke<Project[]>('project_list', { filter: {} })).map((p) => p.id)).toEqual([
       SEED_ACTIVE_PROJECT_ID,
+      SEED_HEYE_PROJECT_ID,
+      SEED_CHENGCHUAN_PROJECT_ID,
     ]);
   });
 });
@@ -437,7 +494,11 @@ describe('demo/handlers/project · project_delete（六表级联，§B-12）', (
     await demoInvoke('project_delete', { id: SEED_ACTIVE_PROJECT_ID });
     const db = getDemoDb();
 
-    expect(db.projects.map((project) => project.id)).toEqual([SEED_ARCHIVED_PROJECT_ID]);
+    expect(db.projects.map((project) => project.id)).toEqual([
+      SEED_ARCHIVED_PROJECT_ID,
+      SEED_CHENGCHUAN_PROJECT_ID,
+      SEED_HEYE_PROJECT_ID,
+    ]);
     expect(db.competitors.filter((row) => row.project_id === SEED_ACTIVE_PROJECT_ID)).toHaveLength(0);
     expect(db.assets.filter((row) => row.project_id === SEED_ACTIVE_PROJECT_ID)).toHaveLength(0);
     expect(db.entityCards.filter((row) => row.project_id === SEED_ACTIVE_PROJECT_ID)).toHaveLength(0);
@@ -452,13 +513,60 @@ describe('demo/handlers/project · project_delete（六表级联，§B-12）', (
     expect(SEED_ENTITY_CARD_REVISIONS).toHaveLength(1);
   });
 
+  it('🔴 删除项目会级联所有 post-M1 表与关系表，且不碰其他项目', async () => {
+    const before = getDemoDb();
+    const roundIds = new Set(
+      before.collectionRounds
+        .filter((row) => row.project_id === SEED_ACTIVE_PROJECT_ID)
+        .map((row) => row.id),
+    );
+    const patchIds = new Set(
+      before.sitePatches
+        .filter((row) => row.project_id === SEED_ACTIVE_PROJECT_ID)
+        .map((row) => row.id),
+    );
+    const setIds = new Set(
+      before.promptSets
+        .filter((row) => row.project_id === SEED_ACTIVE_PROJECT_ID)
+        .map((row) => row.id),
+    );
+
+    await demoInvoke('project_delete', { id: SEED_ACTIVE_PROJECT_ID });
+    const db = getDemoDb();
+
+    // 所有带 project_id 的表都必须清干净（新增表时这条会自动变成红灯）。
+    for (const [field, value] of Object.entries(db)) {
+      if (!Array.isArray(value)) continue;
+      const owned = value.filter(
+        (row): row is { project_id: string } =>
+          typeof row === 'object' && row !== null && 'project_id' in row,
+      );
+      expect(
+        owned.filter((row) => row.project_id === SEED_ACTIVE_PROJECT_ID),
+        field,
+      ).toHaveLength(0);
+    }
+
+    // 关系表没有 project_id：按删除前收集的 round / patch / set id 收口。
+    expect(db.collectionTasks.filter((row) => roundIds.has(row.round_id))).toHaveLength(0);
+    expect(db.collectionRecords.filter((row) => roundIds.has(row.round_id))).toHaveLength(0);
+    expect(db.insights.filter((row) => roundIds.has(row.round_id))).toHaveLength(0);
+    expect(db.factIssues.filter((row) => roundIds.has(row.round_id))).toHaveLength(0);
+    expect(db.sitePatchEvents.filter((row) => patchIds.has(row.patch_id))).toHaveLength(0);
+    expect(db.promptItems.filter((row) => setIds.has(row.set_id))).toHaveLength(0);
+
+    // 另一个项目的竞品 / 资产不受牵连。
+    expect(db.competitors.filter((row) => row.project_id === SEED_ARCHIVED_PROJECT_ID)).toHaveLength(1);
+    expect(db.assets.filter((row) => row.project_id === SEED_ARCHIVED_PROJECT_ID)).toHaveLength(1);
+  });
+
   it('删除是幂等的：删两次都不报错（与 repo/project.rs 的 delete 同口径）', async () => {
     await demoInvoke('project_delete', { id: SEED_ARCHIVED_PROJECT_ID });
 
     expect(await capture(() => demoInvoke('project_delete', { id: SEED_ARCHIVED_PROJECT_ID }))).toBe(
       null,
     );
-    expect(await demoInvoke<Project[]>('project_list', { filter: { include_archived: true } })).toHaveLength(1);
+    expect(await demoInvoke<Project[]>('project_list', { filter: { include_archived: true } })).toHaveLength(3);
   });
 });
 

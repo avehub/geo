@@ -7,6 +7,7 @@
 
 pub mod entity_card;
 pub mod export;
+pub mod keyword;
 pub mod project;
 pub mod prompt;
 pub mod secret;
@@ -47,6 +48,10 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         prompt::prompt_set_dedupe,
         prompt::prompt_set_export_csv,
         prompt::prompt_set_import_csv,
+        keyword::keyword_list,
+        keyword::keyword_add,
+        keyword::keyword_update,
+        keyword::keyword_delete,
         export::export_write_file,
         settings::settings_get,
         settings::settings_update,

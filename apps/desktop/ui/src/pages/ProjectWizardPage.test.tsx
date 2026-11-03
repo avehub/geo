@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -56,7 +56,8 @@ describe('ProjectWizardPage', () => {
 
   it('填完 5 步提交 → project_create 参数含 3 个竞品', async () => {
     const user = userEvent.setup();
-    renderWithProviders(<ProjectWizardPage />);
+    const view = renderWithProviders(<ProjectWizardPage />);
+    const invalidate = vi.spyOn(view.queryClient, 'invalidateQueries');
 
     await user.type(screen.getByLabelText('品牌名'), '宏宇泵业');
     await gotoStep(user, 1);
@@ -78,6 +79,7 @@ describe('ProjectWizardPage', () => {
     await user.click(screen.getByRole('button', { name: /创建项目/ }));
 
     await waitFor(() => expect(mockInvoke.callsOf('project_create')).toHaveLength(1));
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['projects'] }));
     const draft = mockInvoke.lastArgsOf('project_create')!.draft as Record<string, unknown>;
     expect(draft.brand_name).toBe('宏宇泵业');
     expect(draft.website).toBe('https://www.hongyu-pump.example');

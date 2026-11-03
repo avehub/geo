@@ -10,14 +10,23 @@
  * # 🔴 刻意不移植的东西（AGENTS 规则 9 / 简报 §B-2）
  * - `ProjectDraft::validate` / `validate_project`：品牌名长度、别名条数、竞品上限那套**领域校验**
  *   demo 一律不判（§B-2③：A-4 / A-6 真值表之外的输入全部放行）；
- * - `fields_from_draft`：真后端建项时会从草稿推出**初始实体卡**，demo 不造卡
- *   （`entity_card_get` 回 `null`）——实体卡这条路交给种子卡与 `entity_card_autobuild` 演。
+ * - `fields_from_draft` 的完整推导：真后端建项时会从草稿推出**初始实体卡**。demo 只为
+ *   **手动向导**做一次最小投影（品牌/别名/产品/地域/服务范围/官网），不做完整领域校验与
+ *   10 字段完整率；自动建档路径（草稿里没有竞品/产品/地域/别名）仍不预置卡，交给
+ *   `entity_card_autobuild` 演。
  *
  * # 返回一律是**副本**
  * handler 交出去的对象都经 `structuredClone`：真后端跨 IPC 本来就是序列化副本，
  * 而直接把库里的引用交出去会让界面的一次误改**静默改掉库**（「刷新即重置」也会被打破）。
  */
-import type { Project, ProjectDetail } from '../../api/types';
+import type {
+  EntityCard,
+  EntityFields,
+  FieldStatus,
+  ProductSpec,
+  Project,
+  ProjectDetail,
+} from '../../api/types';
 import type { DemoHandler } from '../types';
 import {
   assetsOf,
@@ -47,6 +56,80 @@ import {
 /** 建项时自有页面资产的 kind（真值源 `crates/geo-domain/src/project.rs:302`-`323`）。 */
 const OWNED_PAGE = 'owned_page';
 
+/**
+ * 手动向导 → 初始实体卡的最小投影（demo 侧，E-50 的补充）。
+ *
+ * 🔴 只镜像 `fields_from_draft`（`crates/geo-domain/src/entity_card.rs:508-542`）里
+ * **向导真正会传的字段**：品牌 / 别名 / 产品 / 地域 / 服务范围 / 官网。成立年份、资质、
+ * 案例、卖点、口径不在 `ProjectDraft` 里，保持空值。
+ * 🔴 完整率只做「7 个字段里填了几个」的计数（与 `KbStats` 同族的展示计数），**不是**
+ * `geo-domain::completeness()` 的 10 字段算法；差异仍归 E-58。
+ * 🔴 自动建档路径的草稿只有 brand_name + website（`AutoBuildProjectPage` 的 `toProjectDraft`），
+ * 不能预置一张卡，否则 `entity_card_autobuild` 会把它当成已有卡、不再抽取。因此这里用
+ * 「草稿里有没有竞品 / 产品 / 地域 / 别名」区分手动与自动路径。
+ */
+function initialCardFromDraft(
+  projectId: string,
+  draft: Record<string, unknown>,
+  now: string,
+): EntityCard {
+  const brandName = asString(draft.brand_name).trim();
+  const aliases = asStringList(draft.aliases).map((value) => value.trim()).filter((value) => value !== '');
+  const products: ProductSpec[] = asRecordList(draft.products)
+    .map((item) => ({
+      name: asString(item.name).trim(),
+      params: asStringList(item.params).map((value) => value.trim()).filter((value) => value !== ''),
+      price: cleanOptional(item.price),
+      note: cleanOptional(item.note),
+    }))
+    .filter((item) => item.name !== '');
+  const region = asString(draft.region).trim();
+  const serviceScope = asString(draft.service_scope).trim();
+  const serviceRegions = [...new Set([region, serviceScope].filter((value) => value !== ''))];
+  const website = cleanOptional(draft.website);
+  const fields: EntityFields = {
+    standard_name: brandName,
+    aliases,
+    founded_year: null,
+    qualifications: [],
+    products,
+    service_regions: serviceRegions,
+    contact: website === null ? null : { phone: null, email: null, address: null },
+  };
+  const filled: Record<string, boolean> = {
+    standard_name: brandName !== '',
+    aliases: aliases.length > 0,
+    founded_year: false,
+    qualifications: false,
+    products: products.length > 0,
+    service_regions: serviceRegions.length > 0,
+    contact: false,
+  };
+  const fieldStatus: Record<string, FieldStatus> = Object.fromEntries(
+    Object.entries(filled).map(([field, isFilled]) => [field, isFilled ? 'official' : 'pending']),
+  );
+  return {
+    project_id: projectId,
+    fields,
+    field_status: fieldStatus,
+    source: { crawled_pages: [], llm_provider: null, llm_model: null, generated_at: null },
+    completeness: Object.values(filled).filter(Boolean).length / Object.keys(filled).length,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+/** 手动向导的草稿是否带上了「人工录入」的信息（自动建档只带 brand + website）。 */
+function looksLikeManualDraft(draft: Record<string, unknown>): boolean {
+  return (
+    asRecordList(draft.competitors).length > 0 ||
+    asStringList(draft.aliases).length > 0 ||
+    asRecordList(draft.products).length > 0 ||
+    asString(draft.region).trim() !== '' ||
+    asString(draft.service_scope).trim() !== ''
+  );
+}
+
 /** `project_create`：草稿 → 项目 + 竞品 + 自有页面资产（真值源 project_service.rs:66 的 create_draft）。 */
 export const projectCreate: DemoHandler = (args) => {
   const db = getDemoDb();
@@ -73,6 +156,10 @@ export const projectCreate: DemoHandler = (args) => {
     updated_at: now,
   };
   db.projects.push(project);
+
+  if (looksLikeManualDraft(draft)) {
+    db.entityCards.push(initialCardFromDraft(project.id, draft, now));
+  }
 
   // 竞品：position 就是草稿里的顺序（project.rs:285-299）。
   asRecordList(draft.competitors).forEach((item, index) => {
@@ -182,18 +269,31 @@ export const projectArchive: DemoHandler = (args) => {
 };
 
 /**
- * `project_delete`：删项目 + **六表级联**（简报 §B-12）。
+ * `project_delete`：删项目 + **全表级联**（简报 §B-12）。
  *
- * 真后端靠 SQLite 外键的 `ON DELETE CASCADE`（`geo-store` 迁移），demo 是内存数组 ⇒ 显式清：
- * `projects` / `competitors` / `assets` / `entityCards` / `revisions` / 题库
- * （`promptSets` **与**归一化的 `promptItems` 都要清，否则留下 `set_id` 指向不存在题库的孤儿行）。
+ * 真后端靠 SQLite 外键的 `ON DELETE CASCADE`（`geo-store` 迁移），demo 是内存数组 ⇒ 显式清。
+ * 除了 M1 的竞品 / 资产 / 实体卡 / 修订 / 题库，还必须清 M3–M9 的采集、解析、诊断、行动、
+ * 文章、站点、知识库与站长数据；否则删除后这些行会继续留在库里，成为指向不存在项目的孤儿。
+ *
+ * 关系表没有 `project_id`，先收集删除前的 round / patch / prompt-set id，再按关系收口：
+ * - `collectionTasks` / `collectionRecords` / `insights` / `factIssues` 按 `round_id`；
+ * - `sitePatchEvents` 按 `patch_id`；
+ * - `promptItems` 按 `set_id`（归一化视图没有 `project_id`）。
+ *
  * **幂等**：行不存在也返回 `Ok`（真值源 repo/project.rs:199）。
  */
 export const projectDelete: DemoHandler = (args) => {
   const db = getDemoDb();
   const id = asString(args.id);
-  // 先记住题库 id：归一化视图 `promptItems` 只有 `set_id`，没有 `project_id`。
+
+  // 先收集关系 id：删除主表之后就找不到它们了。
   const setIds = new Set(promptSetsOf(db, id).map((set) => set.id));
+  const roundIds = new Set(
+    db.collectionRounds.filter((row) => row.project_id === id).map((row) => row.id),
+  );
+  const patchIds = new Set(
+    db.sitePatches.filter((row) => row.project_id === id).map((row) => row.id),
+  );
 
   db.projects = db.projects.filter((row) => row.id !== id);
   db.competitors = db.competitors.filter((row) => row.project_id !== id);
@@ -202,5 +302,39 @@ export const projectDelete: DemoHandler = (args) => {
   db.revisions = db.revisions.filter((row) => row.project_id !== id);
   db.promptSets = db.promptSets.filter((row) => row.project_id !== id);
   db.promptItems = db.promptItems.filter((item) => !setIds.has(item.set_id));
+
+  db.collectionRounds = db.collectionRounds.filter((row) => row.project_id !== id);
+  db.collectionTasks = db.collectionTasks.filter((row) => !roundIds.has(row.round_id));
+  db.collectionRecords = db.collectionRecords.filter((row) => !roundIds.has(row.round_id));
+  db.insights = db.insights.filter((row) => !roundIds.has(row.round_id));
+  db.factIssues = db.factIssues.filter((row) => !roundIds.has(row.round_id));
+  db.alerts = db.alerts.filter((row) => row.project_id !== id);
+  db.actions = db.actions.filter((row) => row.project_id !== id);
+  db.contents = db.contents.filter((row) => row.project_id !== id);
+
+  db.keywords = db.keywords.filter((row) => row.project_id !== id);
+  db.faqs = db.faqs.filter((row) => row.project_id !== id);
+
+  db.siteProfiles = db.siteProfiles.filter((row) => row.project_id !== id);
+  db.siteChannels = db.siteChannels.filter((row) => row.project_id !== id);
+  db.sitePatches = db.sitePatches.filter((row) => row.project_id !== id);
+  db.sitePatchEvents = db.sitePatchEvents.filter((row) => !patchIds.has(row.patch_id));
+
+  db.kbEntries = db.kbEntries.filter((row) => row.project_id !== id);
+  db.kbRevisions = db.kbRevisions.filter((row) => row.project_id !== id);
+
+  db.articleDirections = db.articleDirections.filter((row) => row.project_id !== id);
+  db.articleTemplates = db.articleTemplates.filter((row) => row.project_id !== id);
+  db.articleSchedules = db.articleSchedules.filter((row) => row.project_id !== id);
+  db.articles = db.articles.filter((row) => row.project_id !== id);
+
+  db.searchSources = db.searchSources.filter((row) => row.project_id !== id);
+  db.searchMetrics = db.searchMetrics.filter((row) => row.project_id !== id);
+  db.searchAiOverviews = db.searchAiOverviews.filter((row) => row.project_id !== id);
+  db.searchNativeExtras = db.searchNativeExtras.filter((row) => row.project_id !== id);
+  db.searchOpportunities = db.searchOpportunities.filter((row) => row.project_id !== id);
+  db.selfIndexSnapshots = db.selfIndexSnapshots.filter((row) => row.project_id !== id);
+  db.searchTrafficSplit = db.searchTrafficSplit.filter((row) => row.project_id !== id);
+
   return undefined;
 };

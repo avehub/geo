@@ -5,10 +5,10 @@
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use geo_domain::{
-    AssetKind, Competitor, CompetitorId, Contact, EntityCard, EntityCardRevision, EntityCardSource,
-    EntityFields, FieldStatus, Industry, IntentCategory, Language, ProductSpec, Project,
-    ProjectAsset, ProjectId, ProjectStatus, PromptItem, PromptSet, PromptSetId, PromptSource,
-    RevisionId,
+    AssetKind, Competitor, CompetitorId, Contact, ContentStatus, EntityCard, EntityCardRevision,
+    EntityCardSource, EntityFields, FieldStatus, Industry, IntentCategory, KeywordId, KeywordItem,
+    KeywordKind, Language, LibrarySource, ProductSpec, Project, ProjectAsset, ProjectId,
+    ProjectStatus, PromptItem, PromptSet, PromptSetId, PromptSource, RevisionId,
 };
 
 /// 固定基准时间，避免测试依赖真实时钟。
@@ -166,4 +166,23 @@ pub(crate) fn sample_prompt_set(project_id: ProjectId, version: i32, count: usiz
     set.engine_scope = vec!["deepseek".to_string(), "doubao".to_string()];
     set.refresh();
     set
+}
+
+pub(crate) fn sample_keyword(project_id: ProjectId, text: &str, position: i32) -> KeywordItem {
+    KeywordItem {
+        id: KeywordId::new(),
+        project_id,
+        text: text.to_string(),
+        kind: KeywordKind::Core,
+        intent: IntentCategory::CategoryAwareness,
+        monthly_volume: Some(1200),
+        difficulty: Some(30),
+        priority: 3,
+        status: ContentStatus::Approved,
+        note: Some("样例素材".to_string()),
+        source: LibrarySource::Manual,
+        position,
+        created_at: base_time(),
+        updated_at: base_time(),
+    }
 }

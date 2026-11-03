@@ -28,7 +28,7 @@
  */
 import type { DemoDb, DemoHandler } from '../types';
 import { demoError } from '../types';
-import { getDemoDb, promptItemsOf, promptSetsOf, promptSetWithItems } from '../db';
+import { competitorsOf, getDemoDb, promptItemsOf, promptSetsOf, promptSetWithItems } from '../db';
 import { withLatency } from '../latency';
 import { SEED_BASELINE_SET_ID, SEED_PROMPT_ITEMS, SEED_PROMPT_SETS } from '../seed/prompt-sets';
 import type { DedupeReport, PromptItem, PromptSet, PromptSetSummary } from '../../api/types';
@@ -67,6 +67,11 @@ const DEFAULT_WEIGHT = 3;
 
 /** `PromptDraft` 的 `#[serde(default = "default_repeat_count")]`。 */
 const DEFAULT_REPEAT_COUNT = 1;
+
+/** 与 `geo-domain/src/prompt.rs` 逐字对齐的三条校验阈值（`PromptItem::validate`）。 */
+const MAX_PROMPT_CHARS = 300;
+const MAX_WEIGHT = 5;
+const MAX_REPEAT_COUNT = 3;
 
 /**
  * `content_hash` 的**占位**口径（AGENTS 规则 9）：条目数 + 文本总长，不做任何哈希运算。
@@ -187,6 +192,71 @@ function cleanTags(tags: readonly string[]): string[] {
 }
 
 /**
+ * `PromptItem::validate` 的镜像（`crates/geo-domain/src/prompt.rs:224-242`）。
+ *
+ * demo 的 IPC 形状允许绕过表单直接调用，所以必须在这里再守一道：空白文本、超长文本、
+ * weight / repeat_count 越界在真后端都会被拒。`params` 的键与值也逐字对齐 Rust：
+ * `too_long` 带 `limit`，`out_of_range` 带 `expected`。
+ */
+function validatePromptItem(item: PromptItem): void {
+  const text = item.text.trim();
+  if (text === '') {
+    throw demoError('validation/failed', { field: 'text', reason: 'required' });
+  }
+  if ([...text].length > MAX_PROMPT_CHARS) {
+    throw demoError('validation/failed', {
+      field: 'text',
+      reason: 'too_long',
+      limit: String(MAX_PROMPT_CHARS),
+    });
+  }
+  if (!Number.isInteger(item.weight) || item.weight < 1 || item.weight > MAX_WEIGHT) {
+    throw demoError('validation/failed', {
+      field: 'weight',
+      reason: 'out_of_range',
+      expected: `1~${MAX_WEIGHT}`,
+    });
+  }
+  if (
+    !Number.isInteger(item.repeat_count) ||
+    item.repeat_count < 1 ||
+    item.repeat_count > MAX_REPEAT_COUNT
+  ) {
+    throw demoError('validation/failed', {
+      field: 'repeat_count',
+      reason: 'out_of_range',
+      expected: `1~${MAX_REPEAT_COUNT}`,
+    });
+  }
+}
+
+/**
+ * 回落种子的题库属于**另一个项目**：它的 `competitor_ids` 指向源项目的竞品 id。
+ * 克隆进目标项目时必须按竞品**名称**重映射；目标项目没有同名竞品就清空。
+ *
+ * 与 `project-transfer.ts` 的导入口径同族（映射不到就丢弃），否则题库里会出现
+ * 「竞品列表为空、题目却引用着不存在的竞品」这种悬空引用。
+ */
+function remapCompetitorIds(
+  db: DemoDb,
+  sourceProjectId: string,
+  targetProjectId: string,
+  items: PromptItem[],
+): void {
+  if (sourceProjectId === targetProjectId) return;
+  const sourceById = new Map(competitorsOf(db, sourceProjectId).map((row) => [row.id, row.name]));
+  const targetByName = new Map(competitorsOf(db, targetProjectId).map((row) => [row.name, row.id]));
+  for (const item of items) {
+    item.competitor_ids = item.competitor_ids
+      .map((id) => {
+        const name = sourceById.get(id);
+        return name === undefined ? undefined : targetByName.get(name);
+      })
+      .filter((id): id is string => id !== undefined);
+  }
+}
+
+/**
  * `PromptDraft` → `PromptItem`（service:101-123 的 `into_item`）。
  *
  * 三条照抄：① `source` **强制 `manual`**——前端不能自称模板/AI 生成（`api/types.ts` 的
@@ -292,6 +362,9 @@ export const promptSetGenerate: DemoHandler = async (args) => {
     set_id: setId,
     position: index,
   }));
+  if (useSeedFallback && source !== undefined) {
+    remapCompetitorIds(db, source.project_id, projectId, items);
+  }
 
   db.promptSets.push(set);
   writePromptItems(db, setId, items);
@@ -344,16 +417,23 @@ export const promptItemUpdate: DemoHandler = (args) => {
     throw demoError('prompt_item/not_found', { kind: 'prompt_item', id });
   }
 
-  existing.text = asString(incoming.text).trim();
-  existing.intent = asIntent(incoming.intent);
-  existing.weight = countOr(incoming.weight, DEFAULT_WEIGHT);
-  // 留空 ⇒ null；demo **不**回填意图中文标签（见 `makePromptItem` 的 H-8 说明）。
-  existing.group_name = cleanOptional(incoming.group_name);
-  existing.tags = cleanTags(asStringList(incoming.tags));
-  existing.competitor_ids = asStringList(incoming.competitor_ids);
-  existing.repeat_count = countOr(incoming.repeat_count, DEFAULT_REPEAT_COUNT);
-  // 来源照收但只认契约内的值：契约外回落 `manual`（绝不凭空给条目盖上 template/generated 的戳）。
-  existing.source = asPromptSource(incoming.source);
+  // 先算出候选值并校验，再一次性写回：校验失败不能留下半改状态（真后端是单事务）。
+  const candidate: PromptItem = {
+    ...existing,
+    text: asString(incoming.text).trim(),
+    intent: asIntent(incoming.intent),
+    weight: countOr(incoming.weight, DEFAULT_WEIGHT),
+    // 留空 ⇒ null；demo **不**回填意图中文标签（见 `makePromptItem` 的 H-8 说明）。
+    group_name: cleanOptional(incoming.group_name),
+    tags: cleanTags(asStringList(incoming.tags)),
+    competitor_ids: asStringList(incoming.competitor_ids),
+    repeat_count: countOr(incoming.repeat_count, DEFAULT_REPEAT_COUNT),
+    // 来源照收但只认契约内的值：契约外回落 `manual`（绝不凭空给条目盖上 template/generated 的戳）。
+    source: asPromptSource(incoming.source),
+  };
+  validatePromptItem(candidate);
+
+  Object.assign(existing, candidate);
 
   const setId = existing.set_id;
   requirePromptSet(db, setId);
@@ -378,6 +458,8 @@ export const promptItemAdd: DemoHandler = (args) => {
 
   const existing = promptItemsOf(db, setId);
   const added = drafts.map((draft, index) => makePromptItem(setId, draft, existing.length + index));
+  // 整批先校验再落库（与 Rust 的单事务同构）：任一条非法 ⇒ 0 副作用。
+  added.forEach(validatePromptItem);
   writePromptItems(db, setId, reindexed([...existing, ...added]));
   return structuredClone(promptSetWithItems(db, set));
 };

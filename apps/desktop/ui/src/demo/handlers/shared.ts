@@ -23,22 +23,9 @@
 import type { DemoDb } from '../types';
 import { demoError } from '../types';
 import { projectById } from '../db';
-import type {
-  Competitor,
-  IntentCategory,
-  Project,
-  ProjectAsset,
-  PromptSource,
-  SampleSizeGrade,
-} from '../../api/types';
-import {
-  FIELD_STATUS_VALUES,
-  INDUSTRY_VALUES,
-  INTENT_VALUES,
-  PROMPT_SOURCE_VALUES,
-  SAMPLE_SIZE_GRADE_VALUES,
-} from '../../api/types';
-import type { FieldStatus, Industry, Language } from '../../api/types';
+import type { Competitor, ContentStatus, IntentCategory, KbEntryKind, KbModule, KbScenario, KeywordKind, LibrarySource, Project, ProjectAsset, PromptSource, SampleSizeGrade, SiteChannelKind, SiteOwnership, SitePatchKind, SitePlatform } from '../../api/types';
+import { CONTENT_STATUS_VALUES, FIELD_STATUS_VALUES, INDUSTRY_VALUES, INTENT_VALUES, KB_ENTRY_KIND_VALUES, KB_MODULE_VALUES, KB_SCENARIO_VALUES, KEYWORD_KIND_VALUES, LIBRARY_SOURCE_VALUES, MODEL_PROTOCOL_VALUES, PROMPT_SOURCE_VALUES, SAMPLE_SIZE_GRADE_VALUES, SITE_CHANNEL_KIND_VALUES, SITE_OWNERSHIP_VALUES, SITE_PATCH_KIND_VALUES, SITE_PLATFORM_VALUES } from '../../api/types';
+import type { FieldStatus, Industry, Language, ModelProtocol } from '../../api/types';
 
 /** CSV 字段分隔符（真值源 `crates/geo-domain/src/csv_io.rs` 用的 csv crate 默认值）。 */
 const FIELD_SEPARATOR = ',';
@@ -197,6 +184,18 @@ export function asLanguage(value: unknown): Language {
     : 'zh_cn';
 }
 
+/**
+ * 模型协议（Plan B Task 4 · DR-34）：清单消费 `api/types.ts` 的 `MODEL_PROTOCOL_VALUES`。
+ *
+ * 回落 `openai_compat`（两档里今天所有预设厂商实际在走的那一档）：协议决定请求体形状，
+ * 回落错了会**发不出请求**；回落到主流那一档至少与"用户没选"的语义一致。
+ */
+export function asModelProtocol(value: unknown): ModelProtocol {
+  return (MODEL_PROTOCOL_VALUES as readonly string[]).includes(asString(value))
+    ? (value as ModelProtocol)
+    : 'openai_compat';
+}
+
 /** 行业维度：清单直接消费 `api/types.ts` 的 `INDUSTRY_VALUES`（不另造镜像）。 */
 export function asIndustry(value: unknown): Industry {
   return (INDUSTRY_VALUES as readonly string[]).includes(asString(value))
@@ -252,10 +251,116 @@ export function asSampleSizeGrade(value: unknown): SampleSizeGrade {
 }
 
 /**
+ * 内容审核态（`ContentStatus`）：清单消费 `CONTENT_STATUS_VALUES`。
+ *
+ * 回落 `pending_review`（AGENTS 规则 6：生成内容默认待人工审核）——契约外的值宁可认成
+ * "还没审"，也绝不凭空盖一个 `approved` 的戳。
+ *
+ * 🔴 原先是 `handlers/action.ts` 的模块私有函数，M1.5 素材层（关键词 / FAQ）也要用同一套
+ * 收敛口径 ⇒ 搬到本叶子模块，全仓只留这一份（与 `enumLabel` 的"只有一份"同一条纪律）。
+ */
+export function asContentStatus(value: unknown): ContentStatus {
+  return (CONTENT_STATUS_VALUES as readonly string[]).includes(asString(value))
+    ? (value as ContentStatus)
+    : 'pending_review';
+}
+
+/**
+ * 关键词类型（M1.5 素材层）：清单消费 `KEYWORD_KIND_VALUES`。
+ *
+ * 回落 `core`（清单第 0 项）：与 `asIntent` 同一条理由——回落到维度里最中性的一档，
+ * 不凭空给一条素材套上"竞品词 / 问题词"这种带业务后果的语义。
+ */
+export function asKeywordKind(value: unknown): KeywordKind {
+  return (KEYWORD_KIND_VALUES as readonly string[]).includes(asString(value))
+    ? (value as KeywordKind)
+    : KEYWORD_KIND_VALUES[0];
+}
+
+/**
+ * 素材来源（`LibrarySource`）：清单消费 `LIBRARY_SOURCE_VALUES`。
+ *
+ * 🔴 回落 `manual`（与 `asPromptSource` 同一条理由）：来源是"这条素材怎么来的"的账，
+ * 契约外的值宁可认成人工录入，也绝不凭空盖上 `generated` 的戳——那会让界面显示
+ * 一条并不存在的 AI 生成链路。
+ */
+export function asLibrarySource(value: unknown): LibrarySource {
+  return (LIBRARY_SOURCE_VALUES as readonly string[]).includes(asString(value))
+    ? (value as LibrarySource)
+    : 'manual';
+}
+
+/**
+ * 可空数值入参（`monthly_volume` / `difficulty`）：非有限数与 `null` / 缺省一律收成 `null`。
+ *
+ * 🔴 不回落 0：0 是"这个指标真的是 0"，`null` 是"没有这个指标"，两者在界面上分别显示成
+ * `0` 与空值占位符。把缺省收成 0 等于凭空造一个数据点。
+ */
+export function asNullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+// ---------------------------------------------------------------------------
+// M6.5 站点接入（spec 2026-09-30 · DR-51）：**数据字段**的收敛口径
+// ---------------------------------------------------------------------------
+//
+// 🔴 这四个都是「一条已存在的记录总得有个合法取值」⇒ 契约外的值回落到**最中性的一档**，
+// 与 `asKeywordKind` / `asLibrarySource` 同一条纪律。
+// ⚠ 与之相对，`site_patch_transition` 的 `transition` 是**命令动词**而不是数据字段：
+// 猜错一个动词就等于替用户执行了一次发布 ⇒ 那一支**不收敛、直接报错**，
+// 判据与理由都写在 `handlers/site.ts`。
+
+/** 建站形态：回落 `unknown`（"不知道"比猜一个形态诚实，界面据此只显示 `bundle` 通道可行）。 */
+export function asSitePlatform(value: unknown): SitePlatform {
+  return (SITE_PLATFORM_VALUES as readonly string[]).includes(asString(value))
+    ? (value as SitePlatform)
+    : 'unknown';
+}
+
+/** 谁在管这个站：回落 `unknown`（同上，不替用户断言"你有权限"）。 */
+export function asSiteOwnership(value: unknown): SiteOwnership {
+  return (SITE_OWNERSHIP_VALUES as readonly string[]).includes(asString(value))
+    ? (value as SiteOwnership)
+    : 'unknown';
+}
+
+/**
+ * 下发通道：回落 `bundle`。
+ * 🔴 这是四个里唯一**不回落清单第 0 项之外**的选择理由：`bundle` 恰好就是第 0 项，
+ * 而它同时是唯一**不需要凭据**的通道 ⇒ 回落它既中性又不会凭空声称"你配了 CMS / 边缘函数"。
+ */
+export function asSiteChannelKind(value: unknown): SiteChannelKind {
+  return (SITE_CHANNEL_KIND_VALUES as readonly string[]).includes(asString(value))
+    ? (value as SiteChannelKind)
+    : SITE_CHANNEL_KIND_VALUES[0];
+}
+
+/**
+ * 补丁类型：回落 `html_fragment`（**不是**清单第 0 项 `llms_txt`）。
+ * 🔴 `llms_txt` / `robots_txt` 的落点是站点根目录的**文件**，把一个认不出的类型收敛成它，
+ * 界面上就会显示一条"要改根目录文件"的补丁——那是有运维后果的断言。
+ * `html_fragment`（一段贴进页面的 HTML）是十个类型里后果最轻、语义最中性的一个。
+ */
+export function asSitePatchKind(value: unknown): SitePatchKind {
+  return (SITE_PATCH_KIND_VALUES as readonly string[]).includes(asString(value))
+    ? (value as SitePatchKind)
+    : 'html_fragment';
+}
+
+/**
  * 数值入参：非有限数一律 0。用于 `weight` / `repeat_count` / `version` 这类导入路径上的计数。
  */
 export function asNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * 把整数夹进 `[min, max]`：素材优先级（1~5）与生成条数（`LIBRARY_GENERATE_MIN..MAX`）共用。
+ * 非有限数先经 `asNumber` 收成 0，再被夹到下界——所以"没传"与"传了个 0"结果相同。
+ */
+export function clampInt(value: unknown, min: number, max: number): number {
+  const rounded = Math.round(asNumber(value));
+  return Math.min(max, Math.max(min, rounded));
 }
 
 /**
@@ -318,4 +423,49 @@ export function makeAsset(
     note: cleanOptional(note),
     created_at: createdAt,
   };
+}
+
+// ---------------------------------------------------------------------------
+// M1.2 知识库（spec 2026-10-01 · DR-63 … DR-65）：**数据字段**的收敛口径
+// ---------------------------------------------------------------------------
+//
+// 🔴 与上面那几批同一条纪律：这些都是「一条已存在的记录总得有个合法取值」⇒ 契约外的值
+// 回落到**最中性的一档**，不凭空猜一个带业务后果的语义。
+//
+// ⚠ 这一族**只有两个成员**（`asKbModule` / `asKbEntryKind`），刻意没有 `asKbSource` 与
+// `asNullableKbOrigin`：`source` 与 `origin` 是"这条知识怎么来的"的**账**，由后端在三条写入
+// 命令里各自定死（`kb_entry_add` → `manual` + `null`、`kb_generate` → `generated` + `null`、
+// `kb_entry_detach` → `detached` + 源块的 origin），`kb_entry_update` 则一律取库里那份。
+// 既然没有任何一处需要"把线上来的值收敛成合法来源"，写出这两个收敛器就等于给
+// "前端自称 AI 生成 / 自称同步自实体卡"留了一条本来不存在的路（同 `asNullableKbOrigin`
+// 那句"宁可为空也不许猜"的反面：这里连猜的机会都不给）。
+
+/** 知识模块：回落 `KB_MODULE_VALUES[0]`（`brand`，清单第 0 项 = 最中性的"品牌概况"）。 */
+export function asKbModule(value: unknown): KbModule {
+  return (KB_MODULE_VALUES as readonly string[]).includes(asString(value))
+    ? (value as KbModule)
+    : KB_MODULE_VALUES[0];
+}
+
+/**
+ * 话术场景（DR-75）：认不出 / 缺省 ⇒ `null`（**不**回落某个具体场景）。
+ *
+ * 🔴 与 `asKbModule` 刻意不同：场景是**可选维度**，把认不出的值盖成"首次触达"会凭空
+ * 给一条知识安一个它没有的适用场景；`null` 在界面上就是"不挂场景标签"。
+ */
+export function asKbScenario(value: unknown): KbScenario | null {
+  return (KB_SCENARIO_VALUES as readonly string[]).includes(asString(value))
+    ? (value as KbScenario)
+    : null;
+}
+
+/**
+ * 素材形式：回落 `text`（**不是**清单第 0 项 `statement`）。
+ *
+ * 🔴 这里刻意不照 `asKeywordKind` 那样取 `[0]`：`statement` 是"一句可被 AI 整段引用的定义句"，
+ * 把认不出的形式盖成定义句，会让它进导出物的引用块、也被统计进"定义句"那一格 ⇒ 回落 `text`
+ * （最普通的一档，不带额外语义）。
+ */
+export function asKbEntryKind(value: unknown): KbEntryKind {
+  return (KB_ENTRY_KIND_VALUES as readonly string[]).includes(asString(value)) ? (value as KbEntryKind) : 'text';
 }

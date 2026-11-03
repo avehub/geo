@@ -178,6 +178,7 @@ const prompt = {
      * 稳定 ASCII 记号 `NO_GROUP`，不再把中文当 value——否则 en locale 下 Select 的 value 仍是中文。
      */
     title: 'Prompt 题库',
+    selectAria: '选择题库版本',
     loadFailed: '加载题库失败',
     empty: '还没有题库。设置好生成参数后点「生成题库」，系统会产出 60–100 条覆盖 7 类意图的中文口语化 prompt，并保存为一个带内容哈希的版本快照。',
     version: '第 {{version}} 版',

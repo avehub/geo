@@ -59,7 +59,14 @@ import type { DemoDb, DemoHandler } from '../types';
 import { demoError } from '../types';
 import { getDemoDb } from '../db';
 import { withLatency } from '../latency';
-import { asBoolean, asNumber, asRecord, asString, cleanOptional } from './shared';
+import {
+  asBoolean,
+  asModelProtocol,
+  asNumber,
+  asRecord,
+  asString,
+  cleanOptional,
+} from './shared';
 
 /**
  * `LlmProvider::default()` 的 `as_str()`：`crates/geo-llm/src/provider.rs:67` 的 `#[default]`
@@ -71,7 +78,7 @@ const DEFAULT_PROVIDER = 'deep_seek';
  * `LlmProvider::Custom` 的 `as_str()`（`provider.rs:116`）。只有它需要 ② 那两条配置检查
  * （`state.rs:104` 的 `if provider == LlmProvider::Custom`），预设厂商的 base_url/model 都有回落。
  */
-const CUSTOM_PROVIDER = 'custom';
+export const CUSTOM_PROVIDER = 'custom';
 
 /** 计划正文逐字的那套连通性测试假象：600ms 延迟 + 固定用量，成本恒 0（理由见文件头）。 */
 const LLM_TEST_LATENCY_MS = 600;
@@ -133,6 +140,8 @@ function settingsFromUnknown(raw: Record<string, unknown>): AppSettings {
   const rateLimit = asRecord(raw.rate_limit);
   const model = asRecord(raw.model);
   const notify = asRecord(raw.notify);
+  const privacy = asRecord(raw.privacy);
+  const storage = asRecord(raw.storage);
   const proxyRaw = raw.proxy;
   const proxy = typeof proxyRaw === 'object' && proxyRaw !== null ? asRecord(proxyRaw) : null;
 
@@ -155,6 +164,11 @@ function settingsFromUnknown(raw: Record<string, unknown>): AppSettings {
       provider: asString(model.provider),
       model: cleanOptional(model.model),
       base_url: cleanOptional(model.base_url),
+      // 🔴 与 `provider` 那条**不同**口径：认不出的 provider 是 `settings_update` 的体检项
+      // （整批拒绝），而认不出的 protocol 只**收敛**成 `openai_compat`。理由是 `protocol`
+      // 在 Rust 侧还不存在（差异 E-48），没有一份真值源规定该拒绝；而半包提交里漏掉这个新字段
+      // 是必然发生的（旧草稿、导入的旧 JSON），一律拒绝会把整页设置卡死。
+      protocol: asModelProtocol(model.protocol),
       temperature: asNumber(model.temperature),
       timeout_secs: asNumber(model.timeout_secs),
     },
@@ -164,7 +178,25 @@ function settingsFromUnknown(raw: Record<string, unknown>): AppSettings {
       on_risk: asBoolean(notify.on_risk),
       sound: asBoolean(notify.sound),
     },
+    // 🔴 这两段是 Plan B 先在 demo 里定的形状（Rust 侧尚无，差异 E-48）。
+    // 缺字段时回落**各自的默认值**而不是 false：`share_diagnostics` 默认关、其余三项默认开，
+    // 一律 `asBoolean` 会把"半包提交"静默变成"全部关掉上报"。
+    privacy: {
+      share_entity_card: asBooleanOr(privacy.share_entity_card, true),
+      share_prompts: asBooleanOr(privacy.share_prompts, true),
+      share_crawled_text: asBooleanOr(privacy.share_crawled_text, true),
+      share_diagnostics: asBooleanOr(privacy.share_diagnostics, false),
+    },
+    storage: { last_export_dir: cleanOptional(storage.last_export_dir) },
   };
+}
+
+/**
+ * 布尔字段带默认值的读取：**只有**"字段缺失/类型不对"才回落默认，`false` 是合法值。
+ * 与 `asBoolean`（一律回落 false）的区别就是它存在的理由，见上面 `privacy` 那段的注释。
+ */
+function asBooleanOr(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
 }
 
 /**

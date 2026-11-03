@@ -1,8 +1,8 @@
 /**
- * demo 假后端：`IPC_COMMANDS` 那 40 条命令在浏览器里的替身（AGENTS 规则 8）。
+ * demo 假后端：`IPC_COMMANDS` 那 105 条命令在浏览器里的替身（AGENTS 规则 8）。
  *
  * # 全覆盖网（编译期）+ 键集相等（运行期）
- * `demoBackend` 标注成 `Record<IpcCommand, DemoHandler>`：`IpcCommand` 是 40 个字面量的联合，
+ * `demoBackend` 标注成 `Record<IpcCommand, DemoHandler>`：`IpcCommand` 是 105 个字面量的联合，
  * 所以**漏一条命令 `tsc -b` 就红**——这正是 AGENTS 规则 8「命令增减两侧同时改」的编译期保证。
  * 运行期还有一道：下面的未知命令守卫是拿**这张表的键**收窄的，所以 `backend.test.ts` 里有一条
  * 「键集合与 `IPC_COMMANDS` 完全相等」的断言，防止将来有人把这张表放宽成 `Partial<…>`
@@ -23,7 +23,7 @@
  * 配合上面那张全覆盖网，键集合与 `IPC_COMMANDS` 由构造保证相等（并有一条断言钉住），
  * 于是本文件只需 `import type`（编译后擦除）⇒ 依赖图保持单向：`api/client` → `demo/backend`。
  *
- * # 40 条全部接线（占位与探针已一起退休）
+ * # 105 条全部接线（占位与探针已一起退休）
  * 命令面已经全部落地 ⇒ 这里不再有「未实现」占位。曾经那套 `notImplemented(cmd)` 抛的是
  * **普通 `Error` + 英文开发者信息**（`not implemented: <cmd>`），不是 `IpcErrorPayload`：
  * 它给开发者看、不进词典、**不占错误码**（`contracts/error-codes.json` 冻结在 43 条），
@@ -35,39 +35,44 @@
  * 那一支）：同样归一化成 `ipc/invoke_failed`，同样不新增错误码。
  */
 import type { IpcCommand } from '../api/client';
+import { appEnvironment } from './handlers/app-environment';
 import {
-  entityCardAutobuild,
-  entityCardGet,
-  entityCardRevisions,
-  entityCardUpdateField,
-} from './handlers/entity-card';
+  actionBoard, actionUpdateStatus, contentGenerate, contentUpdateStatus, } from './handlers/action';
+import {
+  collectionBoard, collectionRecordGet, collectionRecordList, collectionRoundGet, collectionStart, collectionTaskRetry, } from './handlers/collection';
+import {
+  diagnosisAlertAcknowledge, diagnosisCompetitors, diagnosisEngines, diagnosisFunnel, diagnosisOverview, } from './handlers/diagnosis';
+import {
+  entityCardAutobuild, entityCardGet, entityCardRevisions, entityCardUpdateField, } from './handlers/entity-card';
+import { faqAdd, faqDelete, faqGenerate, faqList, faqUpdate } from './handlers/faq';
+import {
+  keywordAdd, keywordDelete, keywordGenerate, keywordList, keywordUpdate, } from './handlers/keyword';
 import { exportWriteFile } from './handlers/export';
 import {
-  projectArchive,
-  projectCreate,
-  projectDelete,
-  projectGet,
-  projectList,
-  projectUpdate,
-} from './handlers/project';
+  factCheckList, factCheckResolve, insightCorrect, insightList, } from './handlers/insight';
 import {
-  projectExport,
-  projectExportAssetsCsv,
-  projectExportCompetitorsCsv,
-  projectImport,
-} from './handlers/project-transfer';
+  projectArchive, projectCreate, projectDelete, projectGet, projectList, projectUpdate, } from './handlers/project';
 import {
-  promptItemAdd,
-  promptItemDelete,
-  promptItemUpdate,
-  promptSetDedupe,
-  promptSetDelete,
-  promptSetGenerate,
-  promptSetGet,
-  promptSetList,
-  promptSetRename,
-} from './handlers/prompt';
+  projectExport, projectExportAssetsCsv, projectExportCompetitorsCsv, projectImport, } from './handlers/project-transfer';
+import {
+  promptItemAdd, promptItemDelete, promptItemUpdate, promptSetDedupe, promptSetDelete, promptSetGenerate, promptSetGet, promptSetList, promptSetRename, } from './handlers/prompt';
 import { promptSetExportCsv, promptSetImportCsv } from './handlers/prompt-csv';
+import {
+  kbBoard, kbEntryAdd, kbEntryDelete, kbEntryUpdate, kbEntryVerify, kbGenerate } from './handlers/kb';
+import {
+  articleDirectionAdd,
+  articleDirectionGenerate,
+  articleDirectionList,
+  articleTemplateDelete,
+  articleTemplateList,
+  articleTemplateSave,
+} from './handlers/article';
+import {
+  articleList,
+  articleScheduleList,
+  articleScheduleRun,
+  articleScheduleSave,
+} from './handlers/article-schedule';
 import {
   assetAdd,
   assetDelete,
@@ -77,7 +82,32 @@ import {
   competitorReorder,
   competitorUpsert,
 } from './handlers/relations';
+import { reportRender } from './handlers/report';
+import {
+  searchBoard,
+  searchOpportunityUpdate,
+  searchSourceRemove,
+  searchSourceTest,
+  searchSourceUpsert,
+} from './handlers/search';
+import { searchMetricImportCsv } from './handlers/search-import';
 import { secretDelete, secretSet, secretStatus } from './handlers/secret';
+import {
+  siteBoard,
+  siteChannelRemove,
+  siteChannelTest,
+  siteChannelUpsert,
+  siteProfileSave,
+} from './handlers/site';
+import {
+  sitePatchAdd,
+  sitePatchDelete,
+  sitePatchGenerate,
+  sitePatchHistory,
+  sitePatchSave,
+  sitePatchTransition,
+} from './handlers/site-patch';
+import { llmModelsList } from './handlers/llm-models';
 import {
   llmProviders,
   llmProviderTest,
@@ -89,7 +119,7 @@ import type { DemoHandler } from './types';
 import { demoError } from './types';
 
 /**
- * 40 条命令的假实现表——**全部是真 handler**，一个占位都不剩。
+ * 99 条命令的假实现表——**全部是真 handler**，一个占位都不剩。
  * **逐条列出**（不许用循环批量生成：那就绕过了全覆盖网，也让"哪条命令归哪个 task"看不出来）。
  */
 export const demoBackend: Record<IpcCommand, DemoHandler> = {
@@ -138,6 +168,93 @@ export const demoBackend: Record<IpcCommand, DemoHandler> = {
   llm_provider_test: llmProviderTest,
   llm_providers: llmProviders,
   export_write_file: exportWriteFile,
+
+  // ---- M3 多引擎采集（6 条）----
+  collection_board: collectionBoard,
+  collection_round_get: collectionRoundGet,
+  collection_start: collectionStart,
+  collection_task_retry: collectionTaskRetry,
+  collection_record_list: collectionRecordList,
+  collection_record_get: collectionRecordGet,
+
+  // ---- M4 回答解析与事实核查（4 条）----
+  insight_list: insightList,
+  insight_correct: insightCorrect,
+  fact_check_list: factCheckList,
+  fact_check_resolve: factCheckResolve,
+
+  // ---- M5 诊断与归因（5 条）----
+  diagnosis_overview: diagnosisOverview,
+  diagnosis_competitors: diagnosisCompetitors,
+  diagnosis_funnel: diagnosisFunnel,
+  diagnosis_engines: diagnosisEngines,
+  diagnosis_alert_acknowledge: diagnosisAlertAcknowledge,
+
+  // ---- M6 GEO 行动中心（4 条）----
+  action_board: actionBoard,
+  action_update_status: actionUpdateStatus,
+  content_generate: contentGenerate,
+  content_update_status: contentUpdateStatus,
+
+  // ---- M7 报告与分享（1 条）----
+  report_render: reportRender,
+
+  // ---- Plan B（2 条，🔴 demo 独有，桌面端点进来会报 unknown_command；差异 E-46 起）----
+  app_environment: appEnvironment,
+  llm_models_list: llmModelsList,
+
+  // ---- M1.5 素材层（10 条，🔴 同样 demo 独有；差异 E-52 起）----
+  keyword_list: keywordList,
+  keyword_add: keywordAdd,
+  keyword_update: keywordUpdate,
+  keyword_delete: keywordDelete,
+  keyword_generate: keywordGenerate,
+  faq_list: faqList,
+  faq_add: faqAdd,
+  faq_update: faqUpdate,
+  faq_delete: faqDelete,
+  faq_generate: faqGenerate,
+
+  // ---- M6.5 站点接入与补丁工作台（11 条，🔴 同样 demo 独有；差异 E-55 起）----
+  site_board: siteBoard,
+  site_profile_save: siteProfileSave,
+  site_channel_upsert: siteChannelUpsert,
+  site_channel_remove: siteChannelRemove,
+  site_channel_test: siteChannelTest,
+  site_patch_add: sitePatchAdd,
+  site_patch_generate: sitePatchGenerate,
+  site_patch_save: sitePatchSave,
+  site_patch_transition: sitePatchTransition,
+  site_patch_history: sitePatchHistory,
+  site_patch_delete: sitePatchDelete,
+
+  // ---- M1.2b 知识库（6 条，🔴 同样 demo 独有；差异 E-58 起、E-63）----
+  kb_board: kbBoard,
+  kb_entry_add: kbEntryAdd,
+  kb_entry_update: kbEntryUpdate,
+  kb_entry_delete: kbEntryDelete,
+  kb_entry_verify: kbEntryVerify,
+  kb_generate: kbGenerate,
+
+  // ---- M6 文章管理（10 条，🔴 同样 demo 独有；差异 E-64 起）----
+  article_direction_list: articleDirectionList,
+  article_direction_add: articleDirectionAdd,
+  article_direction_generate: articleDirectionGenerate,
+  article_template_list: articleTemplateList,
+  article_template_save: articleTemplateSave,
+  article_template_delete: articleTemplateDelete,
+  article_schedule_list: articleScheduleList,
+  article_schedule_save: articleScheduleSave,
+  article_schedule_run: articleScheduleRun,
+  article_list: articleList,
+
+  // ---- M5.5 站长数据（6 条，🔴 同样 demo 独有；差异台账 §4h E-67 起，待本轮落地后写入）----
+  search_board: searchBoard,
+  search_source_upsert: searchSourceUpsert,
+  search_source_remove: searchSourceRemove,
+  search_source_test: searchSourceTest,
+  search_metric_import_csv: searchMetricImportCsv,
+  search_opportunity_update: searchOpportunityUpdate,
 };
 
 /**

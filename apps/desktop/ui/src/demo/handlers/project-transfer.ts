@@ -329,13 +329,12 @@ function importEntityCard(
       products: asRecordList(fields.products).map((product) => ({
         name: asString(product.name),
         params: asStringList(product.params),
+        // DR-60：报价是产品的一个字段（`price_range` 那张独立卡片本轮取消）。
+        // 🔴 可选键：真后端的 `ProductSpec` 还没有它，导入旧档案时缺这个键也合法（差异 E-59）。
+        price: cleanOptional(product.price),
         note: cleanOptional(product.note),
       })),
-      price_range: cleanOptional(fields.price_range),
       service_regions: asStringList(fields.service_regions),
-      cases: asStringList(fields.cases),
-      differentiators: asStringList(fields.differentiators),
-      official_tone: cleanOptional(fields.official_tone),
       contact: contact
         ? {
             phone: cleanOptional(contact.phone),

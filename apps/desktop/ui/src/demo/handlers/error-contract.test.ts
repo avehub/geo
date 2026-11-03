@@ -195,7 +195,10 @@ const SCENARIOS: Scenario[] = [
     cmd: 'entity_card_update_field',
     args: () => ({
       project_id: SEED_ARCHIVED_PROJECT_ID,
-      path: 'price_range',
+      // 🔴 `products`（不是已迁出的 `price_range`，spec 2026-10-01 · DR-59）：这一支要报的是
+      // `entity_card/not_found`，而"卡不存在"在**路径校验之前**判定 ⇒ 样例路径必须是合法的，
+      // 否则哪天判定顺序被换过来，这条会静默变成在测 `unknown_field`。
+      path: 'products',
       value: 'POA',
       status: 'official',
       note: null,
@@ -566,7 +569,7 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
       // ⚠ 契约 note 明写：这条的 `id` 传的是 **project_id**，不是卡自己的 id。
       entity_card_update_field: () => ({
         project_id: SEED_ARCHIVED_PROJECT_ID,
-        path: 'price_range',
+        path: 'products',
         value: 'x',
         status: 'official',
         note: null,

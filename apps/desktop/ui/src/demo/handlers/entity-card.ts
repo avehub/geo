@@ -19,7 +19,7 @@
  * 每次 `entity_card_update_field` 都**真的**往 `db.revisions` 追加一条，`entity_card_revisions`
  * 读得回来；`old_value` 是改之前的值（第一次改种子字段时就是种子里那个值），不写 `null` 糊弄。
  */
-import type { EntityCard, EntityCardRevision } from '../../api/types';
+import type { EntityCard, EntityCardRevision, FieldStatus } from '../../api/types';
 import type { DemoHandler } from '../types';
 import { demoError } from '../types';
 import { withLatency } from '../latency';
@@ -42,9 +42,14 @@ import {
 export const AUTOBUILD_EXTRA_MS = 680;
 
 /**
- * 合法的根字段名 = `domain:27` 的 `ALL_FIELDS`（11 项）的镜像。
+ * 合法的根字段名 = 前端契约 `EntityFields`（`api/types.ts`）的键集镜像。
  * 跨语言无法 import ⇒ 这里独立写死一份；漂移由 `entity-card.test.ts` 那条
  * 「与 `EntityFields` 的键逐字相等」的断言钉住（`EntityFields` 是 DTO 唯一真值源）。
+ *
+ * 🔴 本轮由 11 项收窄到 **7 项**（spec 2026-10-01 · DR-59）：报价并进 `products[].price`，
+ * 案例 / 卖点 / 口径迁进知识库。于是 `entity_card_update_field` 再收到 `price_range`
+ * 这类路径会走 `inspectFieldPath` 的第 ④ 支报 `unknown_field`——这与真后端**不一致**
+ * （Rust 的 `ALL_FIELDS` 还是 11），差异登记 E-58。
  */
 export const ENTITY_ROOT_FIELDS: readonly string[] = [
   'standard_name',
@@ -52,11 +57,7 @@ export const ENTITY_ROOT_FIELDS: readonly string[] = [
   'founded_year',
   'qualifications',
   'products',
-  'price_range',
   'service_regions',
-  'cases',
-  'differentiators',
-  'official_tone',
   'contact',
 ];
 
@@ -94,6 +95,15 @@ export const entityCardAutobuild: DemoHandler = async (args) => {
   const card: EntityCard = {
     ...structuredClone(SEED_ENTITY_CARDS[0]),
     project_id: project.id,
+    // 🔴 字段**值**照抄种子（demo 不真抓不真抽），字段**状态**不照抄：
+    // 真值源 domain:243-250 的 `from_extraction` 用 `FieldStatus::Pending` 建卡 ⇒
+    // 刚抽出来的每个字段都是「待确认」，等用户在实体卡里逐个确认。种子那份
+    // official/pending/disputed 混合状态是 M1 状态筛选器的走查数据，不是新卡的形状
+    // （照抄它会让「填网址 → 你来逐字段确认」一上屏就有 5 个字段标着「官方口径」）。
+    // 判据在 `entity-card.test.ts` 的「新建的卡：7 个字段一律 pending」那条。
+    field_status: Object.fromEntries(
+      ENTITY_ROOT_FIELDS.map((field): [string, FieldStatus] => [field, 'pending']),
+    ),
     source: { crawled_pages: [], llm_provider: null, llm_model: null, generated_at: null },
     created_at: now,
     updated_at: now,
@@ -129,7 +139,7 @@ export const entityCardUpdateField: DemoHandler = (args) => {
   const now = nowIso();
   const value = args.value ?? null;
   const fields = fieldsView(card);
-  // 顶层字段才写回卡内：界面那 11 行 `ENTITY_FIELD_ROWS` 全是顶层路径。
+  // 顶层字段才写回卡内：界面那 7 张字段卡全是顶层路径。
   // 带下标 / 嵌套的路径按 §B-2③ 放行校验、留痕照写，但 demo 不改卡里的嵌套结构——
   // domain 的 `get_at` / `set_at`（含 serde 回写与 validate_field）是领域实现，不移植。
   const isFlatPath = root === path.trim();
@@ -294,7 +304,8 @@ function inspectFieldPath(path: string): string {
 }
 
 /**
- * 顶层字段的读写视图。`EntityFields` 的 11 个键类型各不相同，而 demo 收到的 `value` 是 `unknown`
+ * 顶层字段的读写视图。`EntityFields` 的 7 个键类型各不相同（spec 2026-10-01 · DR-59：
+ * 价格并进 `products[i].price`，案例/卖点/口径迁去知识库），而 demo 收到的 `value` 是 `unknown`
  * ⇒ 经 `Record<string, unknown>` 视图读写；键的合法性由 `inspectFieldPath` 的
  * `ENTITY_ROOT_FIELDS` 白名单保证（写不到契约外的键），所以这一次断言是**被检查过的**。
  */

@@ -4,7 +4,15 @@
  * 约定（见 `AGENTS.md`）：所有字段名与枚举值在 JSON 上一律 **snake_case**，
  * Tauri 命令统一用 `#[tauri::command(rename_all = "snake_case")]`，
  * 因此前端发送参数也用 snake_case，避免任何隐式改名。
+ *
+ * # 分模块（M3–M7）
+ * M1/M2 与设置族的 DTO 住在本文件；采集、解析、诊断、行动、报告五个模块的 DTO 各自一个
+ * `types-*.ts`（单文件超过约 400 行就拆分，AGENTS「代码风格」），并在本文件末尾 `export *`
+ * 汇总 ⇒ 调用方照旧只 `import … from '../api/types'`，不必知道拆分细节。
  */
+
+import type { AssertComplete, ValuesAreComplete } from './completeness';
+import type { ModelProtocol } from './types-llm';
 
 // ---------------------------------------------------------------------------
 // 错误
@@ -83,7 +91,7 @@ export type SampleSizeGrade = 'sufficient' | 'directional' | 'insufficient';
  *   就是它），免得界面选项顺序悄悄变了；
  * - 值是**稳定 id**——线上传的就是它（后端一律发 snake_case id、不发标签），展示文案一律查
  *   词典（`src/i18n/enum-label.ts` 的 `enumLabel`），查不到回退 id 本身、绝不回退中文；
- * - 五张清单各有一条**编译期完整性网**（见本段末尾），漏一个联合成员 `tsc -b` 就红。
+ * - 每张清单各有一条**编译期完整性网**（见本段末尾），漏一个联合成员 `tsc -b` 就红。
  *
  * ⚠ `AssetKind` 刻意**没有**值清单：`ASSET_KIND_LABELS` 实测零消费者、资产 UI 还不存在，
  * 加清单就是新的死代码（§B-3）。将来做资产 UI 的人按同一形状补 `ASSET_KIND_VALUES` +
@@ -130,18 +138,24 @@ export const SAMPLE_SIZE_GRADE_VALUES = [
 ] as const satisfies readonly SampleSizeGrade[];
 
 /**
- * 编译期完整性网（§B-2）：往联合里加一个成员而忘了加进值清单 ⇒ `tsc -b` 红。
+ * 生成文稿的审核态（M6 内容生产）。
  *
- * 用**类型层**断言而不是「`const _check: T = true`」那种值层写法：`tsconfig.app.json` 开了
- * `noUnusedLocals`，值层的检查常量要么得导出（凭空多 5 个运行时噪音），要么就得指望下划线
- * 前缀被豁免——而 TS 的 `noUnusedLocals` 并不像本仓 ESLint 的 `varsIgnorePattern: '^_'`
- * 那样豁免 `_` 前缀。约束 `T extends true` 不成立时，错误就落在类型别名自身，不需要任何值。
+ * 原先刻意没有清单（`GeneratedContent` 只在 M2 的 DTO 里出现、没有 UI 消费）；M6 的
+ * `content_update_status` 要在界面上给出「通过 / 退回」两个动作，选项得从清单遍历出来，
+ * 所以按上面那五张的同一形状补上（`as const` + `satisfies` + 编译期完整性网）。
+ * 顺序即界面按钮顺序：待审核在前，与 `FieldStatus` 把 `pending` 放中间的取舍不同——
+ * 那边是可信度光谱，这边是审核流程的三态。
  */
-type ValuesAreComplete<Union extends string, Values extends readonly string[]> =
-  Exclude<Union, Values[number]> extends never ? true : false;
+export const CONTENT_STATUS_VALUES = [
+  'pending_review',
+  'approved',
+  'rejected',
+] as const satisfies readonly ContentStatus[];
 
-type AssertComplete<T extends true> = T;
-
+/**
+ * 编译期完整性网（§B-2）：往联合里加一个成员而忘了加进值清单 ⇒ `tsc -b` 红。
+ * 两个 helper 住在 `./completeness`（M3–M7 的 DTO 模块也要用，抽出去免得各抄一份）。
+ */
 export type IntentValuesComplete = AssertComplete<
   ValuesAreComplete<IntentCategory, typeof INTENT_VALUES>
 >;
@@ -156,6 +170,9 @@ export type FieldStatusValuesComplete = AssertComplete<
 >;
 export type SampleSizeGradeValuesComplete = AssertComplete<
   ValuesAreComplete<SampleSizeGrade, typeof SAMPLE_SIZE_GRADE_VALUES>
+>;
+export type ContentStatusValuesComplete = AssertComplete<
+  ValuesAreComplete<ContentStatus, typeof CONTENT_STATUS_VALUES>
 >;
 
 // ---------------------------------------------------------------------------
@@ -203,10 +220,23 @@ export interface ProjectAsset {
   created_at: string;
 }
 
-/** 后端 `EntityFields` 用 `deny_unknown_fields`，多一个键都会反序列化失败，勿加字段。 */
+/**
+ * 后端 `EntityFields`（`crates/geo-domain/src/entity_card.rs`）用 `deny_unknown_fields`，
+ * 多一个键就反序列化失败，勿加字段。🔴 `ProductSpec` **没有**这个属性（同一个文件里逐字核过），
+ * 所以它多出来的键是**静默丢掉**——不报错，正是下面 `price` 的失败形态。
+ *
+ * 🔴 `price` 是**唯一一处有据偏离**（spec `2026-10-01-entity-card-slim-and-knowledge-base-design.md`
+ * DR-60）：产品负责人要求把「产品价格」那张独立字段卡取消、报价改成**每个产品自带一个字段**。
+ * Rust 侧的 `ProductSpec` 今天只有 `name` / `params` / `note` ⇒ 这里声明成**可选**（后端不给也合法），
+ * 并登记为差异 **E-59**：桌面端把带 `price` 的产品清单发给真后端，`price` 会被 serde 静默丢掉、
+ * 界面上**一个错误都看不到**（比报错更坏：用户以为存上了）。Plan C 落桌面端时要同批改
+ * domain 的结构体与迁移口径，然后把可选去掉。
+ */
 export interface ProductSpec {
   name: string;
   params: string[];
+  /** 该产品的报价口径（如「单台 12 万~60 万元，按风量定制」）。见上面的偏离说明。 */
+  price?: string | null;
   note: string | null;
 }
 
@@ -242,17 +272,26 @@ export interface ProjectFilter {
 // M1 实体卡
 // ---------------------------------------------------------------------------
 
+/**
+ * 实体卡字段面：🔴 demo 侧由 11 键**收窄到 7 键**（spec 2026-10-01 · DR-59）。
+ *
+ * 退出的四个字段各有去处，不是删掉不管：`price_range` → `ProductSpec.price`（DR-60）；
+ * `cases` / `differentiators` / `official_tone` → 知识库的 `case` / `differentiator` / `tone`
+ * 三个模块（种子已迁，`demo/seed/kb.ts`）。实体卡因此回到它的本职——「我是谁」的
+ * **结构化事实**；「我怎么讲自己」下沉到知识层。
+ *
+ * ⚠ Rust 侧的 `ALL_FIELDS`（11）/ `REQUIRED_FIELDS`（10）/ `completeness()` 分母**本轮一行未改**
+ * ⇒ 桌面端接真后端时仍会收到那 4 个键（结构类型在运行期忽略多余键，不报错），
+ * 而完整率两侧口径不同（demo 6/7=0.86，后端 6/10=0.6）。差异 **E-58**，Plan C 收口。
+ * 迁出字段的**词典标签刻意保留**（DR-62）：历史修订留痕与事实核查记录里仍会出现这些 `field_path`。
+ */
 export interface EntityFields {
   standard_name: string;
   aliases: string[];
   founded_year: number | null;
   qualifications: string[];
   products: ProductSpec[];
-  price_range: string | null;
   service_regions: string[];
-  cases: string[];
-  differentiators: string[];
-  official_tone: string | null;
   contact: Contact | null;
 }
 
@@ -441,6 +480,12 @@ export interface ModelConfig {
    * （填了也会生效，用于企业内网网关，UI 只在「自定义」下开放）。
    */
   base_url: string | null;
+  /**
+   * 模型协议（Plan B Task 4 · DR-34）。🔴 **只有 `custom` 用得上**：预设厂商与中转站
+   * 走哪种协议由后端固定，界面不给控件。Rust 的 `ModelConfig` 今天还没有这个字段
+   * （差异 E-48），默认值 `openai_compat` 是 demo 先冻结的契约。
+   */
+  protocol: ModelProtocol;
   temperature: number;
   timeout_secs: number;
 }
@@ -451,6 +496,26 @@ export interface NotifyConfig {
   sound: boolean;
 }
 
+/**
+ * 数据外发隐私开关（Plan B · 2026-09-18 spec §4.7）。
+ *
+ * 四项都是"这类数据允不允许随诊断/改进上报"，默认值刻意保守：只有**诊断结果**默认关，
+ * 因为它含竞品与归因语料，是四项里最敏感的。
+ * 🔴 Rust 侧今天没有这一段（demo 先行），差异登记进 E-48。
+ */
+export interface PrivacyConfig {
+  share_entity_card: boolean;
+  share_prompts: boolean;
+  share_crawled_text: boolean;
+  share_diagnostics: boolean;
+}
+
+/** 与存储相关的**可写**偏好（只读事实走 `app_environment`，见 `types-app.ts`）。 */
+export interface StorageConfig {
+  /** 上次导出用的目录；从没导出过是 `null`。 */
+  last_export_dir: string | null;
+}
+
 export interface AppSettings {
   proxy: ProxyConfig | null;
   concurrency: ConcurrencyConfig;
@@ -458,6 +523,9 @@ export interface AppSettings {
   model: ModelConfig;
   language: string;
   notify: NotifyConfig;
+  /** Plan B 新增两段（🔴 Rust 侧尚无，差异 E-48）。 */
+  privacy: PrivacyConfig;
+  storage: StorageConfig;
 }
 
 export interface ProviderInfo {
@@ -484,3 +552,20 @@ export interface LlmTestResult {
   cost_cny: number;
   message: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// M3–M7 的 DTO（各自一个模块，这里汇总，调用方照旧只 import 本文件）
+// ---------------------------------------------------------------------------
+
+export * from './types-collection';
+export * from './types-insight';
+export * from './types-diagnosis';
+export * from './types-action';
+export * from './types-report';
+export * from './types-app';
+export * from './types-llm';
+export * from './types-library';
+export * from './types-site';
+export * from './types-kb';
+export * from './types-article';
+export * from './types-search';

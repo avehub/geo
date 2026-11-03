@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import EntityCardPage from './EntityCardPage';
+import { ENTITY_FIELDS } from '../components/entity-fields';
 import { mockInvoke } from '../test/invoke-mock';
 import { renderAtRoute } from '../test/render';
 import { PROJECT_ID, makeEntityCard } from '../test/fixtures';
@@ -54,12 +55,64 @@ function renderPage() {
 describe('EntityCardPage', () => {
   beforeEach(() => mockInvoke.reset());
 
+  it('空态不再提供必然失败的「手工新建空白实体卡」，只引导自动建档', async () => {
+    mockInvoke.stubAlways('entity_card_get', () => null);
+    mockInvoke.stubAlways('entity_card_revisions', () => []);
+    renderPage();
+
+    expect(await screen.findByText(/先用上方「自动建档」/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '手工新建空白实体卡' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('渲染完整率（0.8 → 80%）', async () => {
     stub({ completeness: 0.8 });
     renderPage();
 
     expect(await screen.findByText('80%')).toBeInTheDocument();
     expect(screen.getByText(/字段完整率/)).toBeInTheDocument();
+  });
+
+  /**
+   * 🔴 本轮实体卡瘦身的**靶心**（spec `2026-10-01-entity-card-slim-and-knowledge-base-design.md`
+   * DR-59 / DR-60）：字段面 11 → 7。
+   *
+   * 三段各钉一件事：
+   * ① 七张卡都在（数量与 `ENTITY_FIELDS` 逐字对齐，多一张少一张都红）；
+   * ② 报价**并进**「产品与参数」这张 `json` 卡（不再是独立的一张卡）；
+   * ③ 迁出的四张卡**不渲染**——是"不渲染"而不是"置灰"：内容已经住进知识库的
+   *    `case` / `differentiator` / `tone` 三个模块，留一张点不动的卡在实体卡上，
+   *    用户会以为"这里还能改"（而知识库那边的同步块是只读投影，两边都不会跟着变）。
+   *
+   * ⚠ 断言走 `data-testid` 而不是标签文字：`官方口径` 这个串同时也是 `FieldStatus.official`
+   * 的标签（`entity.fieldStatuses.official`），按文字查会撞车、按 testid 查不会。
+   */
+  it('只剩 7 张字段卡：报价并进「产品与参数」，价格/案例/卖点/口径四张卡不见了', async () => {
+    stub();
+    renderPage();
+    await screen.findByText('80%');
+
+    for (const descriptor of ENTITY_FIELDS) {
+      expect(
+        screen.getByTestId(`entity-field-${descriptor.path}`),
+        `字段卡 ${descriptor.path} 没渲染出来`,
+      ).toBeInTheDocument();
+    }
+    expect(screen.getAllByTestId(/^entity-field-/)).toHaveLength(ENTITY_FIELDS.length);
+
+    // ② 报价是产品对象自带的一格（`ProductSpec.price`），随 `products` 这张卡一起显示。
+    //    值从夹具现取、不抄第二份字面量：夹具改了这里不会变成一句过期的断言。
+    const price = makeEntityCard().fields.products[0].price;
+    expect(price, '夹具里的产品必须带报价，否则这一段是空跑').not.toBeNull();
+    expect(screen.getByTestId('entity-field-products').textContent).toContain(price ?? '');
+
+    for (const retired of ['price_range', 'cases', 'differentiators', 'official_tone']) {
+      expect(
+        screen.queryByTestId(`entity-field-${retired}`),
+        `已迁出的字段 ${retired} 不该再有卡片（内容在知识库里）`,
+      ).toBeNull();
+    }
   });
 
   it('待确认字段渲染橙色 Tag，存疑渲染红色', async () => {
@@ -109,7 +162,7 @@ describe('EntityCardPage', () => {
     renderPage();
     await screen.findByText('80%');
 
-    const card = screen.getByTestId('entity-field-price_range');
+    const card = screen.getByTestId('entity-field-products');
     await user.click(within(card).getByRole('button', { name: /编\s*辑/ }));
     // antd 按钮式 Radio 的真实 input 被 pointer-events:none 遮住，用 fireEvent 直接触发
     fireEvent.click(within(card).getByRole('radio', { name: '存疑' }));
@@ -117,7 +170,7 @@ describe('EntityCardPage', () => {
 
     await waitFor(() => expect(mockInvoke.callsOf('entity_card_update_field')).toHaveLength(1));
     expect(mockInvoke.lastArgsOf('entity_card_update_field')).toMatchObject({
-      path: 'price_range',
+      path: 'products',
       status: 'disputed',
     });
   });

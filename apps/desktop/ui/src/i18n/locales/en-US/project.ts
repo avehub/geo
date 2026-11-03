@@ -99,6 +99,59 @@ const project: ResourceBundle['project'] = {
   },
 
   /**
+   * New-project mode chooser (Plan B Task 7 · spec §7 / DR-36).
+   *
+   * `sameFields` is the on-screen wording of ruling 3 ("manual entry follows the auto-build
+   * flow"). 🔴 It is only copy: the executable judgment is the four assertions in
+   * `components/wizard-steps.test.ts` (wizard fields == the draft contract, the mapping lands
+   * on real entity card fields, and the two lists together cover all 11 fields).
+   */
+  new: {
+    title: 'New project',
+    subtitle: 'Pick how to enter the brand. Both paths end up on the same entity card.',
+    autoTitle: 'Auto-build from a URL',
+    autoDesc:
+      'Enter the website URL to walk through crawling and extraction, then confirm each field on the entity card.',
+    // 🔴 Deliberately different from `autoTitle` / `manualTitle`: an identical card title and
+    // button label makes `getByText` match two elements at once.
+    autoAction: 'Build from a URL',
+    manualTitle: 'Enter manually',
+    manualDesc:
+      'Five steps: brand and aliases, website and core pages, products and service scope, region and industry, competitors.',
+    manualAction: 'Open the five-step wizard',
+    sameFields:
+      'Both paths use the same field set: the wizard input and the auto-build output map onto the same entity card fields.',
+  },
+
+  /**
+   * Auto-build screen (Plan B Task 7 · spec §7).
+   *
+   * 🔴 `demoNotice` stays on screen for the whole run: the demo never touches the network and
+   * never crawls (AGENTS rules 2 and 9) — same wording policy as "no crawling" in M3 and
+   * "no model calls" in M4. The three stages perform the wait instead of jumping to the end;
+   * `{{percent}}` is interpolated from the preset `completeness` of the seeded card.
+   */
+  autobuild: {
+    title: 'Auto-build from a URL',
+    urlLabel: 'Website URL',
+    urlPlaceholder: 'https://www.example.com',
+    urlExtra: 'Only your own domain is crawled. The demo sends no network requests.',
+    start: 'Start crawling',
+    demoNotice: 'Demo mode does not fetch web pages. The extracted fields are preset data.',
+    stepCrawl: 'Crawl',
+    stepExtract: 'Extract',
+    stepConfirm: 'Confirm each field',
+    stageCrawling: 'Crawling the homepage and inner pages',
+    stageExtracting: 'Extracting page content into entity card fields',
+    stageDone: '{{percent}}% of fields filled. Opening the entity card',
+    emptyUrl: 'Enter the website URL first',
+    failed: 'Auto-build did not succeed. Check the URL and try again.',
+    backToModes: 'Back to the entry choices',
+    confirmHint:
+      'Extracted fields start as "Unconfirmed". Check each one on the entity card and mark it "Official".',
+  },
+
+  /**
    * Project list page (Task 9). The exported file names live here too: they used to be
    * assembled in the component, which produced Chinese file names under the en locale.
    * `20` in `hint` is the backend `MAX_TAGS` (`crates/geo-domain/src/project.rs`); the
@@ -107,12 +160,13 @@ const project: ResourceBundle['project'] = {
    */
   list: {
     title: 'Projects',
+    count: '{{count}} projects',
     searchPlaceholder: 'Search by project or brand name',
     showArchived: 'Show archived',
     refresh: 'Refresh',
     newProject: 'New project',
     loadFailed: 'Failed to load the projects',
-    hint: 'Tip: type in the tags column and press Enter to add or remove tags (up to 20). “Export” on each row downloads the project JSON (entity card, competitors, assets and prompt library), or the competitors / assets CSV on its own.',
+    hint: 'Tip: type in the tags column and press Enter to add or remove tags (up to 20). “Export” on each row downloads the project JSON (currently entity card, competitors, assets and prompt library; knowledge base, collection, site and webmaster data are not included), or the competitors / assets CSV on its own.',
     archived: 'Archived',
     unarchived: 'Unarchived',
     deleted: 'The project was deleted',
@@ -141,6 +195,7 @@ const project: ResourceBundle['project'] = {
     archived: 'Archived',
     active: 'Active',
     updatedAt: 'Updated',
+    updatedShort: 'Updated {{time}}',
     openEntityCard: 'Entity card',
     openPrompts: 'Prompts',
     archive: 'Archive',
@@ -160,7 +215,7 @@ const project: ResourceBundle['project'] = {
   },
 
   export: {
-    json: 'Project JSON (full)',
+    json: 'Project JSON (M1/M2 archive)',
     competitorsCsv: 'Competitors CSV',
     assetsCsv: 'Assets CSV',
   },

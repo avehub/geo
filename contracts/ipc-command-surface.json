@@ -1,0 +1,295 @@
+{
+  "note": "demo 与真后端的命令面差集（Plan C 前置门禁）。rust_registered 必须与 apps/desktop/src-tauri/src/ipc/mod.rs 的 generate_handler![] 逐条相等；pending 每转正一条就删除一条，并同步差异台账。两侧并集必须等于 api/client.ts 的 IPC_COMMANDS。",
+  "rust_registered": [
+    "project_create",
+    "project_list",
+    "project_get",
+    "project_update",
+    "project_archive",
+    "project_delete",
+    "project_export",
+    "project_import",
+    "project_export_competitors_csv",
+    "project_export_assets_csv",
+    "competitor_upsert",
+    "competitor_list",
+    "competitor_delete",
+    "competitor_reorder",
+    "asset_add",
+    "asset_list",
+    "asset_delete",
+    "entity_card_autobuild",
+    "entity_card_get",
+    "entity_card_update_field",
+    "entity_card_revisions",
+    "prompt_set_generate",
+    "prompt_set_list",
+    "prompt_set_get",
+    "prompt_set_rename",
+    "prompt_set_delete",
+    "prompt_item_update",
+    "prompt_item_add",
+    "prompt_item_delete",
+    "prompt_set_dedupe",
+    "prompt_set_export_csv",
+    "prompt_set_import_csv",
+    "keyword_list",
+    "keyword_add",
+    "keyword_update",
+    "keyword_delete",
+    "export_write_file",
+    "settings_get",
+    "settings_update",
+    "secret_set",
+    "secret_status",
+    "secret_delete",
+    "llm_provider_test",
+    "llm_providers"
+  ],
+  "pending": [
+    {
+      "command": "collection_board",
+      "ledger": "E-33"
+    },
+    {
+      "command": "collection_round_get",
+      "ledger": "E-33"
+    },
+    {
+      "command": "collection_start",
+      "ledger": "E-33"
+    },
+    {
+      "command": "collection_task_retry",
+      "ledger": "E-33"
+    },
+    {
+      "command": "collection_record_list",
+      "ledger": "E-33"
+    },
+    {
+      "command": "collection_record_get",
+      "ledger": "E-33"
+    },
+    {
+      "command": "insight_list",
+      "ledger": "E-33"
+    },
+    {
+      "command": "insight_correct",
+      "ledger": "E-33"
+    },
+    {
+      "command": "fact_check_list",
+      "ledger": "E-33"
+    },
+    {
+      "command": "fact_check_resolve",
+      "ledger": "E-33"
+    },
+    {
+      "command": "diagnosis_overview",
+      "ledger": "E-33"
+    },
+    {
+      "command": "diagnosis_competitors",
+      "ledger": "E-33"
+    },
+    {
+      "command": "diagnosis_funnel",
+      "ledger": "E-33"
+    },
+    {
+      "command": "diagnosis_engines",
+      "ledger": "E-33"
+    },
+    {
+      "command": "diagnosis_alert_acknowledge",
+      "ledger": "E-33"
+    },
+    {
+      "command": "action_board",
+      "ledger": "E-33"
+    },
+    {
+      "command": "action_update_status",
+      "ledger": "E-33"
+    },
+    {
+      "command": "content_generate",
+      "ledger": "E-33"
+    },
+    {
+      "command": "content_update_status",
+      "ledger": "E-33"
+    },
+    {
+      "command": "report_render",
+      "ledger": "E-33"
+    },
+    {
+      "command": "app_environment",
+      "ledger": "E-46"
+    },
+    {
+      "command": "llm_models_list",
+      "ledger": "E-46"
+    },
+    {
+      "command": "keyword_generate",
+      "ledger": "E-52"
+    },
+    {
+      "command": "faq_list",
+      "ledger": "E-52"
+    },
+    {
+      "command": "faq_add",
+      "ledger": "E-52"
+    },
+    {
+      "command": "faq_update",
+      "ledger": "E-52"
+    },
+    {
+      "command": "faq_delete",
+      "ledger": "E-52"
+    },
+    {
+      "command": "faq_generate",
+      "ledger": "E-52"
+    },
+    {
+      "command": "site_board",
+      "ledger": "E-55"
+    },
+    {
+      "command": "site_profile_save",
+      "ledger": "E-55"
+    },
+    {
+      "command": "site_channel_upsert",
+      "ledger": "E-55"
+    },
+    {
+      "command": "site_channel_remove",
+      "ledger": "E-55"
+    },
+    {
+      "command": "site_channel_test",
+      "ledger": "E-55"
+    },
+    {
+      "command": "site_patch_add",
+      "ledger": "E-55"
+    },
+    {
+      "command": "site_patch_generate",
+      "ledger": "E-55"
+    },
+    {
+      "command": "site_patch_save",
+      "ledger": "E-55"
+    },
+    {
+      "command": "site_patch_transition",
+      "ledger": "E-55"
+    },
+    {
+      "command": "site_patch_history",
+      "ledger": "E-55"
+    },
+    {
+      "command": "site_patch_delete",
+      "ledger": "E-55"
+    },
+    {
+      "command": "kb_board",
+      "ledger": "E-61"
+    },
+    {
+      "command": "kb_entry_add",
+      "ledger": "E-61"
+    },
+    {
+      "command": "kb_entry_update",
+      "ledger": "E-61"
+    },
+    {
+      "command": "kb_entry_delete",
+      "ledger": "E-61"
+    },
+    {
+      "command": "kb_entry_verify",
+      "ledger": "E-61"
+    },
+    {
+      "command": "kb_generate",
+      "ledger": "E-61"
+    },
+    {
+      "command": "article_direction_list",
+      "ledger": "E-64"
+    },
+    {
+      "command": "article_direction_add",
+      "ledger": "E-64"
+    },
+    {
+      "command": "article_direction_generate",
+      "ledger": "E-64"
+    },
+    {
+      "command": "article_template_list",
+      "ledger": "E-64"
+    },
+    {
+      "command": "article_template_save",
+      "ledger": "E-64"
+    },
+    {
+      "command": "article_template_delete",
+      "ledger": "E-64"
+    },
+    {
+      "command": "article_schedule_list",
+      "ledger": "E-64"
+    },
+    {
+      "command": "article_schedule_save",
+      "ledger": "E-64"
+    },
+    {
+      "command": "article_schedule_run",
+      "ledger": "E-64"
+    },
+    {
+      "command": "article_list",
+      "ledger": "E-64"
+    },
+    {
+      "command": "search_board",
+      "ledger": "E-67"
+    },
+    {
+      "command": "search_source_upsert",
+      "ledger": "E-67"
+    },
+    {
+      "command": "search_source_remove",
+      "ledger": "E-67"
+    },
+    {
+      "command": "search_source_test",
+      "ledger": "E-67"
+    },
+    {
+      "command": "search_metric_import_csv",
+      "ledger": "E-67"
+    },
+    {
+      "command": "search_opportunity_update",
+      "ledger": "E-67"
+    }
+  ]
+}

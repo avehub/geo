@@ -8,6 +8,11 @@ const entity: ResourceBundle['entity'] = {
     founded_year: 'Year founded',
     qualifications: 'Qualifications',
     products: 'Products and specs',
+    // 🔴 The four labels below are **retired card fields** (spec 2026-10-01 · DR-59 / DR-62):
+    // price moved into `products[].price`, and cases / differentiators / official messaging moved
+    // into the knowledge base. The labels stay because the Rust backend still has those 11 fields,
+    // so historical revisions and fact-check records still carry those `field_path` values —
+    // without a label they would render as raw machine tokens.
     price_range: 'Price range',
     service_regions: 'Service regions',
     cases: 'Client cases',
@@ -53,8 +58,7 @@ const entity: ResourceBundle['entity'] = {
     title: 'Brand Entity Card',
     loadFailed: 'Failed to load the entity card',
     fieldUpdated: 'Field updated and the revision was recorded',
-    empty: 'No entity card yet. Use “Auto-build” above to crawl the website once, or fill in each field by hand.',
-    createBlank: 'Create a blank entity card by hand',
+    empty: 'No entity card yet. Use “Auto-build” above with your website to create one.',
     completeness: 'Field completeness',
     sourceAi: 'AI-extracted: {{provider}} {{model}}',
     sourceManual: 'Entered by hand',

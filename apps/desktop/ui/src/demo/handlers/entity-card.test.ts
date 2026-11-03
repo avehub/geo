@@ -127,6 +127,30 @@ describe('demo/handlers/entity-card · entity_card_autobuild 的正常路径', (
     expect(getDemoDb().entityCards).toHaveLength(SEED_ENTITY_CARDS.length + 1);
   });
 
+  /**
+   * 🔴 Plan B Task 7（裁定 3）：新建的卡每个字段都是 `pending`（待确认）。
+   *
+   * 真值源 `crates/geo-domain/src/entity_card.rs:243-250`：`from_extraction` 用
+   * `FieldStatus::Pending` 建卡 ⇒ 抽取出来的字段**一律等用户逐字段确认**。
+   * 种子那张卡的混合状态（official / pending / disputed 都有）是给 M1 的**状态筛选器**
+   * 备的演示数据，不是"刚抽出来的卡"的形状；照抄种子会让「填网址 → 你来逐字段确认」
+   * 这条链路一上屏就有 6 个字段标着「官方口径」，与界面承诺自相矛盾。
+   */
+  it('新建的卡：7 个字段一律 pending（与 Rust `from_extraction` 同口径），种子卡不受影响', async () => {
+    const card = await demoInvoke<EntityCard>('entity_card_autobuild', {
+      project_id: SEED_ARCHIVED_PROJECT_ID,
+      domain: VALID_DOMAIN,
+    });
+
+    expect(Object.keys(card.field_status).sort()).toEqual([...ENTITY_ROOT_FIELDS].sort());
+    expect(new Set(Object.values(card.field_status))).toEqual(new Set(['pending']));
+
+    // 对照组：种子卡自己仍然三种状态都有（状态筛选器的走查数据不许被这条改动抹平）。
+    expect(new Set(Object.values(SEED_ENTITY_CARDS[0].field_status)).size).toBe(3);
+    // 字段**值**仍然是种子里那份预置抽取结果（规则 9：demo 不真抓、不真抽）。
+    expect(card.fields.standard_name).toBe(SEED_ENTITY_CARDS[0].fields.standard_name);
+  });
+
   it('已有卡的项目：字段、状态与静态完整率原样保留，只把 updated_at 前推', async () => {
     const before = await demoInvoke<EntityCard | null>('entity_card_get', {
       project_id: SEED_ACTIVE_PROJECT_ID,
@@ -164,7 +188,7 @@ describe('demo/handlers/entity-card · entity_card_get / entity_card_revisions',
     const card = await demoInvoke<EntityCard | null>('entity_card_get', {
       project_id: SEED_ACTIVE_PROJECT_ID,
     });
-    expect(card?.fields.price_range).toBe(SEED_ENTITY_CARDS[0].fields.price_range);
+    expect(card?.fields.standard_name).toBe(SEED_ENTITY_CARDS[0].fields.standard_name);
 
     expect(await demoInvoke('entity_card_get', { project_id: SEED_ARCHIVED_PROJECT_ID })).toBeNull();
     expect(await demoInvoke('entity_card_get', { project_id: MISSING_PROJECT_ID })).toBeNull();
@@ -175,7 +199,8 @@ describe('demo/handlers/entity-card · entity_card_get / entity_card_revisions',
       project_id: SEED_ACTIVE_PROJECT_ID,
     });
     expect(seeded).toHaveLength(SEED_ENTITY_CARD_REVISIONS.length);
-    expect(seeded[0].field_path).toBe('price_range');
+    // 种子里那一条留痕记的是**产品报价**（价格已并进 `products[i].price`，spec 2026-10-01 · DR-60）。
+    expect(seeded[0].field_path).toBe('products[0].price');
 
     expect(
       await demoInvoke<EntityCardRevision[]>('entity_card_revisions', {
@@ -193,6 +218,22 @@ describe('demo/handlers/entity-card · entity_card_update_field 的 field_path �
     ['[0].name', { field: 'field_path', reason: 'invalid_format', value: '[0].name' }],
     ['nope', { field: 'field_path', reason: 'unknown_field', value: 'nope' }],
     ['nope.deep[0]', { field: 'field_path', reason: 'unknown_field', value: 'nope' }],
+    /**
+     * 🔴 spec 2026-10-01 · DR-59：本轮从实体卡**迁出**的四个字段现在一律 `unknown_field`。
+     *
+     * 这条不是"顺手加个用例"：它是"字段面 11 → 7"这件事在**后端契约**上的靶心。
+     * 迁出的内容住进知识库（`kb_*`），实体卡这边再写这些 path 就必须报错——
+     * 静默接受会让"两处都能改同一件事"这个双写缺陷类回来（而知识库的同步块是只读投影，
+     * 根本不会跟着变）。Rust 真值源侧的 `ALL_FIELDS` 仍是 11 项 ⇒ 差异台账 §4f E-58。
+     */
+    ['price_range', { field: 'field_path', reason: 'unknown_field', value: 'price_range' }],
+    ['cases', { field: 'field_path', reason: 'unknown_field', value: 'cases' }],
+    ['cases[0]', { field: 'field_path', reason: 'unknown_field', value: 'cases' }],
+    [
+      'differentiators',
+      { field: 'field_path', reason: 'unknown_field', value: 'differentiators' },
+    ],
+    ['official_tone', { field: 'field_path', reason: 'unknown_field', value: 'official_tone' }],
     /**
      * #30① · **退化路径**：整条 path 一个段都解析不出来 ⇒ 后端在 `entity_card.rs:426-427`
      * 发 `required`，而且是**2 键**（没有 `value`）。demo 原先在这里发 `unknown_field` + `value:''`
@@ -251,7 +292,7 @@ describe('demo/handlers/entity-card · entity_card_update_field 的 field_path �
     const cause = await capture(() =>
       demoInvoke('entity_card_update_field', {
         project_id: SEED_ARCHIVED_PROJECT_ID,
-        path: 'price_range',
+        path: 'standard_name',
         value: 'x',
         status: 'official',
         note: null,
@@ -264,19 +305,21 @@ describe('demo/handlers/entity-card · entity_card_update_field 的 field_path �
     });
   });
 
-  it('合法根字段清单是 Rust ALL_FIELDS 的镜像，且与 EntityFields 的键逐字相等', () => {
-    expect(ENTITY_ROOT_FIELDS).toHaveLength(11);
+  it('合法根字段清单与 EntityFields 的键逐字相等（7 项，spec 2026-10-01 · DR-59）', () => {
+    // 🔴 不再自称"Rust ALL_FIELDS 的镜像"：Rust 侧仍是 11 项（本轮零改动），
+    // demo 已经瘦到 7 项 ⇒ 两边**刻意不等**，差异登记在台账 §4f E-58。
+    expect(ENTITY_ROOT_FIELDS).toHaveLength(7);
     expect([...ENTITY_ROOT_FIELDS].sort()).toEqual(Object.keys(SEED_ENTITY_CARDS[0].fields).sort());
   });
 });
 
 describe('demo/handlers/entity-card · entity_card_update_field 的留痕（B-6）', () => {
   it('返回的是新那条 revision（不是整张卡），old_value 是改之前的种子值', async () => {
-    const seededValue = SEED_ENTITY_CARDS[0].fields.price_range;
+    const seededValue = SEED_ENTITY_CARDS[0].fields.standard_name;
 
     const revision = await demoInvoke<EntityCardRevision>('entity_card_update_field', {
       project_id: SEED_ACTIVE_PROJECT_ID,
-      path: 'price_range',
+      path: 'standard_name',
       value: 'POA',
       status: 'official',
       note: '  confirmed by marketing  ',
@@ -284,7 +327,7 @@ describe('demo/handlers/entity-card · entity_card_update_field 的留痕（B-6�
 
     expect(revision.id).toMatch(UUID_V4);
     expect(revision.project_id).toBe(SEED_ACTIVE_PROJECT_ID);
-    expect(revision.field_path).toBe('price_range');
+    expect(revision.field_path).toBe('standard_name');
     expect(revision.old_value).toBe(seededValue);
     expect(revision.old_value).not.toBeNull();
     expect(revision.new_value).toBe('POA');
@@ -325,8 +368,8 @@ describe('demo/handlers/entity-card · entity_card_update_field 的留痕（B-6�
   it('空白 note 归一成 null', async () => {
     const revision = await demoInvoke<EntityCardRevision>('entity_card_update_field', {
       project_id: SEED_ACTIVE_PROJECT_ID,
-      path: 'cases',
-      value: ['case-a'],
+      path: 'qualifications',
+      value: ['cert-a'],
       status: 'pending',
       note: '   ',
     });
@@ -337,15 +380,15 @@ describe('demo/handlers/entity-card · entity_card_update_field 的留痕（B-6�
   it('真的写进 db.revisions：时间线长一条，且新的排在前（edited_at DESC）', async () => {
     const first = await demoInvoke<EntityCardRevision>('entity_card_update_field', {
       project_id: SEED_ACTIVE_PROJECT_ID,
-      path: 'official_tone',
-      value: 'tone-a',
+      path: 'standard_name',
+      value: 'name-a',
       status: 'official',
       note: null,
     });
     const second = await demoInvoke<EntityCardRevision>('entity_card_update_field', {
       project_id: SEED_ACTIVE_PROJECT_ID,
-      path: 'official_tone',
-      value: 'tone-b',
+      path: 'standard_name',
+      value: 'name-b',
       status: 'disputed',
       note: null,
     });
@@ -359,15 +402,15 @@ describe('demo/handlers/entity-card · entity_card_update_field 的留痕（B-6�
     // B-6：edited_at 单调不减（同一毫秒也允许相等）。
     expect(Date.parse(second.edited_at)).toBeGreaterThanOrEqual(Date.parse(first.edited_at));
     // 第二次改的 old_value 是第一次改完的值，不是种子里那个。
-    expect(second.old_value).toBe('tone-a');
+    expect(second.old_value).toBe('name-a');
     expect(getDemoDb().revisions.filter((row) => row.id === second.id)).toHaveLength(1);
   });
 
   it('resetDemoDb() 之后运行时产物全部回到种子（§B-7②）', async () => {
     await demoInvoke('entity_card_update_field', {
       project_id: SEED_ACTIVE_PROJECT_ID,
-      path: 'cases',
-      value: ['case-x'],
+      path: 'qualifications',
+      value: ['cert-x'],
       status: 'official',
       note: null,
     });
@@ -381,8 +424,8 @@ describe('demo/handlers/entity-card · entity_card_update_field 的留痕（B-6�
     expect(getDemoDb().revisions).toHaveLength(SEED_ENTITY_CARD_REVISIONS.length);
     expect(getDemoDb().entityCards).toHaveLength(SEED_ENTITY_CARDS.length);
     // 种子模块自身没被运行时产物污染（`createDemoDb` 的深拷语义）。
-    expect(getDemoDb().entityCards[0].fields.price_range).toBe(
-      SEED_ENTITY_CARDS[0].fields.price_range,
+    expect(getDemoDb().entityCards[0].fields.standard_name).toBe(
+      SEED_ENTITY_CARDS[0].fields.standard_name,
     );
   });
 });

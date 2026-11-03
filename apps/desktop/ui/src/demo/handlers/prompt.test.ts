@@ -19,8 +19,17 @@ import type { DedupeReport, PromptItem, PromptSet, PromptSetSummary } from '../.
 import { isIpcErrorPayload } from '../../api/types';
 import { demoInvoke } from '../backend';
 import { getDemoDb, resetDemoDb } from '../db';
-import { SEED_ACTIVE_PROJECT_ID, SEED_ARCHIVED_PROJECT_ID } from '../seed/projects';
-import { SEED_BASELINE_SET_ID, SEED_PILOT_SET_ID, SEED_PROMPT_SETS } from '../seed/prompt-sets';
+import {
+  SEED_ACTIVE_PROJECT_ID,
+  SEED_ARCHIVED_PROJECT_ID,
+  SEED_CHENGCHUAN_PROJECT_ID,
+} from '../seed/projects';
+import {
+  SEED_BASELINE_SET_ID,
+  SEED_PILOT_SET_ID,
+  SEED_PROMPT_ITEMS,
+  SEED_PROMPT_SETS,
+} from '../seed/prompt-sets';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 /** 与 `client.demo-runtime.test.ts` 同形的 CJK 判据（用转义而不是字面中文，保持仓内一致风格）。 */
@@ -178,6 +187,48 @@ describe('demo/handlers/prompt · prompt_set_generate', () => {
     expect(created.label).toBe('demo-set-3');
   });
 
+  it('跨项目回落：目标项目没有对应竞品 ⇒ 清空 competitor_ids（不把澜舟竞品带过去）', async () => {
+    // 澄川没有题库、也没有竞品 ⇒ 生成必然走种子基线回落。基线里的 competitor_ids 指向澜舟的竞品，
+    // 直接克隆会让目标项目出现「竞品列表为空、题目里却有竞品 id」的悬空引用。
+    expect(getDemoDb().competitors.filter((row) => row.project_id === SEED_CHENGCHUAN_PROJECT_ID)).toEqual([]);
+
+    const created = await demoInvoke<PromptSet>('prompt_set_generate', {
+      project_id: SEED_CHENGCHUAN_PROJECT_ID,
+      options: {},
+    });
+
+    expect(created.project_id).toBe(SEED_CHENGCHUAN_PROJECT_ID);
+    expect(created.items).toHaveLength(BASELINE_COUNT);
+    // 基线里确实有带竞品的题（否则这条用例可能因为「本来就没有」而假绿）。
+    expect(SEED_PROMPT_ITEMS.some((item) => item.competitor_ids.length > 0)).toBe(true);
+    expect(created.items.every((item) => item.competitor_ids.length === 0)).toBe(true);
+  });
+
+  it('跨项目回落：按竞品名称重映射到目标项目自己的 id，映射不到的清空', async () => {
+    const db = getDemoDb();
+    db.competitors.push({
+      id: 'cc-competitor-qingyuan',
+      project_id: SEED_CHENGCHUAN_PROJECT_ID,
+      name: '清源环保',
+      aliases: ['清源环保工程'],
+      website: null,
+      note: null,
+      position: 0,
+      created_at: '2026-10-01T00:00:00Z',
+    });
+
+    const created = await demoInvoke<PromptSet>('prompt_set_generate', {
+      project_id: SEED_CHENGCHUAN_PROJECT_ID,
+      options: {},
+    });
+
+    const allIds = new Set(created.items.flatMap((item) => item.competitor_ids));
+    expect(allIds).toEqual(new Set(['cc-competitor-qingyuan']));
+    // 澜舟的另外两个竞品（蓝净 / 恒宇）在目标项目里没有同名项 ⇒ 必须被清掉。
+    expect(allIds.has('d4e6f3a5-7c9b-4d44-8e6f-8a2b3c5d7e49')).toBe(false);
+    expect(allIds.has('e5f7a4b6-8d0c-4e55-9f7a-9b3c4d6e8f50')).toBe(false);
+  });
+
   it('删掉中间一份再生成 ⇒ label 不撞号（`demo-set-5`，而不是回到 `demo-set-4`）', async () => {
     // N-9：只看份数会撞名——生成两份后删掉前一份，份数回落 ⇒ 又叫 `demo-set-4`，
     // 下拉里出现两个同名题库。序号取「既存最大 N」与「份数」的较大者才堵得住。
@@ -318,6 +369,58 @@ describe('demo/handlers/prompt · prompt_item_update', () => {
     expect(updated.group_name).toBeNull();
   });
 
+  it('🔴 镜像 Rust PromptItem::validate：空白文本拒 required', async () => {
+    const before = await demoInvoke<PromptSet>('prompt_set_get', { id: SEED_PILOT_SET_ID });
+    const target = before.items[0]!;
+
+    const cause = await capture(() =>
+      demoInvoke('prompt_item_update', { item: { ...target, text: '   ' } }),
+    );
+
+    expectCode(cause, 'validation/failed');
+    expect(paramsOf(cause)).toEqual({ field: 'text', reason: 'required' });
+    // 校验失败不得留下半改状态。
+    const after = await demoInvoke<PromptSet>('prompt_set_get', { id: SEED_PILOT_SET_ID });
+    expect(after.items[0]).toEqual(target);
+  });
+
+  it('🔴 文本超过 300 字拒 too_long', async () => {
+    const before = await demoInvoke<PromptSet>('prompt_set_get', { id: SEED_PILOT_SET_ID });
+    const target = before.items[0]!;
+
+    const cause = await capture(() =>
+      demoInvoke('prompt_item_update', { item: { ...target, text: 'x'.repeat(301) } }),
+    );
+
+    expectCode(cause, 'validation/failed');
+    expect(paramsOf(cause)).toEqual({ field: 'text', reason: 'too_long', limit: '300' });
+  });
+
+  it('🔴 weight / repeat_count 越界拒 out_of_range（不夹值）', async () => {
+    const before = await demoInvoke<PromptSet>('prompt_set_get', { id: SEED_PILOT_SET_ID });
+    const target = before.items[0]!;
+
+    const weightCause = await capture(() =>
+      demoInvoke('prompt_item_update', { item: { ...target, weight: 6 } }),
+    );
+    expectCode(weightCause, 'validation/failed');
+    expect(paramsOf(weightCause)).toEqual({
+      field: 'weight',
+      reason: 'out_of_range',
+      expected: '1~5',
+    });
+
+    const repeatCause = await capture(() =>
+      demoInvoke('prompt_item_update', { item: { ...target, repeat_count: 4 } }),
+    );
+    expectCode(repeatCause, 'validation/failed');
+    expect(paramsOf(repeatCause)).toEqual({
+      field: 'repeat_count',
+      reason: 'out_of_range',
+      expected: '1~3',
+    });
+  });
+
   it('条目不存在报 prompt_item/not_found', async () => {
     const cause = await capture(() =>
       demoInvoke('prompt_item_update', {
@@ -385,6 +488,57 @@ describe('demo/handlers/prompt · prompt_item_add', () => {
 
     expectCode(cause, 'validation/failed');
     expect(paramsOf(cause)).toEqual({ field: 'items', reason: 'empty' });
+  });
+
+  it('🔴 新增逐条镜像 Rust 校验：空白文本 / 超长 / weight / repeat_count', async () => {
+    const before = getDemoDb().promptItems.length;
+
+    const blank = await capture(() =>
+      demoInvoke('prompt_item_add', {
+        set_id: SEED_PILOT_SET_ID,
+        items: [draft({ text: '   ' })],
+      }),
+    );
+    expectCode(blank, 'validation/failed');
+    expect(paramsOf(blank)).toEqual({ field: 'text', reason: 'required' });
+
+    const tooLong = await capture(() =>
+      demoInvoke('prompt_item_add', {
+        set_id: SEED_PILOT_SET_ID,
+        items: [draft({ text: 'y'.repeat(301) })],
+      }),
+    );
+    expectCode(tooLong, 'validation/failed');
+    expect(paramsOf(tooLong)).toEqual({ field: 'text', reason: 'too_long', limit: '300' });
+
+    const badWeight = await capture(() =>
+      demoInvoke('prompt_item_add', {
+        set_id: SEED_PILOT_SET_ID,
+        items: [draft({ weight: 9 })],
+      }),
+    );
+    expectCode(badWeight, 'validation/failed');
+    expect(paramsOf(badWeight)).toEqual({
+      field: 'weight',
+      reason: 'out_of_range',
+      expected: '1~5',
+    });
+
+    const badRepeat = await capture(() =>
+      demoInvoke('prompt_item_add', {
+        set_id: SEED_PILOT_SET_ID,
+        items: [draft({ repeat_count: 0 })],
+      }),
+    );
+    expectCode(badRepeat, 'validation/failed');
+    expect(paramsOf(badRepeat)).toEqual({
+      field: 'repeat_count',
+      reason: 'out_of_range',
+      expected: '1~3',
+    });
+
+    // 整批不落库：四条失败用例一条都没写进去。
+    expect(getDemoDb().promptItems).toHaveLength(before);
   });
 
   it('整批不落库：题库不存在时一条也不会写进内存库', async () => {

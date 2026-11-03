@@ -29,7 +29,7 @@
 
 ### 当前关键不变量
 
-- **命令面**：`api/client.ts` 的 `IPC_COMMANDS` 是单一清单；2026-10-29 核对为 **105 条 = 40 条 Rust + 65 条 demo-only**。
+- **命令面**：`api/client.ts` 的 `IPC_COMMANDS` 是单一清单；2026-11-03 核对为 **105 条 = 44 条 Rust + 61 条 demo-only**（关键词 CRUD 4 条已转正）。
   demo 后端必须 105 条全覆盖；Rust 注册按规格 / 差异台账，demo-only 命令桌面端报 `ipc/unknown_command`，**不屏蔽**（规则 8）。
 - **demo 边界**：去重率、字段完整率、样本量分级、机会判定等领域算法只在 Rust 纯函数里真算；demo 只呈现预置值 / 静态清单（规则 9）。
 - **站点接入 demo**：`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成交接文件，**不真的改线上站点**；`site.demoBody` / `site.staticNote` 常驻。
@@ -37,6 +37,23 @@
 - **站长数据**：A 类可加、B 类只重算不平均、C 类单独展示并标平台；百度统计会话数不进曝光合计；合计行必须给汇总区间、参与源、完整性旗标；搜狗 / 360 为二期。
 - **项目概览**：结果区按「最近一个有结论轮次」锚定；待办按项目累计；M9 组合只给计数 + min/median/max，不对比率取平均、不求和、不做跨项目环比，默认排除归档。
 - **外部数据**：只走官方 OAuth / API、客户导出、`paste_parse`、手工填报；不模拟登录（规则 11）。外部研究数据必须标机构 + 年份 + 链接，默认不参与判定。
+
+- M9 组合总览（2026-10-29，`/portfolio`，左侧栏「项目」下的「组合总览」）：
+  `docs/superpowers/specs/2026-10-29-portfolio-overview-design.md`
+  🔴 只给**计数 + 分布 + 逐项目行**；比率不平均、不求和、不做跨项目环比；未采集≠0 分，
+  归档默认排除；组合层风险本轮只取**未读告警**（完整队列在项目概览）。
+  🔴 **命令面零新增**（仍 105）：按项目并行 `collection_board` + `diagnosis_overview`，
+  再走 `api/portfolio-compose.ts` 的 `buildProjectSnapshot` / `summarizePortfolio` /
+  `filterPortfolioRows`；M9 真后端应换成一个 `portfolio_overview`（E-73）。
+  🔴 demo 项目从 2 个增到 **4 个**（3 active + 1 archived）：新增 `澄川水处理设备` /
+  `禾野食品供应链` 两个**尚未采集**的 active 项目，专门走查「待采集 / 分布只含 1 个项目」。
+- 项目概览的 P1（2026-10-29，同一页）：
+  - **站外数据对账**：`search_board` + `search-compose.summarizeMetrics`，传统搜索 / AI 回答**分面展示**，
+    常驻汇总区间（会收敛到头条的 8/20）、参与源与完整性旗标；不做跨面相加（DR-95 / DR-109 / DR-110）。
+  - **交付进度**：`article_list` + `site_board`，文章评审队列与官网补丁台账的计数 / 完成比例。
+  - **引擎差异 + 漏斗摘要**：`diagnosis_engines` 给最认可 / 最易说错两条；`diagnosis_funnel` 给
+    认知 / 推荐 / 决策三层提及率标签（完整表与漏斗图留在诊断页）。
+  - 这三块都只有 demo 侧实现，桌面端逐卡显示 `ipc/unknown_command`（规则 8）。
 
 ## 工具链与命令
 

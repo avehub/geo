@@ -6,16 +6,16 @@
 >
 > **更新纪律**：命令增删时同步本文「当前命令面」表与差异台账；不要把未发生或无法验证的状态写进来。
 
-## 1. 当前命令面（2026-10-29 核对）
+## 1. 当前命令面（2026-11-03 核对）
 
 | 项 | 数量 | 真值源 |
 |---|---:|---|
 | `IPC_COMMANDS` | 105 | `apps/desktop/ui/src/api/client.ts` |
 | `demoBackend` 键 | 105 | `apps/desktop/ui/src/demo/backend.ts` |
-| Rust `generate_handler![]` | 40 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
-| demo-only | 65 | 差异台账 §4b–§4h |
+| Rust `generate_handler![]` | 44 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
+| demo-only | 61 | `contracts/ipc-command-surface.json` 的 `pending` |
 
-**105 = 40 条 Rust + 65 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
+**105 = 44 条 Rust + 61 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
 
 ### demo-only 族
 
@@ -129,7 +129,66 @@
 - **结果区按轮次锚定**：只取 `succeeded` / `partial`，默认最近一轮**有结论**的，不是“最新一轮”；环比只与上一有结论轮次比，`metric_spec_version` 变了就不给环比。
 - **待办区按项目累计**：告警 / 事实核查 / 低置信度复核跨轮；进行中轮次的问题不进队列。
 - **命令面零新增**（`IPC_COMMANDS` 保持 105）：选轮 / 环比 / 风险排序 / 组合分布都在 `api/overview-compose.ts`（单项目）/ `api/portfolio-compose.ts`（M9）纯函数层；轮次清单取不到时不整页红屏，逐卡显示错误码（规则 8）。
-- **M9 组合口径已先定**：`summarizePortfolio` 只给计数 + 每个指标的 min/median/max 分布 + 逐项目行；**不对比率取平均、不求和、不做跨项目环比**（分母不同），默认排除归档项目。组合页当前**只落数据层**，M9 再渲染；项目页与组合页共用 `ProjectOverviewSnapshot`。差异台账 **E-73**。
+- **M9 组合口径已先定**：`summarizePortfolio` 只给计数 + 每个指标的 min/median/max 分布 + 逐项目行；**不对比率取平均、不求和、不做跨项目环比**（分母不同），默认排除归档项目。组合页已落 demo（`/portfolio`，左侧栏「项目 → 组合总览」）；项目页与组合页共用 `ProjectOverviewSnapshot`。差异台账 **E-73**（真后端需一个 `portfolio_overview` 聚合接口）。
+
+### 2026-10-30 视觉重做 · 壳层与设计样张（第 0 轮）
+
+- 规格：`docs/superpowers/specs/2026-10-30-visual-refresh-and-nav-grouping.md`。
+- 导航合并为**双模式 + 四阶段分组**（项目外：清单；项目内：概览 + 准备 / 监测 / 诊断与行动 / 交付）；
+  路由与路径段未改，选中态仍由 `pathname` 推导，侧栏**零新增取数**。
+- 标题栏 64 → 48px；demo 横幅换成 **32px 细条**（`role="note"`，不可关闭，合规句不变）。
+- 主色按飞书参照改为 `#3370FF`，tokens 集中在 `theme/tokens.ts`；数字等宽只走 `components/ui/MetricText`。
+- 三稿按飞书参照收敛：**表格行 48**、菜单项 40、控件 40；状态为浅底标签（22px 高）；
+  结论条改为白底 + 左竖线；demo 细条改灰底 + `DEMO` 徽标。
+- 四稿修复项目名列被压到 30px 的事故：侧栏 240、项目表单行主单元格（名字 + 弱文本 meta）、
+  行内动作收进「更多」；1024 下项目名 294px、1280 下 550px。
+- 2026-10-31 第一批全面推进：19 个页面/分段页头统一 `PageHeader`；知识/关键词/FAQ/文章外层换
+  `SectionCard`；解析页表格加 `scroll.x` 修掉 1024 溢出。
+- 知识库：默认视图改为**表格**（分组可切），`tableLayout=fixed` 修掉 113px/行的事故；
+  1280 下页面高度 5737 → 1778。采集页新增「引擎 × 意图」计数矩阵（只计数、不评分）。
+- 新增 dev-only 设计样张 `/__design`（`import.meta.env.DEV` 门禁、零 IPC、不进侧栏）；
+  生产构建 `__design` 字符串零残留。
+- **未做**：页面内容级重排（知识库筛选轨 / 采集引擎矩阵 / 诊断与行动内容区）仍未做；
+  命令面仍 **105**（40 Rust + 65 demo-only），无新增命令、无差异台账条目。
+
+### 2026-11-03 demo 全面功能梳理 · P1/P2 修复
+
+- 范围：全 demo 走查后先修 **12 项 P1**（项目删除全表级联、设置自动保存归属 / 离开 flush / 并发版本、汇总区间交集与关键词覆盖区间、AI 全站曝光量、仅表头导入不覆盖旧值、人工纠错矛盾状态、实体卡空态 CTA、切题库 / 导入清空选择、排期时区、`patches.json` 发布快照与审核闸门、设置缺字段与错误态），再并行修 **31 项 P2**（站长数据 / 关键词 / 监测 UI、报告 / 导出契约、站点接入 / 行动中心、题库 / 素材 / 设置错误态）。
+- **命令面零新增、零删除**（仍 **105 = 40 Rust + 65 demo-only**）；Rust 侧一行未改；无迁移。
+- 关键口径：
+  - `api/search-compose.ts` 的 `resolveAggregateWindow` 取各源 `[period_start, data_through]` 的**交集**，无交集不给合计；关键词行改用多周期**覆盖**区间，不再倒挂。
+  - `SearchQueryMetric.impressions / clicks / ctr` 保持可空：关键词只有 AI 面数据时显示 `—`，不再用 0 冒充“没有这一列”。
+  - `project_export` 只覆盖 **M1/M2 档案**（Rust DTO `deny_unknown_fields`），UI 文案改为「项目 JSON（M1/M2 档案）」；差异台账 **E-74**。
+  - `patches.json` 只收 `status === 'published' && review_status === 'approved'`，且 kind / target / channel / body 全部取**发布快照**；已发布补丁必须先 `unpublish` 才能删除。
+  - 排期 `next_run_at` 按**本机时区**生成；⚠ 种子里的静态 `next_run_at` 仍是中国时区口径，非中国时区演示时可能偏移，真后端需要显式的 timezone 字段。导入 / 粘贴默认区间从 `search_board.as_of` 推导，不用系统日期。
+  - 报告预览与 MD / HTML / CSV 导出的采集时间、引擎名、口径说明、白标 Logo **同源**；HTML `lang` 随当前界面语言。
+  - Prompt 校验镜像 Rust（≤300 字 / weight 1–5 / repeat_count 1–3）；关键词 CSV 固定 **8 列**（不含 `source`）。
+- 已知边界（**demo 阶段刻意不修**）：
+  - 组合总览：demo 里「有结论轮次但 `diagnosis_overview` 为 `null`」不可达（所有 `succeeded` / `partial` 轮次都配了种子）；真实后端会遇到，当前会被归入「待采集」。已登记 **E-75**，留到 `portfolio_overview` 补三态。分布侧已安全：`overview === null` 不进分布、不算有结论、不显示 0 分。
+  - 采集页矩阵：矩阵与证据表是**同一条 `collection_record_list`** 的两次查询（矩阵不带筛选）。demo 后端确定性、同轮同源，失败必然一起发生，证据表已有错误卡；只有真后端瞬时失败才可能出现「列表成功、矩阵静默消失」。Plan C 应收敛为一次取数 + 前端筛选，而不是再加第二张错误卡。
+
+
+### 2026-11-03 P3 体验 / 契约整洁度 / 文档（第一批）
+
+- **数字与日期格式化**：`components/format.ts` 新增 `countText`（固定 en-US 千分位、非有限值收敛 `0`）、`dateText`、`dateTimeSecondsText`；`KeywordTable` / `ArticleTemplateTable` / `CollectionPage` / `OverviewStationCard` / `ProjectTable` / `RevisionTimeline` 不再各写 `toLocaleString` 或 dayjs 格式。`tokensText`、站长数据密集表的曝光 / 点击 / 引用列与 AI 汇总卡也复用 `countText`；`null` / `0` 在可空列仍显示 `—`（语义未变）。
+- **搜索导入共享逻辑**：`defaultIngestRange`、`SEARCH_INGEST_ERROR_KEYS` 与完成摘要 `ingestSummaryText` 收敛到 `api/search-ingest.ts`；两个弹窗只保留各自的表单与提交逻辑。未知 `reason` 不再裸露机器记号：先显示本地化说明，原始 token 只作附加信息。
+- **非空断言收敛**：`CollectionMatrix` / `OverviewCompetitorsCard` / `OverviewKpiCards` / `PortfolioDistributionCard` / `api/overview-compose.ts` 去掉 5 类 `!` 断言；总分环比只读一次上一轮值。分布卡在「计数 > 0 但 min/median/max 为空」的契约违例下改为空态，不再显示 0%。
+- **站长数据加载期**：`search_board` 未返回时禁用「粘贴 / 导入 / 配置」入口；避免默认区间落到系统今天，加载完成后恢复。判据用 `board === undefined`（刷新时旧锚点仍有效）。
+- **文档**：修正 `current-state.md` 中「组合页只落数据层，M9 再渲染」的过时表述（`/portfolio` 已落地）。
+
+- **真后端开工前**：先按 `docs/superpowers/specs/2026-11-03-plan-c-preflight-contract-checklist.md` 冻结 DTO / 错误码 / 枚举 / 纯函数归属 / 命令面；不要照 demo 的临时形状直接写 handler。
+
+### 2026-11-03 Plan C 前置门禁 + 关键词 CRUD 纵向切片
+
+- **命令面契约**：新增 `contracts/ipc-command-surface.json`（`rust_registered` + `pending`），TS 与 Rust 两侧各有断言：`IPC_COMMANDS == rust_registered ∪ pending`、`generate_handler![] == rust_registered`。当前 **105 = 44 Rust + 61 demo-only**。
+- **导入 reason 契约**：新增 `contracts/search-import-reasons.json`；前端映射与 Rust 侧占位测试都对齐这 6 个 reason。未知 reason 在界面上先给本地化说明，机器记号只作附加信息。
+- **第一个纵向切片（关键词库 CRUD）**：`keyword_list` / `keyword_add` / `keyword_update` / `keyword_delete` 已落 Rust：
+  - `geo-domain::keyword`：`KeywordKind`（5 类）/ `LibrarySource` / `KeywordItem` / `KeywordDraft` + 纯校验（文本必填 ≤300、priority 1..=5、difficulty ≤100、monthly_volume 非负）；
+  - 迁移 `20261103000002_keywords.sql`（`project_id` 外键级联，`position` 索引）；
+  - `KeywordRepo`：按 `position, id` 排序、批量写入、按 `(id, project_id)` 取/改、幂等删除、`next_position`；
+  - `KeywordService`：新增全有或全无；更新保留 `source` / `position` / `created_at`，跨项目 id 报 `validation/failed {field: keyword_id, reason: invalid_id}`；
+  - `keyword_generate` 与 5 条 `faq_*` **仍 demo-only**，不伪造。
+- 判据：domain 6 条 + repo 7 条 + service 7 条 + 命令面契约 2 条（Rust）/ 5 条（TS）。
 
 ## 4. 维护方式
 

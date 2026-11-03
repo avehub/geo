@@ -1,0 +1,44 @@
+{
+  "note": "search_metric_import_csv 的 SearchTableError.reason 目录（Plan C 前置门禁）。Rust 导入服务的 reason 枚举 serde 值集合与前端 api/search-ingest.ts 的 SEARCH_INGEST_ERROR_KEYS 键集合都必须与本文件逐字相等；新增 reason 必须先改本文件。row 是 SearchTableError 的顶层字段，不出现在 params 里。",
+  "reasons": [
+    {
+      "reason": "empty",
+      "params": [],
+      "note": "整份载荷没有任何非空行（空文件 / 空粘贴）。"
+    },
+    {
+      "reason": "unknown_field",
+      "params": [
+        "column"
+      ],
+      "note": "表头出现平台目录不认识的列；column 是 Accept 列名的逗号清单。"
+    },
+    {
+      "reason": "missing_header",
+      "params": [
+        "column"
+      ],
+      "note": "缺少该源必需的列；column 是缺失列的逗号清单。"
+    },
+    {
+      "reason": "invalid_format",
+      "params": [
+        "column",
+        "value"
+      ],
+      "note": "单元格无法按列类型解析；value 是原始文本。"
+    },
+    {
+      "reason": "required",
+      "params": [
+        "column"
+      ],
+      "note": "必填维度为空；column 是维度列名。"
+    },
+    {
+      "reason": "not_allowed",
+      "params": [],
+      "note": "文件格式不在允许清单（仅调用方的文件读取分支产出，解析器本身不发）。"
+    }
+  ]
+}

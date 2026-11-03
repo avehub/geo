@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Alert, App, Button, Form, Space, Typography } from 'antd';
-import { useMutation } from '@tanstack/react-query';
+import { Alert, App, Button, Form, Space } from 'antd';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
@@ -14,6 +14,7 @@ import {
 } from '../store/wizard-draft';
 import { MIN_COMPETITORS } from '../components/CompetitorEditor';
 import { WizardStepContent, WizardStepIndicator } from '../components/WizardSteps';
+import PageHeader from '../components/ui/PageHeader';
 import { WIZARD_STEP_FIELDS, WIZARD_STEPS } from '../components/wizard-steps';
 
 function hasContent(draft: WizardDraftData | null): draft is WizardDraftData {
@@ -28,6 +29,7 @@ function hasContent(draft: WizardDraftData | null): draft is WizardDraftData {
  */
 export default function ProjectWizardPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { message } = App.useApp();
   const { t } = useTranslation();
   const [form] = Form.useForm<WizardDraftData>();
@@ -50,6 +52,8 @@ export default function ProjectWizardPage() {
     mutationFn: (draft: ReturnType<typeof toProjectDraft>) => client.projectCreate(draft),
     onSuccess: (project) => {
       clearDraft();
+      // 左侧栏与项目列表共用 ['projects'] 前缀；建项后必须失效，否则导航栏里看不到新项目。
+      void queryClient.invalidateQueries({ queryKey: ['projects'] });
       message.success(t('project.wizard.created', { name: project.name }));
       navigate(`/projects/${project.id}/entity-card`);
     },
@@ -100,9 +104,7 @@ export default function ProjectWizardPage() {
 
   return (
     <div style={{ maxWidth: 860 }}>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
-        {t('project.wizard.title')}
-      </Typography.Title>
+      <PageHeader title={t('project.wizard.title')} />
 
       {restorable && (
         <Alert

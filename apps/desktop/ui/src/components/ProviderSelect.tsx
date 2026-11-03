@@ -1,15 +1,24 @@
-import { Input, Radio, Space, Typography } from 'antd';
+import { Input, Radio, Select, Space, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 
-import type { ProviderInfo } from '../api/types';
+import type { ModelProtocol, ProviderInfo } from '../api/types';
+import { MODEL_PROTOCOL_VALUES } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
 
-/** 后端 `LlmProvider::Custom.as_str()`，选中它时接口地址必须用户填。 */
+/**
+ * 后端 `LlmProvider::Custom.as_str()`，选中它时接口地址与**模型协议**都必须由用户给。
+ *
+ * 🔴 Plan B Task 4 起厂商清单一共 **12** 项：这 7 个 Rust 稳定 id 之外还有 5 家 demo 独有的
+ * 中转站（`openrouter` / `siliconflow` / `302ai` / `yunwu` / `deepbricks`，DR-33）。
+ * 本组件不区分两者——它只按 `providers` 数组渲染，"只有 custom 需要填地址与选协议"这条
+ * 判据用的是**稳定 id**而不是"第几项"，所以加厂商不会改变行为。
+ */
 const CUSTOM_PROVIDER = 'custom';
 
 /**
  * provider 稳定 id → 展示名：走全仓**唯一**那份查表机制 `i18n/enum-label.ts` 的 `enumLabel`
- * （`settings.providers.<id>`，7 个 id 逐字取自 `crates/geo-llm/src/provider.rs` 的 `as_str()`）。
+ * （`settings.providers.<id>`；前 7 个 id 逐字取自 `crates/geo-llm/src/provider.rs` 的 `as_str()`，
+ * 另 5 个中转站是 demo 独有，见下面 `CUSTOM_PROVIDER` 那段说明）。
  *
  * 这里原先自带一份同形的本地 `providerLabel`，现已收掉：机制细节（为什么必须 `nsSeparator: false`、
  * 为什么查不到时**回退 id 本身而绝不回退 `label_zh`**）只写在 `enum-label.ts` 一处，
@@ -27,6 +36,13 @@ export interface ProviderSelectProps {
   /** 用户填写的接口地址覆盖值；预设服务商为空即用后端预设地址。 */
   baseUrl: string;
   onBaseUrlChange: (baseUrl: string) => void;
+  /**
+   * 模型协议（Plan B Task 4 · DR-34）。🔴 **只在 `custom` 下渲染控件**：
+   * 预设厂商与中转站走哪种协议由后端固定，给它们一个能改的下拉等于允许用户改出
+   * 一个连不上的配置（判据在 `ProviderSelect.test.tsx`：不出现，而不是置灰）。
+   */
+  protocol: ModelProtocol;
+  onProtocolChange: (protocol: ModelProtocol) => void;
 }
 
 /**
@@ -43,6 +59,8 @@ export default function ProviderSelect({
   onChange,
   baseUrl,
   onBaseUrlChange,
+  protocol,
+  onProtocolChange,
 }: ProviderSelectProps) {
   const { t } = useTranslation();
   const current = providers.find((provider) => provider.provider === value) ?? null;
@@ -60,6 +78,28 @@ export default function ProviderSelect({
           ))}
         </Space>
       </Radio.Group>
+
+      {isCustom ? (
+        // 顺序照 spec §6：协议 → 接口地址（先说"按哪种协议说话"，再填"跟谁说"）。
+        <div>
+          <label htmlFor="settings-protocol" style={{ marginRight: 8 }}>
+            {t('settings.providerForm.protocol')}
+          </label>
+          <Select<ModelProtocol>
+            id="settings-protocol"
+            style={{ width: 200 }}
+            value={protocol}
+            options={MODEL_PROTOCOL_VALUES.map((item) => ({
+              value: item,
+              label: enumLabel(t, 'settings.protocols', item),
+            }))}
+            onChange={onProtocolChange}
+          />
+          <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+            {t('settings.providerForm.protocolHint')}
+          </Typography.Text>
+        </div>
+      ) : null}
 
       {isCustom ? (
         <div>

@@ -30,18 +30,29 @@ export interface FieldDescriptor {
   required: boolean;
 }
 
-/** 11 个实体卡字段，顺序即 UI 展示顺序（前 10 个计入完整率）。 */
+/**
+ * **7** 个实体卡字段，顺序即 UI 展示顺序（7 个全必填 ⇒ 都计入完整率）。
+ *
+ * 🔴 本轮由 11 项收窄到 7 项（spec `2026-10-01-entity-card-slim-and-knowledge-base-design.md` DR-59）：
+ * - `price_range` **取消独立卡片**，报价改成每个产品自带一个字段（`ProductSpec.price`，DR-60）
+ *   ⇒ 它随 `products` 这张 `json` 卡一起显示与编辑，不再单列；
+ * - `cases` / `differentiators` / `official_tone` 三张卡**取消**，内容迁进知识库的
+ *   `case` / `differentiator` / `tone` 三个模块（`demo/seed/kb.ts` 已迁好，界面上可增删改）。
+ *
+ * 实体卡因此回到它的本职：「我是谁」的**结构化事实**；「我怎么讲自己」下沉到知识层。
+ *
+ * ⚠ 这张表**不是** `entity.fields.*` 词典的键集：词典里那四个已迁出字段的标签**刻意保留**
+ * （DR-62）——真后端的 `ALL_FIELDS` 还是 11，历史修订留痕与事实核查记录里仍会出现这些
+ * `field_path`，`RevisionTimeline` / `FactCheckPanel` 查不到标签就会露出裸 id。
+ * 所以 `i18n/no-hardcoded-strings.test.ts` 的 B-4 只断言**单向**（这里的每个 key 都在词典里）。
+ */
 export const ENTITY_FIELDS: FieldDescriptor[] = [
   { path: 'standard_name', labelKey: 'entity.fields.standard_name', kind: 'text', required: true },
   { path: 'aliases', labelKey: 'entity.fields.aliases', kind: 'tags', required: true },
   { path: 'founded_year', labelKey: 'entity.fields.founded_year', kind: 'number', required: true },
   { path: 'qualifications', labelKey: 'entity.fields.qualifications', kind: 'tags', required: true },
   { path: 'products', labelKey: 'entity.fields.products', kind: 'json', required: true },
-  { path: 'price_range', labelKey: 'entity.fields.price_range', kind: 'text', required: true },
   { path: 'service_regions', labelKey: 'entity.fields.service_regions', kind: 'tags', required: true },
-  { path: 'cases', labelKey: 'entity.fields.cases', kind: 'tags', required: true },
-  { path: 'differentiators', labelKey: 'entity.fields.differentiators', kind: 'tags', required: true },
-  { path: 'official_tone', labelKey: 'entity.fields.official_tone', kind: 'textarea', required: false },
   { path: 'contact', labelKey: 'entity.fields.contact', kind: 'json', required: true },
 ];
 
@@ -75,4 +86,30 @@ export function formatFieldValue(value: unknown, listSeparator: string): string 
     return JSON.stringify(value, null, 2);
   }
   return JSON.stringify(value, null, 2);
+}
+
+/**
+ * 字段路径 → `entity.fields.*` 的词典 key；查不到返回 **null**。
+ *
+ * 🔴 DR-119 把它从 `components/RevisionTimeline.tsx` 搬到这里并导出：时间线组件被泛化成
+ * "吃任何六键同构的留痕"（实体卡 + 知识库），字段标签表因此必须由**调用方**送进来
+ * （`labelKeyOf` 那个 prop）。留在组件文件里有两个坏处：① 组件会同时认得两张标签表，
+ * 迟早长出"这条留痕属于谁"的分派；② `.tsx` 只导出组件，Vite 的 React Fast Refresh 才生效
+ * （本文件头注那条裁定），从组件里 `export function` 会踩 `react-refresh/only-export-components`。
+ *
+ * 返回 **key 或 null**（而不是 `key ?? path`）是刻意的：`path` 是后端给的原始字段路径
+ * （可能是 `products[0].name` 这种带下标的），把它当 key 喂给 `t()` 只是"碰巧"因为
+ * i18next 未命中会原样返回 key。那种隐式依赖一改 `nsSeparator` 就碎，所以调用点显式分流。
+ *
+ * 🔴 取**根字段名**再查（`products[0].price` → `products`）：报价并进产品之后（spec 2026-10-01 ·
+ * DR-60），留痕里会出现带下标的深层路径；只认 `products.name` 这种点号形态的话，
+ * 碰到 `products[0].price` 会回落成裸路径（界面上露出机器记号）。改了哪个产品的哪个字段，
+ * 由那行新旧值与 `note` 说明，标签只负责回答"这是哪一类字段"。
+ *
+ * 知识库那侧的同族函数是 `components/kb-fields.ts` 的 `kbFieldLabelKey`（DR-119）。
+ */
+export function entityFieldLabelKey(path: string): string | null {
+  const root = path.split(/[.[]/)[0];
+  const match = ENTITY_FIELDS.find((field) => field.path === root);
+  return match === undefined ? null : match.labelKey;
 }

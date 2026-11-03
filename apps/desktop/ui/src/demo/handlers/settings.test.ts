@@ -251,11 +251,17 @@ describe('demo/handlers/settings · llm_providers', () => {
    * 「报 `missing_model`」），而今天没有任何断言会红。
    *
    * ⚠ 只读后端、**不改**后端（Rust 是真值源，AGENTS 规则 4 / 简报 §H-3）。
+   *
+   * 🔴 Plan B Task 4（DR-33）**重新裁过一次**：预设从 6 条涨到 11 条（+5 家中转站）。
+   * 裁定结论是前提**照旧成立**——5 家中转站都填了 `base_url` 与 `default_model`
+   * （`demo/seed/settings.ts`），所以 `modelUnderTest` 的回落路径对它们与对 6 家国内厂商完全一致，
+   * `llm_provider_test` 的行为没有静默改变。下面 ① 的 id 清单就是这次重裁的记录。
    */
-  it('回落前提哨兵（15b #46）：6 条预设的 base_url 与 default_model 都非空，只有 custom 允许空', async () => {
+  it('回落前提哨兵（15b #46）：11 条预设的 base_url 与 default_model 都非空，只有 custom 允许空', async () => {
     const rows = await demoInvoke<ProviderInfo[]>('llm_providers');
 
-    // ① 「6 条预设」是哪 6 条：id 逐字钉死（它们镜像 `LlmProvider::as_str()`，不是可漂移的展示名）
+    // ① 「11 条预设」是哪 11 条：id 逐字钉死。前 6 条镜像 `LlmProvider::as_str()`（不是可漂移的
+    // 展示名）；后 5 条是 demo 独有的中转站（Rust 侧还没有对应枚举成员，差异 E-47）。
     const presets = rows.filter((row) => row.provider !== CUSTOM_PROVIDER);
     expect(
       presets.map((row) => row.provider),
@@ -267,6 +273,11 @@ describe('demo/handlers/settings · llm_providers', () => {
       'ali_bailian',
       'baidu_qianfan',
       'tencent_hunyuan',
+      'openrouter',
+      'siliconflow',
+      '302ai',
+      'yunwu',
+      'deepbricks',
     ]);
 
     // ② 前提本体：两个字段都非空（`trim` 后判，空白串等同没有——读侧 trim 镜像 state.rs:99）

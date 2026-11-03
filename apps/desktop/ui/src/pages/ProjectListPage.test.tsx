@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Route, Routes, useLocation } from 'react-router-dom';
 
 import ProjectListPage from './ProjectListPage';
 import { mockInvoke } from '../test/invoke-mock';
@@ -32,6 +33,16 @@ const ALL = [hongyu, valve, archived];
  */
 function pressEnter(element: HTMLElement) {
   fireEvent.keyDown(element, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 });
+}
+
+/** 路由探针：只断言"导航到哪"，不断言下一页渲染了什么（那是各页面自己的测试）。 */
+function PathProbe() {
+  const location = useLocation();
+  return <span data-testid="pathname">{location.pathname}</span>;
+}
+
+function pathname(): string {
+  return screen.getByTestId('pathname').textContent ?? '';
 }
 
 function stubList() {
@@ -192,7 +203,7 @@ describe('ProjectListPage', () => {
 
     const row = screen.getByText('南方阀门项目').closest('tr') as HTMLElement;
     await user.click(within(row).getByRole('button', { name: /导\s*出/ }));
-    await clickClickableMenuItem(user, '项目 JSON（全量）');
+    await clickClickableMenuItem(user, '项目 JSON（M1/M2 档案）');
 
     await waitFor(() => expect(mockInvoke.callsOf('project_export')).toHaveLength(1));
     expect(mockInvoke.lastArgsOf('project_export')).toEqual({ id: 'p-valve' });
@@ -296,7 +307,7 @@ describe('ProjectListPage', () => {
 
     const row = screen.getByText('宏宇泵业 GEO').closest('tr') as HTMLElement;
     await user.click(within(row).getByRole('button', { name: /Export/ }));
-    await clickClickableMenuItem(user, 'Project JSON (full)');
+    await clickClickableMenuItem(user, 'Project JSON (M1/M2 archive)');
 
     await waitFor(() => expect(mockInvoke.callsOf('project_export')).toHaveLength(1));
     expect(mockInvoke.lastArgsOf('project_export')).toEqual({ id: 'p-hongyu' });
@@ -408,5 +419,29 @@ describe('ProjectListPage · B-3 demo 后端转发（逐命令 stubAlways 闭包
     expect(mockInvoke.lastArgsOf('project_list')).toMatchObject({
       filter: { include_archived: true },
     });
+  });
+
+  /**
+   * Plan B Task 7：列表页那个「新建项目」也走**岔路口**，不再直接进 5 步向导。
+   *
+   * 两个入口（左侧栏「＋」与这张表的按钮）必须落到同一屏，否则"自动采集"这条更省事的路
+   * 在其中一个入口就被藏掉了。判据在 `NewProjectPage.test.tsx`（岔路口的两个目标）。
+   */
+  it('「新建项目」去模式选择屏 /projects/new，不直接进向导', async () => {
+    stubList();
+    renderWithProviders(
+      <>
+        <ProjectListPage />
+        <Routes>
+          <Route path="*" element={<PathProbe />} />
+        </Routes>
+      </>,
+    );
+    await screen.findByText('宏宇泵业 GEO');
+
+    // 图标带 `role="img"`，可访问名是「plus 新建项目」⇒ 用正则而不是全等。
+    await userEvent.click(screen.getByRole('button', { name: /新建项目/ }));
+
+    await waitFor(() => expect(pathname()).toBe('/projects/new'));
   });
 });

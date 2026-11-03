@@ -17,10 +17,17 @@
  * - 祖先链上计算样式没有 `display: none` / `visibility: hidden`；
  * - 祖先链上计算样式没有 `pointer-events: none`（这一条是 user-event 自己抛错的那个前提）。
  *
+ * # 第二支：弹层**内**定位（`findClickablePopupItem` / `clickClickablePopupItem`）
+ * 上面那套"全文找可点项"有个前提：同名文案在页面上**只可能来自弹层**。素材库与题库那几页
+ * 打破了它——筛选 `Select` 的选项与表格里的枚举标签逐字相同（`竞品词` / `AI 生成` / `已通过`），
+ * 表格单元格同样是"可点"的（三条判据全过），于是命中数变成 2 / 5 / 10。
+ * 这不是弹层没关干净，helper 也不该静默挑一个 ⇒ 判据收窄到**展开着的那一份弹层**内部：
+ * 先按 `POPUP_ROOTS` 找出唯一一份可点的弹层根，再在它里面沿用同一套"恰好 1 个可点项"的不变量。
+ *
  * 🔴 不许用 `sleep` / `advanceTimersByTime` 绕过：那是把竞态藏起来，不是消掉。
  * ⚠ 断言消息一律 ASCII：本文件在 `i18n/no-hardcoded-strings.test.ts` 的残留扫描面里。
  */
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 
 /** antd 弹层关闭态的类名形状（`ant-dropdown-hidden` / `ant-select-dropdown-hidden` …）。 */
 const HIDDEN_POPUP_CLASS = /(^|\s)[^\s]*-hidden(\s|$)/;
@@ -69,4 +76,57 @@ export async function clickClickableMenuItem(
   text: string | RegExp,
 ): Promise<void> {
   await user.click(await findClickableMenuItem(text));
+}
+
+/**
+ * antd 各弹层族的**根节点**选择器。关闭态那份同样挂在 DOM 里（见文件头 ①），
+ * 所以这里只负责"把候选根捞出来"，可见与否一律交给 `isClickable` 判。
+ */
+const POPUP_ROOTS = [
+  '.ant-select-dropdown',
+  '.ant-dropdown',
+  '.ant-cascader-dropdown',
+  '.ant-picker-dropdown',
+].join(', ');
+
+/**
+ * 当前**展开着**的那一份弹层根节点。不是恰好一份就抛：
+ * 0 份 = 还没开（`waitFor` 会重试），>1 份 = 有弹层没关干净（被测组件的问题，不静默挑一个）。
+ */
+export function openPopup(): HTMLElement {
+  const open = [...document.querySelectorAll<HTMLElement>(POPUP_ROOTS)].filter(isClickable);
+  if (open.length === 0) throw new Error('no open popup layer yet');
+  if (open.length > 1) throw new Error(`${open.length} open popup layers (expected exactly 1)`);
+  return open[0];
+}
+
+/**
+ * 在**展开着的弹层里**等「文案匹配且可点」的项恰好出现一个。
+ *
+ * 与 `findClickableMenuItem` 的唯一区别是搜索范围：不变量（恰好 1 个）与"用 `waitFor` 而不是
+ * 先 `findByText` 再判可见"这两条纪律原样沿用。
+ */
+export async function findClickablePopupItem(text: string | RegExp): Promise<HTMLElement> {
+  return waitFor(() => {
+    const hits = within(openPopup())
+      .queryAllByText(text)
+      .filter(isClickable);
+    if (hits.length === 0) {
+      throw new Error(`no clickable item matching ${String(text)} in the open popup`);
+    }
+    if (hits.length > 1) {
+      throw new Error(
+        `${hits.length} clickable items match ${String(text)} in the open popup (expected exactly 1)`,
+      );
+    }
+    return hits[0];
+  });
+}
+
+/** 便捷写法：等弹层内可点 → 点它。 */
+export async function clickClickablePopupItem(
+  user: { click: (element: Element) => Promise<void> },
+  text: string | RegExp,
+): Promise<void> {
+  await user.click(await findClickablePopupItem(text));
 }

@@ -64,6 +64,55 @@ const fields: ResourceBundle['fields'] = {
   'rate_limit.requests_per_minute': 'Per-minute request limit',
   'rate_limit.min_interval_ms': 'Minimum request interval',
   'rate_limit.retry_max': 'Max retry count',
+
+  // M3–M7 新增的 field 值。⚠ 标签一律**单数头名词**且首末词都不以 s 结尾
+  // （`PLURAL_HEAD_KNOWN` 钉死在 1 条，加胖就红）：`status` 因此不写成 `Status`，
+  // 而是 `Record status filter`——头名词落在 filter 上，与单数谓语组合后主谓一致。
+  round_id: 'Collection round ID',
+  task_id: 'Collection task ID',
+  record_id: 'Evidence record ID',
+  insight_id: 'Answer insight ID',
+  issue_id: 'Fact-check issue ID',
+  self_rank: 'Brand mention rank',
+  alert_id: 'Alert ID',
+  action_id: 'Prescription ID',
+  template_id: 'Content template ID',
+  content_id: 'Generated content ID',
+  variant: 'Report variant',
+  engine_scope: 'Engine scope',
+  status: 'Record status filter',
+
+  // M6.5 Site Connect & Patch Bench (spec 2026-09-30, DR-52).
+  // ⚠ Same singular-head-noun rule as the block above: `review_status` is therefore
+  // `Manual review state` and not `Review status` — a trailing `status` ends in s, so
+  // `pluralHead()` would flag it and the sentence would read "Review status is …".
+  // `kinds` keeps the `… list` shape already used by `intents` / `items`.
+  patch_id: 'Site patch ID',
+  patch_title: 'Patch title',
+  patch_target_url: 'Target page URL',
+  patch_body: 'Patch body',
+  channel_kind: 'Delivery channel',
+  kinds: 'Patch kind list',
+  review_status: 'Manual review state',
+  transition: 'Patch action',
+
+  // M1.2 Knowledge base (spec 2026-10-01, DR-65).
+  // ⚠ Same singular-head-noun rule as the two blocks above (`PLURAL_HEAD_KNOWN` is pinned at 1):
+  // `kb_modules` therefore keeps the `… list` shape already used by `intents` / `items` / `kinds`.
+  kb_entry_id: 'Knowledge entry ID',
+  kb_block_id: 'Synced block ID',
+  kb_title: 'Knowledge title',
+  kb_modules: 'Knowledge module list',
+  // M1.5 Keyword library (Plan C first vertical slice, 2026-11-03).
+  // ⚠ Avoid plural head nouns: `drafts` is therefore `Keyword draft list`.
+  keyword_id: 'Keyword ID',
+  drafts: 'Keyword draft list',
+  kind: 'Keyword type',
+  intent: 'Search intent',
+  priority: 'Priority',
+  monthly_volume: 'Monthly search volume',
+  difficulty: 'Competition difficulty',
+  note: 'Note',
 };
 
 export default fields;

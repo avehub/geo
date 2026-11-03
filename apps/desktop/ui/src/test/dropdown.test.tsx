@@ -13,7 +13,13 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { clickClickableMenuItem, findClickableMenuItem, isClickable } from './dropdown';
+import {
+  clickClickableMenuItem,
+  clickClickablePopupItem,
+  findClickableMenuItem,
+  findClickablePopupItem,
+  isClickable,
+} from './dropdown';
 
 const ITEM_TEXT = 'Competitors CSV';
 
@@ -38,6 +44,22 @@ function Popup({ state, testId, onClick }: { state: 'open' | 'closed'; testId: s
 /** 命中项属于哪一份弹层（用 data-testid 认，避免断言里抄 class 名）。 */
 function popupOf(node: HTMLElement): string | null {
   return node.closest('[data-testid]')?.getAttribute('data-testid') ?? null;
+}
+
+/**
+ * 页面正文里的**同名文案**：复刻素材库/题库表格里的单元格（枚举标签与筛选项逐字相同），
+ * 可点性判据三条全过，但它不在弹层里 ⇒ "全文找可点项"必然多重命中。
+ */
+function BodyCell({ onClick }: { onClick?: () => void }) {
+  return (
+    <table>
+      <tbody>
+        <tr>
+          <td onClick={onClick}>{ITEM_TEXT}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
 }
 
 describe('test/dropdown · 可点性判据', () => {
@@ -135,5 +157,72 @@ describe('test/dropdown · clickClickableMenuItem', () => {
     await expect((async () => user.click(screen.getByText(ITEM_TEXT)))()).rejects.toThrow(
       /Found multiple elements/,
     );
+  });
+});
+
+/**
+ * 弹层内定位那一支的自证（M1.5 素材库）：筛选 `Select` 的选项与表格里的枚举标签**逐字相同**
+ * （`竞品词` / `AI 生成` / `已通过`），所以 `findClickableMenuItem` 那套"全文找可点项"在这里
+ * 必然多重命中——多的那些是表格单元格，不是"弹层没关干净"。判据只能收窄到弹层内部。
+ */
+describe('test/dropdown · findClickablePopupItem', () => {
+  it('正文里有同名文案时仍只认展开的那一份（对照组：全文判据在这里必然红）', async () => {
+    render(
+      <>
+        <BodyCell />
+        <Popup state="closed" testId="closed" />
+        <Popup state="open" testId="open" />
+      </>,
+    );
+
+    // 对照组：同一份 DOM 上全文判据报「2 个可点项」⇒ 弹层内定位不是装饰。
+    await expect(findClickableMenuItem(ITEM_TEXT)).rejects.toThrow(/2 clickable menu items/);
+    expect(popupOf(await findClickablePopupItem(ITEM_TEXT))).toBe('open');
+  });
+
+  it('没有展开的弹层时报「没有弹层」，不是「找不到文案」（文案确实在正文里）', async () => {
+    render(
+      <>
+        <BodyCell />
+        <Popup state="closed" testId="closed" />
+      </>,
+    );
+
+    expect(screen.queryAllByText(ITEM_TEXT)).toHaveLength(2);
+    await expect(findClickablePopupItem(ITEM_TEXT)).rejects.toThrow(/no open popup/);
+  });
+
+  it('弹层还没挂上来时会**等**（先起 pending，再翻开弹层）', async () => {
+    const { rerender } = render(<BodyCell />);
+
+    const pending = findClickablePopupItem(ITEM_TEXT);
+    rerender(
+      <>
+        <BodyCell />
+        <Popup state="open" testId="open" />
+      </>,
+    );
+
+    expect(popupOf(await pending)).toBe('open');
+  });
+});
+
+describe('test/dropdown · clickClickablePopupItem', () => {
+  it('点击只落在弹层里那一项上（正文里的同名单元格一次都不触发）', async () => {
+    const onBody = vi.fn();
+    const onOpen = vi.fn();
+    render(
+      <>
+        <BodyCell onClick={onBody} />
+        <Popup state="closed" testId="closed" />
+        <Popup state="open" testId="open" onClick={onOpen} />
+      </>,
+    );
+    const user = userEvent.setup();
+
+    await clickClickablePopupItem(user, ITEM_TEXT);
+
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onBody).not.toHaveBeenCalled();
   });
 });

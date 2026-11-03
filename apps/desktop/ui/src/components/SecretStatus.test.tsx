@@ -10,15 +10,17 @@
  *
  * # 为什么必须按运行时**条件渲染**
  * 真桌面端（Tauri）**确实**写系统钥匙串 ⇒ 那句话在那儿是假话。所以判据是两条对称的：
- * demo 下出现、tauri 下不出现（`DemoBanner` 同一个形状，同一个 `runtime` 常量）。
+ * demo 下出现、tauri 下不出现（`DemoModeStrip` 同一个形状，同一个 `runtime` 常量）。
  *
  * ⚠ 控制 `runtime` 只能 `vi.mock`：它是 `api/runtime.ts` 的模块级常量，改 `window` 再渲染
- * 拿到的还是模块首次求值那一个。可变盒子 + 命名空间 getter 的写法照 `DemoBanner.test.tsx`。
+ * 拿到的还是模块首次求值那一个。可变盒子 + 命名空间 getter 的写法照 `DemoModeStrip.test.tsx`。
  * ⚠ 盒子翻成 `'demo'` 时，`api/client.ts` 的分派也跟着走 demo 假后端（同一个常量既是
  * 文案开关也是路由开关）⇒ 那条用例跑的是**真的 demo 路径**，不是 stub。
  */
-import { screen } from '@testing-library/react';
+import { useState } from 'react';
+import { screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
 
 import SecretStatusPanel from './SecretStatus';
 import enUS from '../i18n/locales/en-US';
@@ -73,6 +75,44 @@ describe('SecretStatus · 演示模式不写系统钥匙串（#23）', () => {
     // ⚠ 必须 await：那句提示不依赖查询状态（一挂载就在），而状态标签要等 `secret_status` 回来，
     // 同步 getByText 会撞上「读取中」那一帧。
     expect(await screen.findByText(zhCN.settings.secret.notConfigured)).toBeInTheDocument();
+  });
+
+  it('切换服务商后清空上一家的 Key 输入与测试结果', async () => {
+    mockInvoke.stubAlways('llm_provider_test', () => ({
+      ok: true,
+      model: 'deepseek-chat',
+      latency_ms: 120,
+      prompt_tokens: 10,
+      completion_tokens: 5,
+      cost_cny: 0,
+      message: null,
+    }));
+    function Harness() {
+      const [provider, setProvider] = useState('deep_seek');
+      return (
+        <>
+          <button type="button" onClick={() => setProvider('kimi')}>
+            switch-provider
+          </button>
+          <SecretStatusPanel provider={provider} />
+        </>
+      );
+    }
+
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+
+    const input = await screen.findByPlaceholderText(zhCN.settings.secret.placeholder);
+    await user.type(input, 'sk-old-provider');
+    await user.click(screen.getByRole('button', { name: new RegExp(zhCN.settings.secret.test) }));
+    expect(await screen.findByText('deepseek-chat')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'switch-provider' }));
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(zhCN.settings.secret.placeholder)).toHaveValue(''),
+    );
+    expect(screen.queryByText('deepseek-chat')).not.toBeInTheDocument();
   });
 
   it('tauri 运行时：那句话不出现（真桌面端确实写钥匙串，渲染它就是假话）', async () => {

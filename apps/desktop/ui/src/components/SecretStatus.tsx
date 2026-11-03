@@ -29,7 +29,14 @@ export interface SecretStatusPanelProps {
  * 第三处同类泄漏，但它不是 `IpcError`（没有 `code` 可查词典），修它要动 `llm_provider_test`
  * 的返回契约 ⇒ 超出本任务写集，已记进 task-8-report.md 的 backlog。
  */
-export default function SecretStatusPanel({ provider }: SecretStatusPanelProps) {
+export default function SecretStatusPanel(props: SecretStatusPanelProps) {
+  // `key=provider` 强制重挂载：切换服务商后，上一家的 Key 输入、测试结果与失败原因都不能复用
+  // （否则未保存的 Key 会被写进新 provider 的钥匙串位）。用重挂载而不是 effect 里 setState，
+  // 既避免级联渲染，也保证 `secret_status` 查询随 key 一起重建。
+  return <SecretStatusPanelInner key={props.provider} {...props} />;
+}
+
+function SecretStatusPanelInner({ provider }: SecretStatusPanelProps) {
   const { message } = App.useApp();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -100,7 +107,7 @@ export default function SecretStatusPanel({ provider }: SecretStatusPanelProps) 
         粘一把真 Key 点保存，会以为它进了钥匙串。
 
         🔴 必须按 `runtime` 条件渲染：真桌面端（Tauri）**确实**写系统钥匙串，在那儿渲染它就是假话。
-        开关与形状都照 `components/DemoBanner.tsx`（同一个模块级常量、同一种常驻 `Alert`，
+        开关与形状都照运行时门禁那一族（`components/ui/DemoModeStrip.tsx`：同一个模块级常量、同一种常驻条，
         不用 Modal / message：它是背景事实，不许遮挡操作）。
       */}
       {runtime === 'demo' && <Alert type="info" showIcon message={t('demo.secretNoKeychain')} />}

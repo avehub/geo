@@ -1,56 +1,82 @@
-import { useState } from 'react';
-import {
-  Alert,
-  App,
-  Button,
-  Card,
-  Col,
-  Divider,
-  Input,
-  InputNumber,
-  Row,
-  Select,
-  Space,
-  Switch,
-  Typography,
-} from 'antd';
-import { SaveOutlined } from '@ant-design/icons';
+/**
+ * 设置页的**数据与保存态**持有者（Plan B Task 2 起只剩这一层壳，布局在 `pages/settings/`）。
+ *
+ * # 草稿与保存语义（spec DR-28）
+ * 所有编辑先落在本地草稿上；`general` / `collection` / `storage` 三段 500ms 防抖后**自动**整包写库，
+ * `models` 段由分段自己的保存条**显式**提交。两条路都走同一个 mutation：
+ * `settings_update` 是整包写，半包提交会把没改的段落冲掉。
+ *
+ * # 不认识的 `:section` 回落 `general`
+ * 手打一个 `/settings/nope` 不该白屏也不该 404（slug 清单在 `pages/settings/sections.ts`）。
+ */
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { App, Card, Alert } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router-dom';
 
 import * as client from '../api/client';
 import { describeIpcError } from '../api/errors';
-import type { AppSettings, ConcurrencyConfig, ModelConfig, RateLimitConfig } from '../api/types';
-import ProviderSelect from '../components/ProviderSelect';
-import ProxyForm from '../components/ProxyForm';
-import SecretStatusPanel from '../components/SecretStatus';
+import type { AppSettings, PrivacyConfig, StorageConfig } from '../api/types';
+import SettingsLayout from './settings/SettingsLayout';
+import {
+  AUTO_SAVE_DEBOUNCE_MS,
+  DEFAULT_SETTINGS_SECTION,
+  isAutoSaveSection,
+  isSettingsSection,
+  type SaveState,
+  type SettingsSection,
+} from './settings/sections';
 
-// 三个段落各给一个补丁函数：`InputNumber` 清空时回调 null，用 `??` 回落到默认值，
-// 比动态键 + 类型强转安全，也不会把 null 写进设置。
-function patchConcurrency(settings: AppSettings, patch: Partial<ConcurrencyConfig>): AppSettings {
-  return { ...settings, concurrency: { ...settings.concurrency, ...patch } };
+/** Rust 侧 E-48 之前只有六段设置；缺的两段用界面默认值补齐，绝不让渲染期崩。 */
+const DEFAULT_PRIVACY: PrivacyConfig = {
+  share_entity_card: true,
+  share_prompts: true,
+  share_crawled_text: true,
+  share_diagnostics: false,
+};
+const DEFAULT_STORAGE: StorageConfig = { last_export_dir: null };
+
+function normalizeSettings(raw: AppSettings): AppSettings {
+  return {
+    ...raw,
+    model: {
+      ...raw.model,
+      // `protocol` 也是 Plan B 新增字段；Rust 旧版缺省时回落到中立档。
+      protocol: raw.model?.protocol ?? 'openai_compat',
+    },
+    privacy: {
+      share_entity_card: raw.privacy?.share_entity_card ?? DEFAULT_PRIVACY.share_entity_card,
+      share_prompts: raw.privacy?.share_prompts ?? DEFAULT_PRIVACY.share_prompts,
+      share_crawled_text: raw.privacy?.share_crawled_text ?? DEFAULT_PRIVACY.share_crawled_text,
+      share_diagnostics: raw.privacy?.share_diagnostics ?? DEFAULT_PRIVACY.share_diagnostics,
+    },
+    storage: {
+      last_export_dir: raw.storage?.last_export_dir ?? DEFAULT_STORAGE.last_export_dir,
+    },
+  };
 }
 
-function patchRateLimit(settings: AppSettings, patch: Partial<RateLimitConfig>): AppSettings {
-  return { ...settings, rate_limit: { ...settings.rate_limit, ...patch } };
-}
-
-function patchModel(settings: AppSettings, patch: Partial<ModelConfig>): AppSettings {
-  return { ...settings, model: { ...settings.model, ...patch } };
-}
-
-/**
- * 设置页：模型服务商与 API Key、代理、采集并发与频控、语言与通知。
- *
- * 所有编辑都先在本地草稿上进行，点「保存设置」才整包写库——设置是段落化存储，
- * 半包提交会把没改的段落冲掉。代理与超时影响的是已构造好的 HTTP 客户端，
- * 保存后提示重启生效（P0-B 接上热重建）。
- */
 export default function SettingsPage() {
+  const { section: sectionParam } = useParams();
+  const section = isSettingsSection(sectionParam) ? sectionParam : DEFAULT_SETTINGS_SECTION;
   const { message } = App.useApp();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<AppSettings | null>(null);
+  /**
+   * 草稿属于**哪一段**。自动保存只看它，不看当前 `section`：
+   * - 在 models 改完切到 general 时，草稿仍属于 models ⇒ 不会被 general 的自动保存顺带提交；
+   * - 在 general 改完切到 models 时，草稿仍属于 general ⇒ 防抖到期仍会保存，不会因切段丢改动。
+   */
+  const [dirtySection, setDirtySection] = useState<SettingsSection | null>(null);
+  /** models 段只要有一次未显式保存的编辑，整包自动保存就必须暂停（否则半填的模型配置会被写库）。 */
+  const [hasExplicitDirty, setHasExplicitDirty] = useState(false);
+  const draftRef = useRef<AppSettings | null>(null);
+  const dirtySectionRef = useRef<SettingsSection | null>(null);
+  const hasExplicitDirtyRef = useRef(false);
+  const versionRef = useRef(0);
+  const mountedRef = useRef(true);
 
   const providersQuery = useQuery({
     queryKey: ['llm-providers'],
@@ -62,15 +88,122 @@ export default function SettingsPage() {
     queryFn: () => client.settingsGet(),
   });
 
+  function clearDraft() {
+    draftRef.current = null;
+    dirtySectionRef.current = null;
+    hasExplicitDirtyRef.current = false;
+    versionRef.current += 1;
+    setDraft(null);
+    setDirtySection(null);
+    setHasExplicitDirty(false);
+  }
+
+  function markDraft(next: AppSettings) {
+    // 从自动保存段切到 models 时，先把旧 draft（只含自动段改动）flush 掉，再接收 models 编辑；
+    // 否则新 dirtySection 变成 models，旧改动会随着取消定时器一起丢失。
+    if (
+      dirtySectionRef.current !== null &&
+      dirtySectionRef.current !== section &&
+      isAutoSaveSection(dirtySectionRef.current) &&
+      !hasExplicitDirtyRef.current &&
+      draftRef.current !== null
+    ) {
+      void client.settingsUpdate(draftRef.current).catch(() => {
+        // 离开自动保存段的 flush 失败不阻塞用户继续编辑；下次进入仍以库里值为准。
+      });
+    }
+    if (section === 'models') hasExplicitDirtyRef.current = true;
+    versionRef.current += 1;
+    draftRef.current = next;
+    dirtySectionRef.current = section;
+    setDraft(next);
+    setDirtySection(section);
+    if (section === 'models') setHasExplicitDirty(true);
+  }
+
+  const saveVersions = useRef(
+    new WeakMap<object, { version: number; section: SettingsSection | null }>(),
+  );
+
   const saveMutation = useMutation({
-    mutationFn: (settings: AppSettings) => client.settingsUpdate(settings),
-    onSuccess: (saved) => {
+    mutationFn: (variables: { settings: AppSettings }) => client.settingsUpdate(variables.settings),
+    onSuccess: (saved, variables) => {
+      if (!mountedRef.current) return;
       queryClient.setQueryData(['settings'], saved);
-      setDraft(null);
+      // 只有一个原因可以清空草稿：这次保存的正是**当前**草稿，且保存期间没有新的编辑。
+      // 否则（例如第一次自动保存 pending 时用户又改了一次）清空会把新编辑静默冲掉。
+      const savedVersion = saveVersions.current.get(variables);
+      if (
+        savedVersion !== undefined &&
+        dirtySectionRef.current === savedVersion.section &&
+        versionRef.current === savedVersion.version
+      ) {
+        clearDraft();
+      }
       message.success(t('settings.page.saved'));
     },
-    onError: (error) => message.error(describeIpcError(error, t)),
+    onError: (error) => {
+      if (mountedRef.current) message.error(describeIpcError(error, t));
+    },
   });
+
+  // `mutate` 在 TanStack Query v5 里是稳定引用 ⇒ 可以直接进依赖数组，
+  // 否则每次渲染都会重置防抖计时器，自动保存永远不会触发。
+  const { mutate: saveSettings } = saveMutation;
+
+  function saveNow() {
+    if (draftRef.current === null || dirtySectionRef.current === null) return;
+    const variables = { settings: draftRef.current };
+    saveVersions.current.set(variables, {
+      version: versionRef.current,
+      section: dirtySectionRef.current,
+    });
+    saveSettings(variables);
+  }
+
+  const autoSaveNow = useCallback(() => {
+    if (
+      draftRef.current === null ||
+      dirtySectionRef.current === null ||
+      !isAutoSaveSection(dirtySectionRef.current)
+    ) {
+      return;
+    }
+    const variables = { settings: draftRef.current };
+    saveVersions.current.set(variables, {
+      version: versionRef.current,
+      section: dirtySectionRef.current,
+    });
+    saveSettings(variables);
+  }, [saveSettings]);
+
+  const autoSave =
+    dirtySection !== null && isAutoSaveSection(dirtySection) && !hasExplicitDirty;
+
+  useEffect(() => {
+    if (!autoSave || draft === null) return undefined;
+    const timer = setTimeout(autoSaveNow, AUTO_SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [autoSave, draft, autoSaveNow]);
+
+  // 离开设置页时，自动保存段的防抖可能还没到期。effect cleanup 里直接 fire-and-forget
+  // 提交一次，避免用户“改完马上点侧栏”时最后 500ms 的修改静默丢失。models 段不在此列。
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (
+        !hasExplicitDirtyRef.current &&
+        draftRef.current !== null &&
+        dirtySectionRef.current !== null &&
+        isAutoSaveSection(dirtySectionRef.current)
+      ) {
+        void client.settingsUpdate(draftRef.current).catch(() => {
+          // 卸载路径没有 UI 可提示；失败时不阻塞离开，下一次进入仍以库里值为准。
+        });
+      }
+    };
+  }, []);
 
   if (settingsQuery.isError) {
     return (
@@ -83,275 +216,28 @@ export default function SettingsPage() {
     );
   }
 
-  const settings = draft ?? settingsQuery.data ?? null;
+  const settings =
+    draft ?? (settingsQuery.data === undefined ? null : normalizeSettings(settingsQuery.data));
   const providers = providersQuery.data ?? [];
 
   if (settings === null) {
     return <Card loading />;
   }
 
-  const patch = (next: AppSettings) => setDraft(next);
+  const saveState: SaveState = {
+    dirty: draft !== null,
+    saving: saveMutation.isPending,
+    save: saveNow,
+    discard: clearDraft,
+  };
 
   return (
-    <div>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
-        {t('settings.page.title')}
-      </Typography.Title>
-
-      <Row gutter={16}>
-        <Col span={14}>
-          <Card size="small" title={t('settings.page.modelCard')} style={{ marginBottom: 16 }}>
-            <ProviderSelect
-              providers={providers}
-              value={settings.model.provider}
-              baseUrl={settings.model.base_url ?? ''}
-              onBaseUrlChange={(baseUrl) =>
-                patch({
-                  ...settings,
-                  model: {
-                    ...settings.model,
-                    base_url: baseUrl.trim() === '' ? null : baseUrl.trim(),
-                  },
-                })
-              }
-              onChange={(provider) =>
-                patch({
-                  ...settings,
-                  model: {
-                    ...settings.model,
-                    provider,
-                    model: null,
-                    // 切走「自定义」就清掉地址覆盖：后端对预设服务商同样认这个字段，
-                    // 留着会让请求悄悄走到用户早就切掉的地址上。
-                    base_url: provider === 'custom' ? (settings.model.base_url ?? null) : null,
-                  },
-                })
-              }
-            />
-
-            <Divider style={{ margin: '16px 0' }} />
-
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              <div>
-                <label htmlFor="settings-model-name" style={{ marginRight: 8 }}>
-                  {t('settings.page.modelName')}
-                </label>
-                <Input
-                  id="settings-model-name"
-                  style={{ maxWidth: 320 }}
-                  value={settings.model.model ?? ''}
-                  placeholder={t('settings.page.modelNamePlaceholder')}
-                  onChange={(event) =>
-                    patch({
-                      ...settings,
-                      model: {
-                        ...settings.model,
-                        model: event.target.value === '' ? null : event.target.value,
-                      },
-                    })
-                  }
-                />
-              </div>
-
-              <Space size={24} wrap>
-                <div>
-                  <label htmlFor="settings-temperature" style={{ marginRight: 8 }}>
-                    {t('settings.page.temperature')}
-                  </label>
-                  <InputNumber
-                    id="settings-temperature"
-                    min={0}
-                    max={2}
-                    step={0.1}
-                    value={settings.model.temperature}
-                    onChange={(value) =>
-                      patch(patchModel(settings, { temperature: value ?? 0.3 }))
-                    }
-                  />
-                </div>
-                <div>
-                  <label htmlFor="settings-timeout" style={{ marginRight: 8 }}>
-                    {t('settings.page.timeoutSeconds')}
-                  </label>
-                  <InputNumber
-                    id="settings-timeout"
-                    min={5}
-                    max={600}
-                    value={settings.model.timeout_secs}
-                    onChange={(value) =>
-                      patch(patchModel(settings, { timeout_secs: value ?? 60 }))
-                    }
-                  />
-                </div>
-              </Space>
-            </Space>
-          </Card>
-
-          <Card size="small" title={t('settings.page.proxyCard')} style={{ marginBottom: 16 }}>
-            <ProxyForm
-              value={settings.proxy}
-              onChange={(proxy) => patch({ ...settings, proxy })}
-            />
-          </Card>
-
-          <Card size="small" title={t('settings.page.crawlerCard')} style={{ marginBottom: 16 }}>
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-              {t('settings.page.crawlerHint')}
-            </Typography.Paragraph>
-            <Space size={24} wrap>
-              <div>
-                <label htmlFor="settings-max-parallel" style={{ marginRight: 8 }}>
-                  {t('settings.page.maxParallel')}
-                </label>
-                <InputNumber
-                  id="settings-max-parallel"
-                  min={1}
-                  max={16}
-                  value={settings.concurrency.max_parallel}
-                  onChange={(value) =>
-                    patch(patchConcurrency(settings, { max_parallel: value ?? 3 }))
-                  }
-                />
-              </div>
-              <div>
-                <label htmlFor="settings-queue-size" style={{ marginRight: 8 }}>
-                  {t('settings.page.queueSize')}
-                </label>
-                <InputNumber
-                  id="settings-queue-size"
-                  min={1}
-                  max={10000}
-                  value={settings.concurrency.queue_size}
-                  onChange={(value) =>
-                    patch(patchConcurrency(settings, { queue_size: value ?? 200 }))
-                  }
-                />
-              </div>
-              <div>
-                <label htmlFor="settings-rpm" style={{ marginRight: 8 }}>
-                  {t('settings.page.requestsPerMinute')}
-                </label>
-                <InputNumber
-                  id="settings-rpm"
-                  min={1}
-                  max={600}
-                  value={settings.rate_limit.requests_per_minute}
-                  onChange={(value) =>
-                    patch(patchRateLimit(settings, { requests_per_minute: value ?? 20 }))
-                  }
-                />
-              </div>
-              <div>
-                <label htmlFor="settings-interval" style={{ marginRight: 8 }}>
-                  {t('settings.page.minIntervalMs')}
-                </label>
-                <InputNumber
-                  id="settings-interval"
-                  min={0}
-                  max={60000}
-                  step={100}
-                  value={settings.rate_limit.min_interval_ms}
-                  onChange={(value) =>
-                    patch(patchRateLimit(settings, { min_interval_ms: value ?? 1500 }))
-                  }
-                />
-              </div>
-              <div>
-                <label htmlFor="settings-retry" style={{ marginRight: 8 }}>
-                  {t('settings.page.retryMax')}
-                </label>
-                <InputNumber
-                  id="settings-retry"
-                  min={0}
-                  max={10}
-                  value={settings.rate_limit.retry_max}
-                  onChange={(value) =>
-                    patch(patchRateLimit(settings, { retry_max: value ?? 3 }))
-                  }
-                />
-              </div>
-            </Space>
-          </Card>
-        </Col>
-
-        <Col span={10}>
-          <Card size="small" title="API Key" style={{ marginBottom: 16 }}>
-            <SecretStatusPanel provider={settings.model.provider} />
-          </Card>
-
-          <Card size="small" title={t('settings.page.languageCard')} style={{ marginBottom: 16 }}>
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              <div>
-                <label htmlFor="settings-language" style={{ marginRight: 8 }}>
-                  {t('settings.page.uiLanguage')}
-                </label>
-                <Select
-                  id="settings-language"
-                  style={{ width: 200 }}
-                  value={settings.language}
-                  options={[{ value: 'zh_cn', label: t('settings.page.languageZhCn') }]}
-                  onChange={(language) => patch({ ...settings, language })}
-                />
-                <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-                  {t('settings.page.languageHint')}
-                </Typography.Text>
-              </div>
-              <Space size={24} wrap>
-                <Space size={8}>
-                  <Switch
-                    id="settings-notify-finish"
-                    checked={settings.notify.on_finish}
-                    onChange={(onFinish) =>
-                      patch({ ...settings, notify: { ...settings.notify, on_finish: onFinish } })
-                    }
-                  />
-                  <label htmlFor="settings-notify-finish">{t('settings.page.notifyOnFinish')}</label>
-                </Space>
-                <Space size={8}>
-                  <Switch
-                    id="settings-notify-risk"
-                    checked={settings.notify.on_risk}
-                    onChange={(onRisk) =>
-                      patch({ ...settings, notify: { ...settings.notify, on_risk: onRisk } })
-                    }
-                  />
-                  <label htmlFor="settings-notify-risk">{t('settings.page.notifyOnRisk')}</label>
-                </Space>
-                <Space size={8}>
-                  <Switch
-                    id="settings-notify-sound"
-                    checked={settings.notify.sound}
-                    onChange={(sound) =>
-                      patch({ ...settings, notify: { ...settings.notify, sound } })
-                    }
-                  />
-                  <label htmlFor="settings-notify-sound">{t('settings.page.notifySound')}</label>
-                </Space>
-              </Space>
-            </Space>
-          </Card>
-
-          <Space>
-            <Button
-              type="primary"
-              icon={<SaveOutlined />}
-              loading={saveMutation.isPending}
-              disabled={draft === null}
-              onClick={() => saveMutation.mutate(settings)}
-            >
-              {t('settings.page.save')}
-            </Button>
-            <Button disabled={draft === null} onClick={() => setDraft(null)}>
-              {t('settings.page.discard')}
-            </Button>
-            {draft !== null && (
-              <Typography.Text type="warning" style={{ fontSize: 12 }}>
-                {t('settings.page.unsaved')}
-              </Typography.Text>
-            )}
-          </Space>
-        </Col>
-      </Row>
-    </div>
+    <SettingsLayout
+      section={section}
+      settings={settings}
+      providers={providers}
+      patch={markDraft}
+      saveState={saveState}
+    />
   );
 }

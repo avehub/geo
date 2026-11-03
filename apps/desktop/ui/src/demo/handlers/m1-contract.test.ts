@@ -185,8 +185,16 @@ const CASES: Case[] = [
     cmd: 'entity_card_update_field',
     keys: ['project_id', 'path', 'value', 'status', 'note'],
     run: ({ client }) =>
-      client.entityCardUpdateField(SEED_ACTIVE_PROJECT_ID, 'price_range', 'POA', 'official', null),
-    check: (result) => expect(asObject(result).field_path).toBe('price_range'),
+      // 🔴 样例字段本轮换成 `products`：`price_range` 已从实体卡迁出（报价并进
+      // `ProductSpec.price`，spec 2026-10-01 · DR-60），拿它当样例会报 `unknown_field`。
+      client.entityCardUpdateField(
+        SEED_ACTIVE_PROJECT_ID,
+        'products',
+        [{ name: 'Demo Product', params: [], price: 'POA', note: null }],
+        'official',
+        null,
+      ),
+    check: (result) => expect(asObject(result).field_path).toBe('products'),
   },
   {
     cmd: 'entity_card_revisions',

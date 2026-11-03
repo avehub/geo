@@ -8,6 +8,7 @@ import type { TFunction } from 'i18next';
 
 import * as client from '../api/client';
 import { describeErrorCode, describeIpcError } from '../api/errors';
+import { runtime } from '../api/runtime';
 import type {
   GenerateOptions,
   IntentCategory,
@@ -18,6 +19,7 @@ import type {
 } from '../api/types';
 import { INTENT_VALUES, PROMPT_SOURCE_VALUES } from '../api/types';
 import CsvToolbar from '../components/CsvToolbar';
+import PageHeader from '../components/ui/PageHeader';
 import GeneratePanel from '../components/GeneratePanel';
 import PromptItemEditor from '../components/PromptItemEditor';
 import PromptTable from '../components/PromptTable';
@@ -131,7 +133,8 @@ export default function PromptSetPage() {
     enabled: projectId !== '',
   });
 
-  const activeId = listQuery.data?.[0]?.id ?? null;
+  const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
+  const activeId = selectedSetId ?? listQuery.data?.[0]?.id ?? null;
 
   const setQuery = useQuery({
     queryKey: ['prompt-set', activeId],
@@ -143,6 +146,28 @@ export default function PromptSetPage() {
     void queryClient.invalidateQueries({ queryKey: ['prompt-sets', projectId] });
     if (activeId) void queryClient.invalidateQueries({ queryKey: ['prompt-set', activeId] });
   }, [activeId, projectId, queryClient]);
+
+  /** 切换题库时，旧的条目选择与去重摘要都不能带到新题库。 */
+  const changeActiveSet = useCallback((nextId: string) => {
+    setSelectedSetId(nextId);
+    setSelectedKeys([]);
+    setDedupeSummary(null);
+    setEditor(null);
+  }, []);
+
+  /** CSV 导入会整包替换当前题库，选中项同样失效；导出不会走这里。 */
+  const handleImported = useCallback(() => {
+    setSelectedKeys([]);
+    setDedupeSummary(null);
+    setEditor(null);
+    refresh();
+  }, [refresh]);
+
+  /** 任何筛选变化都清空选区：批量删除只作用于用户当前看得见的行。 */
+  const updateFilter = (apply: () => void) => {
+    apply();
+    setSelectedKeys([]);
+  };
 
   /** 条目写回缓存并刷新版本摘要：内容哈希与样本量分级都由后端重算，前端不自己拼。 */
   const applySet = useCallback(
@@ -159,6 +184,7 @@ export default function PromptSetPage() {
       // 新快照要立刻成为「当前题库」，否则列表还没刷新，页面会停在旧版本上，
       // 用户会以为点了没反应；setQueryData 也避免旧缓存伪装成「刚生成的新版本」
       queryClient.setQueryData(['prompt-set', promptSet.id], promptSet);
+      changeActiveSet(promptSet.id);
       void queryClient.invalidateQueries({ queryKey: ['prompt-sets', projectId] });
       message.success(
         t('prompt.promptSet.generated', {
@@ -166,8 +192,6 @@ export default function PromptSetPage() {
           version: promptSet.version,
         }),
       );
-      setDedupeSummary(null);
-      setSelectedKeys([]);
     },
     onError: (error) => message.error(describeIpcError(error, t)),
   });
@@ -222,6 +246,11 @@ export default function PromptSetPage() {
   });
 
   const promptSet = setQuery.data ?? null;
+  /** 只把当前题库里存在的 id 当作有效选中项；切换/删除题库后的旧 id 不再参与批量删除。 */
+  const selectedKeysInSet = useMemo(() => {
+    const ids = new Set((promptSet?.items ?? []).map((item) => item.id));
+    return selectedKeys.filter((id) => ids.has(id));
+  }, [promptSet, selectedKeys]);
   const items = useMemo(() => {
     const all = promptSet?.items ?? [];
     return all.filter(
@@ -304,16 +333,27 @@ export default function PromptSetPage() {
 
   return (
     <div>
-      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t('prompt.promptSet.title')}
-        </Typography.Title>
-        <CsvToolbar
-          setId={activeId ?? ''}
-          filenamePrefix={promptSet?.label ?? 'geo'}
-          onChanged={refresh}
-        />
-      </Space>
+      <PageHeader
+        title={t('prompt.promptSet.title')}
+        actions={
+          <CsvToolbar
+            setId={activeId ?? ''}
+            filenamePrefix={promptSet?.label ?? 'geo'}
+            onChanged={handleImported}
+          />
+        }
+      />
+
+      {/*
+        演示模式不跑广告法红线扫描（与 E-1 同一条取舍）。这是**如实说明**，不是免责声明：
+        `prompt_item_add/update` 在 demo 里只做 Rust `PromptItem::validate` 的镜像校验，
+        真正的 `compliance::check` 在 Rust 侧。文案复用素材库同一条词典键，避免第二份措辞漂移。
+      */}
+      {runtime === 'demo' && (
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+          {t('library.faq.complianceUnchecked')}
+        </Typography.Paragraph>
+      )}
 
       <GeneratePanel
         defaultIndustry={projectQuery.data?.project?.industry ?? 'b2b_manufacturing'}
@@ -332,6 +372,17 @@ export default function PromptSetPage() {
           <Card size="small" style={{ marginBottom: 12 }}>
             <Space size={16} wrap>
               <Typography.Text strong>{promptSet.label}</Typography.Text>
+              <Select
+                size="small"
+                style={{ minWidth: 240 }}
+                aria-label={t('prompt.promptSet.selectAria')}
+                value={activeId ?? undefined}
+                onChange={changeActiveSet}
+                options={(listQuery.data ?? []).map((set) => ({
+                  value: set.id,
+                  label: `${set.label} (v${set.version} · ${set.item_count})`,
+                }))}
+              />
               <Tag color="blue">{t('prompt.promptSet.version', { version: promptSet.version })}</Tag>
               <Typography.Text type="secondary">
                 {t('prompt.promptSet.itemCount', { total: promptSet.items.length })}
@@ -379,7 +430,9 @@ export default function PromptSetPage() {
                 optionType="button"
                 size="small"
                 value={intentFilter}
-                onChange={(event) => setIntentFilter(event.target.value as IntentFilter)}
+                onChange={(event) =>
+                  updateFilter(() => setIntentFilter(event.target.value as IntentFilter))
+                }
                 options={[
                   {
                     value: 'all',
@@ -399,7 +452,7 @@ export default function PromptSetPage() {
                 aria-label={t('prompt.promptSet.groupFilterAria')}
                 value={groupFilter}
                 options={groupOptions}
-                onChange={setGroupFilter}
+                onChange={(value) => updateFilter(() => setGroupFilter(value))}
               />
               <Select
                 size="small"
@@ -407,7 +460,7 @@ export default function PromptSetPage() {
                 aria-label={t('prompt.promptSet.sourceFilterAria')}
                 value={sourceFilter}
                 options={sourceOptions}
-                onChange={(value) => setSourceFilter(value as PromptSource | 'all')}
+                onChange={(value) => updateFilter(() => setSourceFilter(value as PromptSource | 'all'))}
               />
               <Button
                 size="small"
@@ -421,12 +474,12 @@ export default function PromptSetPage() {
                 size="small"
                 danger
                 icon={<DeleteOutlined />}
-                disabled={selectedKeys.length === 0}
+                disabled={selectedKeysInSet.length === 0}
                 loading={deleteMutation.isPending}
-                onClick={() => confirmDelete(selectedKeys)}
+                onClick={() => confirmDelete(selectedKeysInSet)}
               >
-                {selectedKeys.length > 0
-                  ? t('prompt.promptSet.deleteSelectedCount', { selected: selectedKeys.length })
+                {selectedKeysInSet.length > 0
+                  ? t('prompt.promptSet.deleteSelectedCount', { selected: selectedKeysInSet.length })
                   : t('prompt.promptSet.deleteSelected')}
               </Button>
               <Typography.Text type="secondary">
@@ -439,7 +492,7 @@ export default function PromptSetPage() {
             <PromptTable
               items={items}
               loading={setQuery.isFetching}
-              selectedRowKeys={selectedKeys}
+              selectedRowKeys={selectedKeysInSet}
               onSelectionChange={setSelectedKeys}
               onWeightChange={(item, weight) => itemMutation.mutate({ item: { ...item, weight } })}
               onRepeatCountChange={(item, repeatCount) =>

@@ -18,6 +18,11 @@ const entity = {
     founded_year: '成立年份',
     qualifications: '资质认证',
     products: '产品与参数',
+    // 🔴 下面四个是**已退出实体卡**的字段标签（spec 2026-10-01 · DR-59 / DR-62）：
+    // 报价并进 `products[].price`，案例 / 差异化卖点 / 官方口径迁进知识库。
+    // 标签**刻意保留**：真后端的 `ALL_FIELDS` 仍是 11 个，历史修订留痕与事实核查记录里
+    // 还会出现这些 `field_path`，查不到标签就会在界面上露出裸记号。
+    // ⚠ 因此 `entity.fields.*` 的键集 ⊋ `ENTITY_FIELDS`（7 项），B-4 只断言单向包含。
     price_range: '价格区间',
     service_regions: '服务地域',
     cases: '客户案例',
@@ -83,8 +88,7 @@ const entity = {
     title: '品牌实体卡',
     loadFailed: '加载实体卡失败',
     fieldUpdated: '字段已更新，修订已留痕',
-    empty: '还没有实体卡，先用上方「自动建档」抓一次官网，或手工逐字段填写',
-    createBlank: '手工新建空白实体卡',
+    empty: '还没有实体卡，请先用上方「自动建档」抓取官网；这不是错误，填网址即可生成。',
     completeness: '字段完整率',
     sourceAi: 'AI 抽取：{{provider}} {{model}}',
     sourceManual: '人工录入',

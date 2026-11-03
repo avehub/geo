@@ -12,8 +12,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
-import type { ProviderInfo } from '../api/types';
+import type { ModelProtocol, ProviderInfo } from '../api/types';
+import { MODEL_PROTOCOL_VALUES } from '../api/types';
 import { i18n } from '../i18n';
 import enUS from '../i18n/locales/en-US';
 import zhCN from '../i18n/locales/zh-CN';
@@ -31,11 +33,18 @@ const UI_SOURCES = import.meta.glob(['../**/*.{ts,tsx}', '!../**/*.test.*'], {
 const ZH_SENTINEL = 'ZH-SENTINEL';
 
 /**
- * 后端 `LlmProvider::as_str()` 的 7 个稳定 id（`crates/geo-llm/src/provider.rs`）。
+ * 厂商的稳定 id（Plan B Task 4 起 **12** 个 = Rust 的 7 个 + demo 独有的 5 家中转站）。
+ *
+ * - 前 6 个 + `custom` 逐字取自 `crates/geo-llm/src/provider.rs` 的 `LlmProvider::as_str()`；
+ * - 后 5 个（`openrouter` / `siliconflow` / `302ai` / `yunwu` / `deepbricks`）是 **DR-33 的裁定**：
+ *   中转站作为新 provider id 进预设表，**Rust 侧本轮零改动** ⇒ 桌面端今天会少这 5 项，
+ *   差异登记在 `docs/superpowers/specs/2026-09-23-demo-vs-backend-known-divergences.md`
+ *   （E-47 那一族，与 M3–M7 那 20 条 demo 独有命令同性质）。
  *
  * 这里手写而不是运行时解析 Rust 源码：id 集由契约冻结，加一个 provider 是计划级决定，
  * 且**新增 id 时 UI 的失败形态是安全的**（回退成 id 本身，不会泄漏中文）。
- * 下面第一条用例钉住"集合就是这 7 个、两侧都非空"，防空跑也防漏建词条。
+ * 下面第一条用例钉住"集合就是这 12 个、两侧都非空"，防空跑也防漏建词条。
+ * 🔴 **顺序**也钉住（`seed.test.ts` 的漂移守卫钉的是同一件事）：6 家国内厂商 → 5 家中转站 → `custom` 末位。
  */
 const STABLE_PROVIDER_IDS = [
   'deep_seek',
@@ -44,8 +53,16 @@ const STABLE_PROVIDER_IDS = [
   'ali_bailian',
   'baidu_qianfan',
   'tencent_hunyuan',
+  'openrouter',
+  'siliconflow',
+  '302ai',
+  'yunwu',
+  'deepbricks',
   'custom',
 ] as const;
+
+/** 5 家中转站：demo 独有、Rust 侧还没有对应枚举成员（DR-33）。 */
+const RELAY_PROVIDER_IDS = ['openrouter', 'siliconflow', '302ai', 'yunwu', 'deepbricks'] as const;
 
 function makeProvider(provider: string): ProviderInfo {
   return {
@@ -59,8 +76,14 @@ function makeProvider(provider: string): ProviderInfo {
 }
 
 const noop = () => undefined;
+const noopProtocol = (_protocol: ModelProtocol) => undefined;
 
-function renderSelect(providers: ProviderInfo[], value: string, locale?: 'zh-CN' | 'en-US') {
+function renderSelect(
+  providers: ProviderInfo[],
+  value: string,
+  locale?: 'zh-CN' | 'en-US',
+  protocol: ModelProtocol = 'openai_compat',
+) {
   return renderWithProviders(
     <ProviderSelect
       providers={providers}
@@ -68,14 +91,19 @@ function renderSelect(providers: ProviderInfo[], value: string, locale?: 'zh-CN'
       onChange={noop}
       baseUrl=""
       onBaseUrlChange={noop}
+      protocol={protocol}
+      onProtocolChange={noopProtocol}
     />,
     { locale },
   );
 }
 
-describe('ProviderSelect · 7 个稳定 id 的词条', () => {
-  it('防空跑：id 集就是这 7 个，且 settings.providers 下没有多余或缺失的键', () => {
-    expect(STABLE_PROVIDER_IDS).toHaveLength(7);
+describe('ProviderSelect · 12 个稳定 id 的词条', () => {
+  it('防空跑：id 集就是这 12 个（含顺序），且 settings.providers 下没有多余或缺失的键', () => {
+    expect(STABLE_PROVIDER_IDS).toHaveLength(12);
+    // 顺序：6 家国内厂商 → 5 家中转站 → custom 末位（`custom` 永远是最后一项）。
+    expect(STABLE_PROVIDER_IDS[STABLE_PROVIDER_IDS.length - 1]).toBe('custom');
+    expect([...STABLE_PROVIDER_IDS.slice(6, 11)]).toEqual([...RELAY_PROVIDER_IDS]);
     expect(Object.keys(zhCN.settings.providers).sort()).toEqual([...STABLE_PROVIDER_IDS].sort());
     expect(Object.keys(enUS.settings.providers).sort()).toEqual([...STABLE_PROVIDER_IDS].sort());
   });
@@ -89,7 +117,18 @@ describe('ProviderSelect · 7 个稳定 id 的词条', () => {
       ali_bailian: '阿里云百炼（通义千问）',
       baidu_qianfan: '百度千帆（文心一言）',
       tencent_hunyuan: '腾讯混元',
-      custom: '自定义（OpenAI 兼容）',
+      // Plan B Task 4（DR-33）：5 家中转站。zh 值带一句括号说明，让"这是中转站而不是厂商"
+      // 在界面上一眼可辨；🔴 每条都 **> 4 字**——`en-us-page-residual.test.tsx` 把种子里
+      // ≤4 字的中文串逐字钉死（M-1 闸门），一个短名就会把放行面撑开。
+      openrouter: 'OpenRouter（海外模型聚合）',
+      siliconflow: '硅基流动（SiliconFlow）',
+      '302ai': '302.AI（AI 应用超市）',
+      yunwu: '云雾 API（中转站）',
+      deepbricks: 'DeepBricks（API 中转）',
+      // 🔴 从「自定义（OpenAI 兼容）」改成「自定义服务商」（spec §9-A 授权的文案改动）：
+      // 协议现在**可选**（`openai_compat` / `anthropic`），把「OpenAI 兼容」写死在厂商名里
+      // 就与新行为自相矛盾。en 侧同批从 'Custom (OpenAI-compatible)' 改成 'Custom'。
+      custom: '自定义服务商',
     };
 
     for (const id of STABLE_PROVIDER_IDS) {
@@ -106,7 +145,7 @@ describe('ProviderSelect · 不再渲染后端的 label_zh', () => {
 
     expect(screen.getByRole('radio', { name: 'Kimi（月之暗面）' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'DeepSeek（深度求索）' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: '自定义（OpenAI 兼容）' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: '自定义服务商' })).toBeInTheDocument();
     expect(container.textContent).not.toContain(ZH_SENTINEL);
   });
 
@@ -114,7 +153,7 @@ describe('ProviderSelect · 不再渲染后端的 label_zh', () => {
     const { container } = renderSelect(STABLE_PROVIDER_IDS.map(makeProvider), 'moonshot', 'en-US');
 
     expect(screen.getByRole('radio', { name: 'Kimi (Moonshot)' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Custom (OpenAI-compatible)' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Custom' })).toBeInTheDocument();
     expect(container.textContent).not.toContain(ZH_SENTINEL);
     // 英文界面里不许残留任何中文品牌名
     expect(container.textContent).not.toContain('月之暗面');
@@ -204,5 +243,76 @@ describe('#25 · 查表机制只有一份实现 + 接口地址占位提示走词
     expect(
       screen.getByPlaceholderText(enUS.settings.providerForm.baseUrlPlaceholder),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Plan B Task 4：**模型协议**控件（spec §6 / DR-34）。
+ *
+ * 判据是"只在自定义下出现"这一条**结构事实**，不是样式：预设厂商与中转站的协议由后端固定，
+ * 给用户一个能改的下拉就等于允许他改出一个连不上的配置。
+ * 五段式哨兵（上面那三个 describe）刻意**一条没动**——协议控件与 `label_zh` 泄漏面无关。
+ */
+describe('ProviderSelect · 模型协议（Task 4）', () => {
+  it('防空跑：协议就是契约里那两档，两侧词典都非空且不与 id 同形', () => {
+    expect([...MODEL_PROTOCOL_VALUES]).toEqual(['openai_compat', 'anthropic']);
+    expect(Object.keys(zhCN.settings.protocols)).toEqual([...MODEL_PROTOCOL_VALUES]);
+    expect(Object.keys(enUS.settings.protocols)).toEqual([...MODEL_PROTOCOL_VALUES]);
+
+    for (const protocol of MODEL_PROTOCOL_VALUES) {
+      expect(zhCN.settings.protocols[protocol], `zh ${protocol}`).not.toBe('');
+      const rendered = i18n.getFixedT('en-US')(`settings.protocols.${protocol}`);
+      expect(rendered, `en ${protocol}`).not.toBe('');
+      // en 值不许与 id 同形：同形说明词典漏了、`enumLabel` 回退了裸 id。
+      expect(rendered, `en ${protocol} 不许与 id 同形`).not.toBe(protocol);
+      // en 值一律 ASCII（`en-us-page-residual.test.tsx` 把 en 词典的 CJK 值钉成恰好 2 条）。
+      expect(rendered).toMatch(/^[\x20-\x7e]+$/);
+    }
+  });
+
+  it('选自定义才渲染协议下拉，当前档位上屏（受控）', () => {
+    renderSelect(STABLE_PROVIDER_IDS.map(makeProvider), 'custom');
+
+    expect(screen.getByLabelText('模型协议')).toBeInTheDocument();
+    // 默认档 `openai_compat` 的标签就在选择器上 ⇒ 值真的接进去了，不是空壳。
+    expect(screen.getByText(zhCN.settings.protocols.openai_compat)).toBeInTheDocument();
+  });
+
+  it('预设厂商与中转站都不渲染协议下拉（不是置灰，是不出现）', () => {
+    for (const provider of STABLE_PROVIDER_IDS.filter((id) => id !== 'custom')) {
+      const { unmount } = renderSelect(STABLE_PROVIDER_IDS.map(makeProvider), provider);
+      expect(screen.queryByText('模型协议'), provider).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('en-US 下协议标签也是英文', () => {
+    renderSelect(STABLE_PROVIDER_IDS.map(makeProvider), 'custom', 'en-US');
+
+    expect(screen.getByLabelText('Model protocol')).toBeInTheDocument();
+    expect(screen.getByText('OpenAI-compatible')).toBeInTheDocument();
+  });
+
+  it('切档经 onProtocolChange 出去，且传入的 protocol 值被选中（受控）', async () => {
+    const seen: ModelProtocol[] = [];
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ProviderSelect
+        providers={STABLE_PROVIDER_IDS.map(makeProvider)}
+        value="custom"
+        onChange={noop}
+        baseUrl=""
+        onBaseUrlChange={noop}
+        protocol="anthropic"
+        onProtocolChange={(protocol) => seen.push(protocol)}
+      />,
+    );
+
+    expect(screen.getByText('Anthropic 原生')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('模型协议'));
+    await user.click(await screen.findByTitle('OpenAI 兼容'));
+
+    expect(seen).toEqual(['openai_compat']);
   });
 });

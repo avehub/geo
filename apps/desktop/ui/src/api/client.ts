@@ -11,6 +11,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { demoInvoke } from '../demo/backend';
 import { runtime } from './runtime';
 import type {
+  AppEnvironment,
   AppSettings,
   Competitor,
   CompetitorDraft,
@@ -22,7 +23,9 @@ import type {
   GenerateOptions,
   ImportReport,
   IpcErrorPayload,
+  LlmModelsQuery,
   LlmTestResult,
+  ModelsListResult,
   Project,
   ProjectAsset,
   ProjectDetail,
@@ -34,11 +37,27 @@ import type {
   PromptSet,
   PromptSetSummary,
   ProviderInfo,
+  SearchBindingField,
+  SearchBoardResult,
+  SearchMetricImportResult,
+  SearchOpportunity,
+  SearchOpportunityStatus,
+  SearchSource,
+  SearchSourceKind,
   SecretStatus,
 } from './types';
 import { isIpcErrorPayload } from './types';
 
-/** 全部 IPC 命令名。前后端漂移时这里先炸，便于排查。 */
+/**
+ * 全部 IPC 命令名（**105** 条）。前后端漂移时这里先炸，便于排查。
+ *
+ * 🔴 最后那 6 条（M5.5 站长数据）与 M6 文章管理那 10 条、M1.2 知识库那 6 条、M6.5 站点接入那 11 条、
+ * M1.5 素材层那 10 条、M3–M7 的 20 条、Plan B 的 2 条**同族**：只有 demo 侧实现
+ * （65 条 demo 独有 + 40 条 Rust 侧），桌面端 `runtime === 'tauri'` 时点进去会报
+ * `ipc/unknown_command`（差异台账 `2026-09-23-demo-vs-backend-known-divergences.md`
+ * §4b E-33 / §4c E-46 / §4d E-52 / §4e E-55 / §4g E-63；站长数据那一段是 §4h E-67，
+ * 规格已预备登记、台账待 demo 落地后写入）。
+ */
 export const IPC_COMMANDS = [
   'project_create',
   'project_list',
@@ -80,6 +99,93 @@ export const IPC_COMMANDS = [
   'llm_provider_test',
   'llm_providers',
   'export_write_file',
+  // ---- M3 多引擎采集 ----
+  'collection_board',
+  'collection_round_get',
+  'collection_start',
+  'collection_task_retry',
+  'collection_record_list',
+  'collection_record_get',
+  // ---- M4 回答解析与事实核查 ----
+  'insight_list',
+  'insight_correct',
+  'fact_check_list',
+  'fact_check_resolve',
+  // ---- M5 诊断与归因 ----
+  'diagnosis_overview',
+  'diagnosis_competitors',
+  'diagnosis_funnel',
+  'diagnosis_engines',
+  'diagnosis_alert_acknowledge',
+  // ---- M6 GEO 行动中心 ----
+  'action_board',
+  'action_update_status',
+  'content_generate',
+  'content_update_status',
+  // ---- M7 报告与分享 ----
+  'report_render',
+  // ---- Plan B（🔴 demo 独有，Rust 侧本轮零改动，差异 E-46 起）----
+  // 本机环境：设置页的权限与数据目录（Task 3 / DR-35）
+  'app_environment',
+  // 按界面上的草稿配置拉模型名清单（Task 4 / DR-34）
+  'llm_models_list',
+  // ---- M1.5 素材层：关键词库 / FAQ 常见问题库 ----
+  // 🔴 demo 独有（Rust 侧本轮零改动，差异 E-52 起）：spec 2026-09-30-keyword-faq-library-design.md
+  'keyword_list',
+  'keyword_add',
+  'keyword_update',
+  'keyword_delete',
+  'keyword_generate',
+  'faq_list',
+  'faq_add',
+  'faq_update',
+  'faq_delete',
+  'faq_generate',
+  // ---- M6.5 站点接入与补丁工作台 ----
+  // 🔴 demo 独有（Rust 侧本轮零改动，差异 E-55 起）：
+  // spec 2026-09-30-site-connect-patch-bench-design.md（DR-45 … DR-56）
+  'site_board',
+  'site_profile_save',
+  'site_channel_upsert',
+  'site_channel_remove',
+  'site_channel_test',
+  'site_patch_add',
+  'site_patch_generate',
+  'site_patch_save',
+  'site_patch_transition',
+  'site_patch_history',
+  'site_patch_delete',
+  // ---- M1.2 知识库（品牌实体卡下面那一项）----
+  // 🔴 demo 独有（Rust 侧本轮零改动，差异 E-58 起）：
+  // spec 2026-10-01-entity-card-slim-and-knowledge-base-design.md（DR-59 … DR-72）
+  'kb_board',
+  'kb_entry_add',
+  'kb_entry_update',
+  'kb_entry_delete',
+  'kb_entry_verify',
+  'kb_generate',
+  // ---- M6 文章管理 Article Studio（行动中心之后、站点接入之前那一项）----
+  // 🔴 demo 独有（Rust 侧本轮零改动，差异 E-64 起）：
+  // spec 2026-10-10-kb-redesign-and-article-studio-design.md（DR-83 … DR-89）
+  'article_direction_list',
+  'article_direction_add',
+  'article_direction_generate',
+  'article_template_list',
+  'article_template_save',
+  'article_template_delete',
+  'article_schedule_list',
+  'article_schedule_save',
+  'article_schedule_run',
+  'article_list',
+  // ---- M5.5 站长数据（解析与核查之后、诊断与归因之前那一项）----
+  // 🔴 demo 独有（Rust 侧本轮零改动，差异 E-67 起）：
+  // spec 2026-10-12-webmaster-data-integration-design.md（DR-90 … DR-118，命令面见 DR-97）
+  'search_board',
+  'search_source_upsert',
+  'search_source_remove',
+  'search_source_test',
+  'search_metric_import_csv',
+  'search_opportunity_update',
 ] as const;
 
 export type IpcCommand = (typeof IPC_COMMANDS)[number];
@@ -166,7 +272,19 @@ export async function callVia<T>(
   }
 }
 
-async function call<T>(cmd: IpcCommand, args?: Record<string, unknown>): Promise<T> {
+/**
+ * 具名 wrapper 的唯一实现。
+ *
+ * 🔴 导出是为了让 `src/api/` 下的**同族 wrapper 模块**（`collection.ts` / `insight.ts` /
+ * `diagnosis.ts` / `action.ts` / `report.ts`）复用同一条分派与错误归一化路径——`client.ts`
+ * 已经接近「单文件约 400 行就拆分」的上限，M3–M7 的 20 条命令再塞进来就超了。
+ * 组件**仍然只能**调具名 wrapper（`client.projectList()` / `collection.collectionBoard()`），
+ * 不许直接 `call`，更不许直接 `invoke`（AGENTS 代码风格：IPC 调用集中在 `src/api/`）。
+ *
+ * ⚠ 这些 wrapper 模块**只 import 本文件**、本文件不 import 它们 ⇒ 依赖图仍是单向的，
+ * 没有运行期循环依赖（`demo/backend.ts` 的头注释把这条纪律写成了硬要求）。
+ */
+export async function call<T>(cmd: IpcCommand, args?: Record<string, unknown>): Promise<T> {
   // `runtime` 是模块级常量（`api/runtime.ts`）：首次 import 时按 `window.__TAURI_INTERNALS__`
   // 在不在读定一次，判据与 `@tauri-apps/api` 自己的取用方式同源（见那个文件的头注释）。
   return callVia<T>(cmd, args, runtime === 'tauri' ? invoke : demoInvoke);
@@ -323,6 +441,29 @@ export const llmProviderTest = (provider: string) =>
 
 export const llmProviders = () => call<ProviderInfo[]>('llm_providers');
 
+/**
+ * 按**界面上的草稿配置**取回可用模型名（Plan B Task 4 · DR-34）。
+ *
+ * 🔴 入参是草稿而不是已落库那份——与 `llmProviderTest` 刻意不同（那条读库，是已知 bug #5）。
+ * `api_key` 恒传 `null`：AGENTS 规则 3 要求 Key 只进系统钥匙串，真后端在 Plan C 自己读。
+ * demo 不发请求，回预置清单并把 `source` 标成 `'preset'`（`api/types-llm.ts`）。
+ */
+export const llmModelsList = (query: LlmModelsQuery) =>
+  call<ModelsListResult>('llm_models_list', {
+    provider: query.provider,
+    protocol: query.protocol,
+    base_url: query.base_url,
+    api_key: query.api_key ?? null,
+  });
+
+/**
+ * 本机环境事实：版本、构建号、系统权限状态、数据目录与占用（Plan B · spec DR-35）。
+ *
+ * 只读。「打开目录」「更改目录」「去系统设置」三个动作本轮**不给命令**：
+ * demo 里做不到（浏览器打不开访达），界面把按钮置灰并说明由桌面端提供。
+ */
+export const appEnvironment = () => call<AppEnvironment>('app_environment');
+
 // ---------------------------------------------------------------------------
 // 桌面壳：文件导出
 // ---------------------------------------------------------------------------
@@ -339,4 +480,100 @@ export const exportWriteFile = (defaultName: string, content: string, withBom: b
     default_name: defaultName,
     content,
     with_bom: withBom,
+  });
+
+// ---------------------------------------------------------------------------
+// M5.5 站长数据（6 条，🔴 只有 demo 侧实现）
+// ---------------------------------------------------------------------------
+// ⚠ 同族 wrapper 的既有姿态是**单独一个文件**（`api/site.ts` / `api/kb.ts` / `api/article.ts`：
+// `client.ts` 早就过了「单文件约 400 行就拆分」那条软线，拆分理由逐字写在 `api/site.ts` 的头注释里）。
+// 这 6 条本轮先落在这里，将来拆出 `api/search.ts` 时整段搬走即可——签名与命令名都不变。
+
+/**
+ * 站长数据页首屏：源 + 指标明细 + AI 汇总 + C 类留档 + 机会 + 自建索引覆盖（一次往返，
+ * 照 `siteBoard` / `actionBoard` 的取舍）。
+ *
+ * 🔴 **不含汇总数字**（DR-97 ④ 刻意不加 `search_aggregate`）：归一、A 类求和、B 类重算、筛选与
+ * 区间收敛全在 `api/search-compose.ts`（纯函数，demo 与桌面端共用同一份；两端各算一份区间
+ * 就会出现"同一个项目两个合计数"）。
+ * ⚠ 不分页：明细上万行时前端要扛（代价登记在差异台账 E-67）。
+ */
+export const searchBoard = (projectId: string) =>
+  call<SearchBoardResult>('search_board', { project_id: projectId });
+
+/**
+ * 增改一个数据源（同 `kind` 覆盖，照 `siteChannelUpsert`：一个项目就是一个站点 ⇒ 每 kind 至多一条）。
+ *
+ * 🔴 **不收凭据**（DR-96 / AGENTS 规则 3）：`binding` 只装站点绑定（`siteUrl` / `siteId`）这类非敏感值；
+ * 凭据是**账号级**的，引用串 `keyring://search/<kind>`（`api/search-catalog.ts` 的 `searchSecretRef`），
+ * 走既有 `secretSet` / `secretStatus` / `secretDelete`（DR-97 ③：不新增出口）。
+ * 🔴 `auth_mode` / `ingest_modes` / `region` / `group` **一律由目录表决定**（DR-108），不收用户输入：
+ * 一个源支持哪几种取数形态是产品的建模决定，不是每次接入时现场填的表单。
+ * 🔴 demo 不联网、OAuth 一条都没实现（DR-99）⇒ `credentials_state` 恒不为 `stored`。
+ */
+export const searchSourceUpsert = (
+  projectId: string,
+  kind: SearchSourceKind,
+  binding: Partial<Record<SearchBindingField, string>>,
+  note: string | null,
+) =>
+  call<SearchSource>('search_source_upsert', {
+    project_id: projectId,
+    kind,
+    binding,
+    note,
+  });
+
+/**
+ * 移除一个数据源，回**剩余快照**（幂等，照 `siteChannelRemove`）。
+ * 🔴 连带删掉它导入的指标行与原生字段留档：留着就是"合计里有一批查不到出处的数字"。
+ */
+export const searchSourceRemove = (projectId: string, kind: SearchSourceKind) =>
+  call<SearchSource[]>('search_source_remove', { project_id: projectId, kind });
+
+/**
+ * 跑一次自检，回**那个源**（翻 `checked_at` + `check_detail`，照 `siteChannelTest`）。
+ * 🔴 demo **不联网**（AGENTS 规则 2 / DR-99）：结论逐字来自预置表，页面上有常驻说明
+ * `webmasterData.demoBody`；海外那两个源在 demo 里是纸面设计（差异台账 E-71）。
+ */
+export const searchSourceTest = (projectId: string, kind: SearchSourceKind) =>
+  call<SearchSource>('search_source_test', { project_id: projectId, kind });
+
+/**
+ * 导入一批指标（DR-98 / DR-113）。
+ *
+ * 🔴 **一条命令同时吃文件与粘贴文本**：`payload` 就是字符串（`promptSetImportCsv` 同款）——
+ * 粘贴解析不是 CSV 导入的替代而是它的前置，两者共用 `api/search-paste.ts` 的列识别与校验，
+ * 所以命令面仍是 6 条。`.xlsx` 先在 `api/search-xlsx.ts` 里解成网格，再走同一条管线。
+ * 🔴 区间必须由调用方**显式确认**：百度《AI 流量分析》的导出**没有日期列**（DR-98 实测），
+ * 这类源入库时 `window_source` 记 `user_stated`，文案写"区间由导入时确认"而不是"平台声明"。
+ * 🔴 同周期同源的旧行被这一次导入**覆盖**——删除是导入的一个分支，所以刻意没有
+ * `search_metric_delete`（DR-97 ②）。
+ * 🔴 行级容错：坏行进 `errors`、好行照样入库（照 `demo/handlers/prompt-csv.ts` 的口径）；
+ * `warnings` 只提示不阻断（平台给的点击率只作交叉校验，入库一律用重算值）。
+ */
+export const searchMetricImportCsv = (
+  projectId: string,
+  kind: SearchSourceKind,
+  payload: string,
+  periodStart: string,
+  periodEnd: string,
+) =>
+  call<SearchMetricImportResult>('search_metric_import_csv', {
+    project_id: projectId,
+    kind,
+    payload,
+    period_start: periodStart,
+    period_end: periodEnd,
+  });
+
+/**
+ * 翻一条优化机会的处置状态（照 `actionUpdateStatus`：只翻 `status` + `updated_at`）。
+ * 🔴 不重算：DR-100 那 6 条规则的判定是 `geo-domain` 纯函数，demo 只端预置的静态清单
+ * （DR-99 / 差异台账 E-68）⇒ 翻状态不会长出新条目，页面必须常驻 `webmasterData.staticNote` 说清这件事。
+ */
+export const searchOpportunityUpdate = (opportunityId: string, status: SearchOpportunityStatus) =>
+  call<SearchOpportunity>('search_opportunity_update', {
+    opportunity_id: opportunityId,
+    status,
   });

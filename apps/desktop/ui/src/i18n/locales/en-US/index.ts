@@ -9,6 +9,19 @@ import prompt from './prompt';
 import entity from './entity';
 import settings from './settings';
 import demo from './demo';
+import collection from './collection';
+import insight from './insight';
+import diagnosis from './diagnosis';
+import action from './action';
+import report from './report';
+import library from './library';
+import site from './site';
+import kb from './kb';
+import article from './article';
+import webmasterData from './webmaster-data';
+import overview from './overview';
+import portfolio from './portfolio';
+import design from './design';
 
 /**
  * en-US 资源树。两层类型钉法（R-G）：
@@ -27,6 +40,19 @@ const enUS: ResourceBundle = {
   entity,
   settings,
   demo,
+  collection,
+  insight,
+  diagnosis,
+  action,
+  report,
+  library,
+  site,
+  kb,
+  article,
+  webmasterData,
+  overview,
+  portfolio,
+  design,
 };
 
 export default enUS;

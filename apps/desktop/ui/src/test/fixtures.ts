@@ -1,4 +1,5 @@
 import type {
+  AppSettings,
   EntityCard,
   PromptItem,
   PromptSet,
@@ -8,6 +9,46 @@ import type {
 
 export const PROJECT_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 export const SET_ID = 'bbbbbbbb-0000-4000-8000-000000000002';
+
+/**
+ * 设置页各分段测试共用的 `AppSettings` 桩。
+ *
+ * 抽出来是因为 Plan B 把设置页拆成五段之后，**五个测试文件**都要一份形状完整的设置：
+ * 各抄一份的话，`AppSettings` 每加一段（`privacy` / `storage` 就是本轮加的）就要改五处，
+ * 而漏改的那一处报的是 `tsc` 错，不是"桩过期了"。
+ *
+ * ⚠ `model.provider` 用 fixture 里那份 `PROVIDERS` 的 id（`'deepseek'`，无下划线），
+ * 与 demo 种子的 `'deep_seek'` **刻意不同**：设置页测试走 `mockInvoke` 桩而不是 demo 假后端，
+ * 断言钉的是"界面把桩里的厂商原样端出来"，两套桩数据本来就不互通
+ * （`pages/en-us-page-residual.test.tsx` 的头注释把这条口径写下来了）。
+ */
+export function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
+  return {
+    proxy: null,
+    concurrency: { max_parallel: 3, queue_size: 200 },
+    rate_limit: { requests_per_minute: 20, min_interval_ms: 1500, retry_max: 3 },
+    model: {
+      provider: 'deepseek',
+      model: null,
+      base_url: null,
+      // Plan B Task 4：`ModelConfig.protocol`（DR-34）。fixture 与种子同批加，
+      // 少一侧 `tsc -b` 就红（`ModelConfig` 的必填字段）。
+      protocol: 'openai_compat',
+      temperature: 0.3,
+      timeout_secs: 60,
+    },
+    language: 'zh_cn',
+    notify: { on_finish: true, on_risk: true, sound: false },
+    privacy: {
+      share_entity_card: true,
+      share_prompts: true,
+      share_crawled_text: true,
+      share_diagnostics: false,
+    },
+    storage: { last_export_dir: null },
+    ...overrides,
+  };
+}
 
 export function makeProject(overrides: Partial<Project> = {}): Project {
   return {
@@ -37,12 +78,17 @@ export function makeEntityCard(overrides: Partial<EntityCard> = {}): EntityCard 
       aliases: ['宏宇泵业'],
       founded_year: 2006,
       qualifications: ['ISO9001', 'CCC'],
-      products: [{ name: '离心泵 HY-100', params: ['流量 100m³/h', '扬程 32m'], note: null }],
-      price_range: '8000-30000 元/台',
+      // `price` 是本轮新加的那个字段（spec 2026-10-01 · DR-60）：报价不再单列一张卡，
+      // 而是每个产品自带一格 ⇒ 夹具里必须带上它，否则"价格并进产品卡"这条走查在测试里是空的。
+      products: [
+        {
+          name: '离心泵 HY-100',
+          params: ['流量 100m³/h', '扬程 32m'],
+          price: '单台 8 万~30 万元',
+          note: null,
+        },
+      ],
       service_regions: ['华东', '华南'],
-      cases: ['某市政供水项目'],
-      differentiators: ['自有铸造车间'],
-      official_tone: '工业级可靠供水设备制造商',
       contact: { phone: '0571-88888888', email: 'info@example.com', address: '杭州市余杭区' },
     },
     field_status: {
@@ -50,11 +96,10 @@ export function makeEntityCard(overrides: Partial<EntityCard> = {}): EntityCard 
       aliases: 'official',
       founded_year: 'pending',
       qualifications: 'pending',
-      products: 'official',
-      price_range: 'disputed',
+      // 报价口径存疑（与 demo 种子里那条 `products[0].price` 的留痕同一个故事）：
+      // 三档状态在夹具里各留至少一个字段，`EntityCardPage` 的 Tag 配色用例才不是空跑。
+      products: 'disputed',
       service_regions: 'official',
-      cases: 'pending',
-      differentiators: 'official',
       contact: 'official',
     },
     source: {
@@ -124,7 +169,7 @@ export const PROVIDERS: ProviderInfo[] = [
   },
   {
     provider: 'custom',
-    label_zh: '自定义（OpenAI 兼容）',
+    label_zh: '自定义服务商',
     base_url: '',
     default_model: '',
     input_per_mtok: 0,

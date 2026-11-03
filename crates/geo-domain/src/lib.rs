@@ -10,6 +10,7 @@ pub mod dedupe;
 pub mod entity_card;
 pub mod error;
 pub mod ids;
+pub mod keyword;
 pub mod project;
 pub mod prompt;
 
@@ -25,7 +26,11 @@ pub use entity_card::{
     FieldStatus, ProductSpec, ALL_FIELDS, REQUIRED_FIELDS,
 };
 pub use error::GeoError;
-pub use ids::{AssetId, CompetitorId, ProjectId, PromptId, PromptSetId, RevisionId};
+pub use ids::{AssetId, CompetitorId, KeywordId, ProjectId, PromptId, PromptSetId, RevisionId};
+pub use keyword::{
+    KeywordDraft, KeywordItem, KeywordKind, LibrarySource, MAX_DIFFICULTY, MAX_KEYWORD_CHARS,
+    MAX_PRIORITY, MIN_PRIORITY,
+};
 pub use project::{
     Competitor, CompetitorDraft, Industry, Language, Project, ProjectDraft, ProjectStatus,
     MAX_ALIASES, MAX_BRAND_NAME_CHARS, MAX_COMPETITORS, MAX_PROJECT_NAME_CHARS, MAX_TAGS,

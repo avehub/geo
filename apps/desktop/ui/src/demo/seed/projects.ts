@@ -26,6 +26,9 @@ import type { Competitor, Project, ProjectAsset } from '../../api/types';
 export const SEED_ACTIVE_PROJECT_ID = 'a1f3c0d2-4b6e-4a11-9f3c-7d2e5b8a0c14';
 /** 归档项目：用来走查「归档态 + 空题库」这两个空状态。 */
 export const SEED_ARCHIVED_PROJECT_ID = 'b2e4d1c3-5a7f-4b22-8e4d-6c1f9a7b3d25';
+/** M9 组合页的两个「已接入、尚未采集」项目：用来走查待采集行与混合分布。 */
+export const SEED_CHENGCHUAN_PROJECT_ID = 'd7f2a9c4-1e6b-4a3d-9c8f-2b5e7a1d4c60';
+export const SEED_HEYE_PROJECT_ID = 'e8a3b0d5-2f7c-4b4e-8d9a-3c6f8b2e5d71';
 
 export const SEED_PROJECTS: Project[] = [
   {
@@ -59,6 +62,38 @@ export const SEED_PROJECTS: Project[] = [
     archived_at: '2026-09-19T08:15:00Z',
     created_at: '2026-09-05T01:20:00Z',
     updated_at: '2026-09-19T08:15:00Z',
+  },
+  {
+    id: SEED_CHENGCHUAN_PROJECT_ID,
+    name: '澄川水处理设备',
+    brand_name: '澄川',
+    aliases: ['澄川水处理', '澄川环保'],
+    website: 'https://www.chengchuan-water.example.com',
+    region: '浙江·宁波',
+    language: 'zh_cn',
+    industry: 'b2b_manufacturing',
+    industry_label: '工业水处理设备制造',
+    tags: ['工业水处理', '膜法', '环保工程'],
+    status: 'active',
+    archived_at: null,
+    created_at: '2026-09-25T02:15:00Z',
+    updated_at: '2026-09-28T06:40:00Z',
+  },
+  {
+    id: SEED_HEYE_PROJECT_ID,
+    name: '禾野食品供应链',
+    brand_name: '禾野',
+    aliases: ['禾野供应链'],
+    website: 'https://www.heye-food.example.com',
+    region: '山东·潍坊',
+    language: 'zh_cn',
+    industry: 'other',
+    industry_label: '食品供应链服务',
+    tags: ['食品供应链', '冷链', '餐饮渠道'],
+    status: 'active',
+    archived_at: null,
+    created_at: '2026-09-26T03:30:00Z',
+    updated_at: '2026-09-29T09:10:00Z',
   },
 ];
 

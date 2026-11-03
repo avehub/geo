@@ -353,6 +353,44 @@ const FIELD_VALUES = [
   'rate_limit.requests_per_minute',
   'rate_limit.min_interval_ms',
   'rate_limit.retry_max',
+  // M3–M7：假后端新发的 field 值（Rust 真值源上还没有，理由见 `locales/zh-CN/fields.ts`）
+  'round_id',
+  'task_id',
+  'record_id',
+  'insight_id',
+  'issue_id',
+  'self_rank',
+  'alert_id',
+  'action_id',
+  'template_id',
+  'content_id',
+  'variant',
+  'engine_scope',
+  'status',
+  // M6.5 站点接入与补丁工作台：假后端新发的 field 值（同样只在 demo 侧，理由见
+  // `locales/zh-CN/fields.ts` 那一节的头注释）
+  'patch_id',
+  'patch_title',
+  'patch_target_url',
+  'patch_body',
+  'channel_kind',
+  'kinds',
+  'review_status',
+  'transition',
+  // M1.2 知识库：假后端新发的 field 值（spec 2026-10-01 · DR-65）
+  'kb_entry_id',
+  'kb_block_id',
+  'kb_title',
+  'kb_modules',
+  // M1.5 关键词库（Plan C 第一个纵向切片）：Rust 侧已真实发射这些 field 值
+  'keyword_id',
+  'drafts',
+  'kind',
+  'intent',
+  'priority',
+  'monthly_volume',
+  'difficulty',
+  'note',
 ];
 
 describe('B-1 · reason 目录运行时解析（不手抄键集）', () => {
@@ -872,6 +910,19 @@ describe('AGENTS 规则 6 · 文案合规', () => {
    * `entity` / `settings` / `demo`）的**用户可见文案根本不过合规扫描**。15c 的 #22（改
    * `deleteConfirmContent`）与 #23（钥匙串文案）正要往未覆盖区加文案 ⇒ 必须先扩面。
    *
+   * M3–M7 那轮又长了 5 个（`collection` / `insight` / `diagnosis` / `action` / `report`），
+   * M5.5 再加 1 个（`webmasterData`），今天一共 **19** 个：报告与处方的文案是要发给老板和客户的，
+   * 合规扫描更不能漏；
+   * M1.5 的 `library`（关键词库 / FAQ 库）同样要发给客户看——它直接导出成官网的 FAQPage
+   * 结构化数据，是**对外**文案，所以一并进扫描面。
+   * M6.5 的 `site`（补丁正文要下发到客户官网）与 M1.2 的 `kb`（知识册要交给内容团队与
+   * 代运营，也是**对外**文案）同理由，一并进扫描面。
+   * M6 的 `article`（文章正文要发出去当官网内容，模板提示词还直接约束撰稿模型的口径）
+   * 同理由，一并进扫描面。
+   * M5.5 的 `webmasterData`（站长数据）进扫描面的理由更硬：机会文案与 CTR 基准都要拿给客户
+   * 或客户的老板看，而这一页天生要谈"排名与点击率"⇒ 正是绝对化用语最容易溜进来的地方
+   * （spec 2026-10-12 · DR-99 / DR-105 / DR-115 都点名了规则 6）。
+   *
    * 顺序照 `locales/zh-CN/index.ts` 的资源树（计划正文固定的那个顺序）。
    */
   const COMPLIANCE_NAMESPACES = [
@@ -884,10 +935,33 @@ describe('AGENTS 规则 6 · 文案合规', () => {
     'entity',
     'settings',
     'demo',
+    // M3–M7 的 5 个（顺序照 `locales/zh-CN/index.ts` 的资源树 = 里程碑顺序）
+    'collection',
+    'insight',
+    'diagnosis',
+    'action',
+    'report',
+    // M1.5 素材层的 1 个（关键词库与 FAQ 库共用，见 `locales/zh-CN/library.ts` 的文件头）
+    'library',
+    // M6.5 站点接入的 1 个（补丁工作台；正文要下发到客户官网 ⇒ 对外文案）
+    'site',
+    // M1.2 知识层的 1 个（知识库；导出的知识册要给内容团队与代运营 ⇒ 对外文案）
+    'kb',
+    // M6 文章管理的 1 个（文章管理；生成的稿子要发出去当内容 ⇒ 对外文案）
+    'article',
+    // M5.5 站长数据的 1 个（多平台汇总与优化机会；要拿给客户或客户的老板看 ⇒ 对外文案）
+    'webmasterData',
+    // 2026-10-29 项目概览（首页）：KPI / 风险 / 行动入口都要给客户看 ⇒ 对外文案
+    'overview',
+    // M9 组合总览：跨项目分布与项目清单同样要给客户/老板看 ⇒ 对外文案
+    'portfolio',
+    // 2026-10-30 设计样张（dev-only）：虽然不上生产，但它在 `pages/**` 的源码扫描面里，
+    // 文案同样走词典 ⇒ 一并进合规面，避免「dev-only 就可以乱写」的缺口。
+    'design',
   ] as const;
 
   /**
-   * 今天的词典面：**全部 9 个 namespace**、两侧全部叶子（15b #49 扩面，原先只有 errors + fields）。
+   * 今天的词典面：**全部 22 个 namespace**、两侧全部叶子（15b #49 扩面，原先只有 errors + fields）。
    *
    * 从资源树**现算**（`leaves(zhCN[ns], ns)`），不手抄键名：`ENTRIES` / `FIELD_ENTRIES` 那两个
    * 预算好的常量继续留给「errors 与 fields 的键集双向相等」那组用（它们的判据是**键集**，
@@ -909,17 +983,19 @@ describe('AGENTS 规则 6 · 文案合规', () => {
   }
 
 
-  it('全部 9 个 namespace、两侧的文案都没有绝对化用语', () => {
+  it('全部 22 个 namespace、两侧的文案都没有绝对化用语', () => {
     const probe = dictionaryProbe();
-    // 防空跑：词典面塌成空集时「0 条违规」是永真的。920 = 9 个 namespace × 两侧各 460 个叶子（15c-1 的 #23/#47/#25 与 15c-2 的 #54 两侧同批各加 4 键）。
-    expect(probe.length, '合规扫描面塌了 ⇒ 判据已失效').toBeGreaterThanOrEqual(900);
-    // 🔴 覆盖面自查（15b #49 的本体）：probe 里出现的 namespace 必须**恰好**是词典的全部 9 个。
+    // 防空跑：词典面塌成空集时「0 条违规」是永真的。920 = 9 个 namespace × 两侧各 460 个叶子
+    // （15c-1 的 #23/#47/#25 与 15c-2 的 #54 两侧同批各加 4 键）；M3–M7 又加了 5 个 namespace
+    // 与 13 个 field 标签，所以今天的下界抬到 1800（写**下界**而不是精确值：新增一条文案不该打红门禁）。
+    expect(probe.length, '合规扫描面塌了 ⇒ 判据已失效').toBeGreaterThanOrEqual(1800);
+    // 🔴 覆盖面自查（15b #49 的本体）：probe 里出现的 namespace 必须**恰好**是词典的全部 21 个。
     // 少了 ⇒ 又回到 M-2 那个缺口；多了 ⇒ 说明 path 前缀被谁改坏了。
     expect(
       [...new Set(probe.map(([, path]) => path.split('.')[0]))].sort(),
       '合规扫描没覆盖全部 namespace ⇒ 那片文案不过 AGENTS 规则 6（15a 复审 M-2）',
     ).toEqual([...COMPLIANCE_NAMESPACES].sort());
-    // 词典长出第 10 个 namespace 时，上面那条会**静默绿**（新 ns 不在 probe 里，两边都不提它）
+    // 词典再长出一个 namespace 时，上面那条会**静默绿**（新 ns 不在 probe 里，两边都不提它）
     // ⇒ 再钉一条：清单必须与资源树的键集逐字相等。
     expect(Object.keys(zhCN).sort(), '词典新增了 namespace，合规扫描面必须同步扩').toEqual(
       [...COMPLIANCE_NAMESPACES].sort(),

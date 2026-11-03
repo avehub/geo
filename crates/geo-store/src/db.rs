@@ -219,6 +219,8 @@ mod tests {
 
         let first = open(&path).await.unwrap();
         insert_project_graph(&first, "p-1").await;
+        let applied = count(&first, "SELECT count(*) FROM _sqlx_migrations").await;
+        assert!(applied > 0, "首次打开应至少应用一条迁移");
         first.close().await;
 
         // 重复 open：迁移不重复执行、数据仍在。
@@ -227,8 +229,8 @@ mod tests {
         assert_eq!(count(&second, "SELECT count(*) FROM competitors").await, 1);
         assert_eq!(
             count(&second, "SELECT count(*) FROM _sqlx_migrations").await,
-            1,
-            "迁移只应记录一次"
+            applied,
+            "迁移只应记录一次（不随迁移文件增加而写死条数）"
         );
         second.close().await;
     }

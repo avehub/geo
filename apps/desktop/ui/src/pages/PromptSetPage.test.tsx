@@ -6,7 +6,8 @@ import PromptSetPage from './PromptSetPage';
 import { mockInvoke } from '../test/invoke-mock';
 import { renderAtRoute } from '../test/render';
 import { PROJECT_ID, SET_ID, makePromptItem, makePromptSet } from '../test/fixtures';
-import type { PromptDraft, PromptItem, SampleSizeGrade } from '../api/types';
+import type { PromptDraft, PromptItem, PromptSet, SampleSizeGrade } from '../api/types';
+import zhCN from '../i18n/locales/zh-CN';
 
 const ROUTE = `/projects/${PROJECT_ID}/prompts`;
 
@@ -146,6 +147,84 @@ function renderPage() {
 
 describe('PromptSetPage', () => {
   beforeEach(() => mockInvoke.reset());
+
+  it('多个题库时可以选择版本；默认最新，切换后加载对应条目', async () => {
+    const user = userEvent.setup();
+    const baseline = makePromptSet({
+      id: 'set-baseline',
+      label: 'Baseline',
+      items: mixedItems().slice(0, 5),
+      sample_size_grade: 'insufficient',
+      created_at: '2026-09-15T02:00:00Z',
+    });
+    const latest = makePromptSet({
+      id: SET_ID,
+      label: 'Latest',
+      items: mixedItems(),
+      sample_size_grade: 'sufficient',
+      created_at: '2026-09-17T02:00:00Z',
+    });
+    const summary = (set: PromptSet) => ({
+      id: set.id,
+      project_id: set.project_id,
+      version: set.version,
+      label: set.label,
+      item_count: set.items.length,
+      content_hash: set.content_hash,
+      sample_size_grade: set.sample_size_grade,
+      created_at: set.created_at,
+      notes: set.notes,
+    });
+
+    mockInvoke.reset();
+    mockInvoke.stubAlways('prompt_set_list', () => [summary(latest), summary(baseline)]);
+    mockInvoke.stubAlways('prompt_set_get', (args) =>
+      args.id === baseline.id ? baseline : latest,
+    );
+    mockInvoke.stubAlways('project_get', () => ({
+      project: { id: PROJECT_ID, industry: 'b2b_manufacturing' },
+      entity_card: null,
+      competitors: [],
+      assets: [],
+      prompt_set_count: 2,
+    }));
+    renderPage();
+
+    expect((await screen.findAllByText(/Latest/, undefined, { timeout: 3000 })).length).toBeGreaterThan(0);
+
+    // 先在 Latest 勾一条；切换题库后这条选择必须失效，否则批量删除会带着旧 id 打新题库。
+    fireEvent.click(screen.getByRole('radio', { name: '品牌对比' }));
+    const filteredRow = (await screen.findByText('宏宇泵业和南方泵业哪个更靠谱？')).closest(
+      'tr',
+    ) as HTMLElement;
+    await user.click(within(filteredRow).getByRole('checkbox'));
+    expect(await screen.findByRole('button', { name: /删除选中（1）/ })).toBeEnabled();
+
+    const select = screen.getByRole('combobox', { name: zhCN.prompt.promptSet.selectAria });
+    await user.click(select);
+    await user.click(await screen.findByText(/Baseline \(v1 · 5\)/, undefined, { timeout: 3000 }));
+
+    expect(await screen.findByText('共 5 条')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /删除选中/ })).toBeDisabled();
+  });
+
+  it('没有题库时 CSV 导出/导入置灰：不能拿空 setId 去打 prompt_set/not_found', async () => {
+    mockInvoke.reset();
+    mockInvoke.stubAlways('prompt_set_list', () => []);
+    mockInvoke.stubAlways('project_get', () => ({
+      project: { id: PROJECT_ID, industry: 'b2b_manufacturing' },
+      entity_card: null,
+      competitors: [],
+      assets: [],
+      prompt_set_count: 0,
+    }));
+
+    renderPage();
+
+    expect(await screen.findByText(/还没有题库/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /导出 CSV/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /导入 CSV/ })).toBeDisabled();
+  });
 
   it('grade=directional 时渲染「样本不足，仅供方向性参考」', async () => {
     stub('directional');

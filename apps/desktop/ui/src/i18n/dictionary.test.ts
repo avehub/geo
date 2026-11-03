@@ -391,6 +391,11 @@ const FIELD_VALUES = [
   'monthly_volume',
   'difficulty',
   'note',
+  // M1.5 FAQ 库（Plan C 第二个纵向切片）
+  'faq_id',
+  'question',
+  'answer_markdown',
+  'category',
 ];
 
 describe('B-1 · reason 目录运行时解析（不手抄键集）', () => {

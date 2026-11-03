@@ -113,6 +113,11 @@ const fields: ResourceBundle['fields'] = {
   monthly_volume: 'Monthly search volume',
   difficulty: 'Competition difficulty',
   note: 'Note',
+  // M1.5 FAQ library (Plan C second vertical slice, 2026-11-03).
+  faq_id: 'FAQ ID',
+  question: 'Question',
+  answer_markdown: 'Answer text',
+  category: 'Category',
 };
 
 export default fields;

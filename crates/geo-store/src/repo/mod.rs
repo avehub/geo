@@ -10,6 +10,7 @@
 pub mod asset;
 pub mod competitor;
 pub mod entity_card;
+pub mod faq;
 pub mod keyword;
 pub mod project;
 pub mod prompt_set;
@@ -17,6 +18,7 @@ pub mod prompt_set;
 pub use asset::AssetRepo;
 pub use competitor::CompetitorRepo;
 pub use entity_card::EntityCardRepo;
+pub use faq::FaqRepo;
 pub use keyword::KeywordRepo;
 pub use project::{ProjectFilter, ProjectRepo};
 pub use prompt_set::{PromptSetRepo, PromptSetSummary};

@@ -6,9 +6,10 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use geo_domain::{
     AssetKind, Competitor, CompetitorId, Contact, ContentStatus, EntityCard, EntityCardRevision,
-    EntityCardSource, EntityFields, FieldStatus, Industry, IntentCategory, KeywordId, KeywordItem,
-    KeywordKind, Language, LibrarySource, ProductSpec, Project, ProjectAsset, ProjectId,
-    ProjectStatus, PromptItem, PromptSet, PromptSetId, PromptSource, RevisionId,
+    EntityCardSource, EntityFields, FaqId, FaqItem, FieldStatus, Industry, IntentCategory,
+    KeywordId, KeywordItem, KeywordKind, Language, LibrarySource, ProductSpec, Project,
+    ProjectAsset, ProjectId, ProjectStatus, PromptItem, PromptSet, PromptSetId, PromptSource,
+    RevisionId,
 };
 
 /// 固定基准时间，避免测试依赖真实时钟。
@@ -180,6 +181,22 @@ pub(crate) fn sample_keyword(project_id: ProjectId, text: &str, position: i32) -
         priority: 3,
         status: ContentStatus::Approved,
         note: Some("样例素材".to_string()),
+        source: LibrarySource::Manual,
+        position,
+        created_at: base_time(),
+        updated_at: base_time(),
+    }
+}
+
+pub(crate) fn sample_faq(project_id: ProjectId, question: &str, position: i32) -> FaqItem {
+    FaqItem {
+        id: FaqId::new(),
+        project_id,
+        question: question.to_string(),
+        answer_markdown: "- 视压差而定\n- 一般 3~6 个月".to_string(),
+        category: Some("售后".to_string()),
+        intent: IntentCategory::AfterSalesReputation,
+        status: ContentStatus::Approved,
         source: LibrarySource::Manual,
         position,
         created_at: base_time(),

@@ -12,10 +12,10 @@
 |---|---:|---|
 | `IPC_COMMANDS` | 105 | `apps/desktop/ui/src/api/client.ts` |
 | `demoBackend` 键 | 105 | `apps/desktop/ui/src/demo/backend.ts` |
-| Rust `generate_handler![]` | 44 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
-| demo-only | 61 | `contracts/ipc-command-surface.json` 的 `pending` |
+| Rust `generate_handler![]` | 48 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
+| demo-only | 57 | `contracts/ipc-command-surface.json` 的 `pending` |
 
-**105 = 44 条 Rust + 61 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
+**105 = 48 条 Rust + 57 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
 
 ### demo-only 族
 
@@ -182,13 +182,14 @@
 
 - **命令面契约**：新增 `contracts/ipc-command-surface.json`（`rust_registered` + `pending`），TS 与 Rust 两侧各有断言：`IPC_COMMANDS == rust_registered ∪ pending`、`generate_handler![] == rust_registered`。当前 **105 = 44 Rust + 61 demo-only**。
 - **导入 reason 契约**：新增 `contracts/search-import-reasons.json`；前端映射与 Rust 侧占位测试都对齐这 6 个 reason。未知 reason 在界面上先给本地化说明，机器记号只作附加信息。
-- **第一个纵向切片（关键词库 CRUD）**：`keyword_list` / `keyword_add` / `keyword_update` / `keyword_delete` 已落 Rust：
+- **第一 / 第二个纵向切片（关键词 + FAQ CRUD）**：`keyword_*` 4 条与 `faq_*` 4 条（list / add / update / delete）已落 Rust：
   - `geo-domain::keyword`：`KeywordKind`（5 类）/ `LibrarySource` / `KeywordItem` / `KeywordDraft` + 纯校验（文本必填 ≤300、priority 1..=5、difficulty ≤100、monthly_volume 非负）；
   - 迁移 `20261103000002_keywords.sql`（`project_id` 外键级联，`position` 索引）；
   - `KeywordRepo`：按 `position, id` 排序、批量写入、按 `(id, project_id)` 取/改、幂等删除、`next_position`；
-  - `KeywordService`：新增全有或全无；更新保留 `source` / `position` / `created_at`，跨项目 id 报 `validation/failed {field: keyword_id, reason: invalid_id}`；
-  - `keyword_generate` 与 5 条 `faq_*` **仍 demo-only**，不伪造。
-- 判据：domain 6 条 + repo 7 条 + service 7 条 + 命令面契约 2 条（Rust）/ 5 条（TS）。
+  - `KeywordService` / `FaqService`：新增全有或全无；更新保留 `source` / `position` / `created_at`，跨项目 id 报 `validation/failed {field: keyword_id|faq_id, reason: invalid_id}`；
+  - FAQ 额外迁移 `20261103000003_faqs.sql`，仓储 `FaqRepo` 与 `FaqService` 同构；
+  - `keyword_generate` / `faq_generate` **仍 demo-only**，不伪造。
+- 判据：关键词 domain 6 + repo 7 + service 7，FAQ domain 5 + repo 7 + service 7；命令面契约 2 条（Rust）/ 5 条（TS）。
 
 ## 4. 维护方式
 

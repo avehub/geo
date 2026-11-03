@@ -37,6 +37,10 @@
     "keyword_add",
     "keyword_update",
     "keyword_delete",
+    "faq_list",
+    "faq_add",
+    "faq_update",
+    "faq_delete",
     "export_write_file",
     "settings_get",
     "settings_update",
@@ -137,22 +141,6 @@
     },
     {
       "command": "keyword_generate",
-      "ledger": "E-52"
-    },
-    {
-      "command": "faq_list",
-      "ledger": "E-52"
-    },
-    {
-      "command": "faq_add",
-      "ledger": "E-52"
-    },
-    {
-      "command": "faq_update",
-      "ledger": "E-52"
-    },
-    {
-      "command": "faq_delete",
       "ledger": "E-52"
     },
     {

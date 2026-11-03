@@ -123,6 +123,11 @@ const fields = {
   monthly_volume: '月搜索量',
   difficulty: '竞争难度',
   note: '备注',
+  // M1.5 FAQ 库（Plan C 第二个纵向切片，2026-11-03）
+  faq_id: 'FAQ ID',
+  question: '问题',
+  answer_markdown: '答案原文',
+  category: '分类',
 };
 
 export default fields;

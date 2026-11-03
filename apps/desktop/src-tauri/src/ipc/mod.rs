@@ -7,6 +7,7 @@
 
 pub mod entity_card;
 pub mod export;
+pub mod faq;
 pub mod keyword;
 pub mod project;
 pub mod prompt;
@@ -52,6 +53,10 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         keyword::keyword_add,
         keyword::keyword_update,
         keyword::keyword_delete,
+        faq::faq_list,
+        faq::faq_add,
+        faq::faq_update,
+        faq::faq_delete,
         export::export_write_file,
         settings::settings_get,
         settings::settings_update,

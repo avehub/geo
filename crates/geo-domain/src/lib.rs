@@ -9,6 +9,7 @@ pub mod csv_io;
 pub mod dedupe;
 pub mod entity_card;
 pub mod error;
+pub mod faq;
 pub mod ids;
 pub mod keyword;
 pub mod project;
@@ -26,7 +27,10 @@ pub use entity_card::{
     FieldStatus, ProductSpec, ALL_FIELDS, REQUIRED_FIELDS,
 };
 pub use error::GeoError;
-pub use ids::{AssetId, CompetitorId, KeywordId, ProjectId, PromptId, PromptSetId, RevisionId};
+pub use faq::{FaqDraft, FaqItem};
+pub use ids::{
+    AssetId, CompetitorId, FaqId, KeywordId, ProjectId, PromptId, PromptSetId, RevisionId,
+};
 pub use keyword::{
     KeywordDraft, KeywordItem, KeywordKind, LibrarySource, MAX_DIFFICULTY, MAX_KEYWORD_CHARS,
     MAX_PRIORITY, MIN_PRIORITY,

@@ -68,3 +68,17 @@
 **验收判据**：domain 单测覆盖每条校验；repo 单测覆盖排序（`position ASC, id ASC`）、批量新增、整行更新、幂等删除；service 单测覆盖项目不存在、条目 id 认不出、空 drafts；契约测试确认 Rust 注册 44 条且 pending 61 条。
 
 **状态（2026-11-03）**：✅ 已落地——`geo-domain::keyword`、迁移 `20261103000002_keywords.sql`、`KeywordRepo`、`KeywordService`、`ipc/keyword.rs`；domain 6 + repo 7 + service 7 条测试通过。`keyword_generate` 仍 pending。
+
+## 7. 第二个试点族：FAQ CRUD（2026-11-03）
+
+**范围**：`faq_list` / `faq_add` / `faq_update` / `faq_delete`。`faq_generate` 依赖模型成文 + 合规扫描，继续留在 `pending`。
+
+| 项 | 冻结值 |
+|---|---|
+| DTO | `FaqItem { id, project_id, question, answer_markdown, category: Option<String>, intent, status: ContentStatus, source: LibrarySource, position, created_at, updated_at }`；`FaqDraft { question, answer_markdown, category?, intent }` |
+| 校验 | 问题与答案去首尾空白后都必须非空；长度上限尚未由产品裁定，本轮不发明阈值 |
+| 命令面 | 注册 4 条，`generate_handler![]` 44 → 48；`pending` 61 → 57；前端 `IPC_COMMANDS` 不变 |
+| 纯函数归属 | 校验放 `geo-domain::faq`；人工录入固定 `source = manual` / `status = approved` |
+| 更新 | 保留 `source` / `position` / `created_at`；跨项目 id 报 `validation/failed { field: faq_id, reason: invalid_id }` |
+
+**状态（2026-11-03）**：✅ 已落地——domain 5 + repo 7 + service 7 条测试通过；`faq_generate` 仍 pending。

@@ -14,6 +14,7 @@ pub mod project;
 pub mod prompt;
 pub mod secret;
 pub mod settings;
+pub mod site;
 
 /// 注册全部 IPC 命令。
 pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
@@ -74,5 +75,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         secret::secret_delete,
         secret::llm_provider_test,
         secret::llm_providers,
+        site::site_board,
+        site::site_profile_save,
+        site::site_channel_upsert,
+        site::site_channel_remove,
     ]
 }

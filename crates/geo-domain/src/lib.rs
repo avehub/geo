@@ -15,6 +15,7 @@ pub mod kb;
 pub mod keyword;
 pub mod project;
 pub mod prompt;
+pub mod site;
 
 pub use asset::{clean_optional, normalize_url, AssetKind, ProjectAsset};
 pub use compliance::{ContentStatus, Violation};
@@ -31,7 +32,7 @@ pub use error::GeoError;
 pub use faq::{FaqDraft, FaqItem};
 pub use ids::{
     AssetId, CompetitorId, FaqId, KbEntryId, KeywordId, ProjectId, PromptId, PromptSetId,
-    RevisionId,
+    RevisionId, SiteChannelId, SiteProfileId,
 };
 pub use kb::{
     verify_revision, KbEntry, KbEntryDraft, KbEntryKind, KbEntryRevision, KbModule, KbScenario,
@@ -49,6 +50,11 @@ pub use prompt::{
     content_hash, sample_size_grade, IntentCategory, PromptItem, PromptSet, PromptSource,
     SampleSizeGrade, MAX_PROMPT_CHARS, MAX_REPEAT_COUNT, MAX_WEIGHT, METRIC_SPEC_VERSION,
     MINIMUM_SAMPLE_SIZE, SUFFICIENT_SAMPLE_SIZE,
+};
+pub use site::{
+    channel_secret_ref, channel_status, page_from_asset, page_role_for_url, SiteChannel,
+    SiteChannelKind, SiteChannelStatus, SiteCredentialsState, SiteOwnership, SitePage,
+    SitePageRole, SitePlatform, SiteProfile,
 };
 
 /// 指标口径版本：写入每个 prompt 集快照，保证跨轮次可比。

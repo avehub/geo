@@ -56,7 +56,11 @@
     "secret_status",
     "secret_delete",
     "llm_provider_test",
-    "llm_providers"
+    "llm_providers",
+    "site_board",
+    "site_profile_save",
+    "site_channel_upsert",
+    "site_channel_remove"
   ],
   "pending": [
     {
@@ -146,22 +150,6 @@
     {
       "command": "llm_models_list",
       "ledger": "E-46"
-    },
-    {
-      "command": "site_board",
-      "ledger": "E-55"
-    },
-    {
-      "command": "site_profile_save",
-      "ledger": "E-55"
-    },
-    {
-      "command": "site_channel_upsert",
-      "ledger": "E-55"
-    },
-    {
-      "command": "site_channel_remove",
-      "ledger": "E-55"
     },
     {
       "command": "site_channel_test",

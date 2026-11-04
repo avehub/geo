@@ -15,6 +15,7 @@ pub mod kb;
 pub mod keyword;
 pub mod project;
 pub mod prompt_set;
+pub mod site;
 
 pub use asset::AssetRepo;
 pub use competitor::CompetitorRepo;
@@ -24,6 +25,7 @@ pub use kb::KbRepo;
 pub use keyword::KeywordRepo;
 pub use project::{ProjectFilter, ProjectRepo};
 pub use prompt_set::{PromptSetRepo, PromptSetSummary};
+pub use site::SiteRepo;
 
 use crate::error::StoreError;
 

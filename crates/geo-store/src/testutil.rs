@@ -9,7 +9,9 @@ use geo_domain::{
     EntityCardSource, EntityFields, FaqId, FaqItem, FieldStatus, Industry, IntentCategory, KbEntry,
     KbEntryId, KbEntryKind, KbModule, KbScenario, KbSource, KeywordId, KeywordItem, KeywordKind,
     Language, LibrarySource, ProductSpec, Project, ProjectAsset, ProjectId, ProjectStatus,
-    PromptItem, PromptSet, PromptSetId, PromptSource, RevisionId,
+    PromptItem, PromptSet, PromptSetId, PromptSource, RevisionId, SiteChannel, SiteChannelId,
+    SiteChannelKind, SiteChannelStatus, SiteCredentialsState, SiteOwnership, SitePlatform,
+    SiteProfile, SiteProfileId,
 };
 
 /// 固定基准时间，避免测试依赖真实时钟。
@@ -221,6 +223,36 @@ pub(crate) fn sample_kb_entry(project_id: ProjectId, title: &str, position: i32)
         verified_at: None,
         position,
         created_at: base_time(),
+        updated_at: base_time(),
+    }
+}
+
+pub(crate) fn sample_site_profile(project_id: ProjectId) -> SiteProfile {
+    SiteProfile {
+        id: SiteProfileId::new(),
+        project_id,
+        domain: "https://www.gaodekuai.com".to_string(),
+        platform: SitePlatform::Custom,
+        ownership: SiteOwnership::Self_,
+        note: Some("自建站".to_string()),
+        created_at: base_time(),
+        updated_at: base_time(),
+    }
+}
+
+pub(crate) fn sample_site_channel(project_id: ProjectId, kind: SiteChannelKind) -> SiteChannel {
+    SiteChannel {
+        id: SiteChannelId::new(),
+        project_id,
+        kind,
+        status: SiteChannelStatus::PendingVerify,
+        endpoint: Some("https://wp.example".to_string()),
+        username: Some("editor".to_string()),
+        note: None,
+        credentials_state: SiteCredentialsState::Missing,
+        secret_ref: Some(format!("keyring://site/{}/{project_id}", kind.as_str())),
+        checked_at: None,
+        check_detail: None,
         updated_at: base_time(),
     }
 }

@@ -8,6 +8,7 @@ pub mod project_service;
 pub mod project_transfer;
 pub mod prompt_service;
 pub mod settings_service;
+pub mod site_service;
 pub mod templates;
 
 pub use entity_card_service::{EntityCardService, MAX_SITE_TEXT_CHARS};
@@ -20,6 +21,7 @@ pub use prompt_service::{GenerateOptions, PromptDraft, PromptService, DEFAULT_TA
 pub use settings_service::{
     active_proxy, LlmTestResult, ProviderInfo, SecretStatus, SettingsService, SECRET_KIND,
 };
+pub use site_service::{SiteBoard, SiteService};
 
 use geo_domain::compliance;
 

@@ -113,3 +113,21 @@
 | 命令面 | 注册 5 条，50 → 55；`pending` 55 → 50 |
 
 **状态（2026-11-04）**：✅ 已落地——domain 6 + repo 7 + service 14 条测试通过；`kb_generate` 也已转正（模型 + 红线扫描，命令面 56 / pending 49）。
+
+## 10. 第四个试点族（第一段）：站点档案 / 通道（2026-11-04）
+
+**范围**：`site_board` / `site_profile_save` / `site_channel_upsert` / `site_channel_remove`。
+`site_channel_test` 与补丁台账 6 条仍 pending。
+
+| 项 | 冻结值 |
+|---|---|
+| 表 | `site_profiles`（project_id 主键）+ `site_channels`（project_id, kind 唯一） |
+| 页面清单 | 本切片由 `ProjectAsset(kind = owned_page)` 投影；真后端由爬虫发现（E-56 延续） |
+| 档案 | `domain` 逐字取 `Project.website`，不接受入参覆盖；重复保存复用同一 id |
+| 通道 | `bundle` 零配置 `ready`、不收 endpoint/username；其余有落点 `pending_verify`、否则 `not_configured`；凭据只存 `keyring://site/<kind>/<project_id>` 引用串 |
+| 改配置 | 清空 `checked_at` / `check_detail`，状态回 `pending_verify` / `not_configured` |
+| 命令面 | 注册 4 条，56 → 60；`pending` 49 → 45 |
+
+**状态（2026-11-04）**：✅ 第一段已落地——domain 7 + repo 3 + service 5 条测试通过。
+
+**下一段前置**：`site_channel_test` 的 `check_detail` 必须先定义稳定码 + params（不能用中文散文），补丁台账需要 `site_patches` + `site_patch_events` 两张表与三态状态机。

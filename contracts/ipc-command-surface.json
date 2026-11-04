@@ -43,6 +43,7 @@
     "kb_entry_update",
     "kb_entry_delete",
     "kb_entry_verify",
+    "kb_generate",
     "faq_list",
     "faq_add",
     "faq_update",
@@ -189,10 +190,6 @@
     {
       "command": "site_patch_delete",
       "ledger": "E-55"
-    },
-    {
-      "command": "kb_generate",
-      "ledger": "E-60"
     },
     {
       "command": "article_direction_list",

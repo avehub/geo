@@ -60,6 +60,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         kb::kb_entry_update,
         kb::kb_entry_delete,
         kb::kb_entry_verify,
+        kb::kb_generate,
         faq::faq_list,
         faq::faq_add,
         faq::faq_update,

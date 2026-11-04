@@ -1,13 +1,13 @@
 //! M1.2b 知识库命令（Plan C 第三个纵向切片）。
 //!
-//! `kb_generate` 仍留在 demo-only 清单，本文件不提供伪造实现。
+//! `kb_generate` 调模型成文并跑广告法红线扫描。
 
 use chrono::Utc;
 use geo_domain::{KbEntry, KbEntryDraft, KbEntryId, ProjectId};
 use tauri::State;
 
 use crate::error::IpcError;
-use crate::services::{KbBoard, KbService};
+use crate::services::{KbBoard, KbGenerateOptions, KbService};
 use crate::state::AppState;
 
 #[tauri::command(rename_all = "snake_case")]
@@ -56,5 +56,16 @@ pub async fn kb_entry_verify(
 ) -> Result<Vec<KbEntry>, IpcError> {
     KbService::from_state(&state)
         .verify(project_id, ids, Utc::now())
+        .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn kb_generate(
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+    options: KbGenerateOptions,
+) -> Result<Vec<KbEntry>, IpcError> {
+    KbService::from_state(&state)
+        .generate(project_id, options, Utc::now())
         .await
 }

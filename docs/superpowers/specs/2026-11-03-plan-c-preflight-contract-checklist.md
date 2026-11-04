@@ -112,4 +112,4 @@
 | 核实 | `status → approved` + `verified_at → now` + 一条 `verified_at` 留痕；未知 id 忽略 |
 | 命令面 | 注册 5 条，50 → 55；`pending` 55 → 50 |
 
-**状态（2026-11-04）**：✅ 已落地——domain 6 + repo 7 + service 9 条测试通过；`kb_generate` 仍 pending。
+**状态（2026-11-04）**：✅ 已落地——domain 6 + repo 7 + service 14 条测试通过；`kb_generate` 也已转正（模型 + 红线扫描，命令面 56 / pending 49）。

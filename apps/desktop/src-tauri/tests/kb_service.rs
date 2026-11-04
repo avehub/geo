@@ -6,9 +6,12 @@ use chrono::Duration;
 use geo_domain::{
     ContentStatus, KbEntryDraft, KbEntryId, KbEntryKind, KbModule, KbScenario, KbSource, ProjectId,
 };
-use support::{now, sample_draft, test_state, OfflineTransport};
+use support::{
+    now, openai_response, sample_draft, state_with_bodies, test_state, OfflineTransport,
+    ScriptedTransport,
+};
 
-use geo_desktop_lib::services::{KbService, ProjectService};
+use geo_desktop_lib::services::{KbGenerateOptions, KbService, ProjectService};
 
 fn draft(title: &str) -> KbEntryDraft {
     KbEntryDraft {
@@ -281,4 +284,169 @@ async fn missing_project_is_project_not_found() {
         .await
         .expect_err("未知项目必须报 project/not_found");
     assert_eq!(error.code, "project/not_found");
+}
+
+fn kb_json(items: &[(&str, &str, &str, &str, Option<&str>)]) -> String {
+    let items: Vec<serde_json::Value> = items
+        .iter()
+        .map(|(module, kind, title, body, scenario)| {
+            serde_json::json!({
+                "module": module,
+                "kind": kind,
+                "title": title,
+                "body_markdown": body,
+                "scenario": scenario,
+            })
+        })
+        .collect();
+    openai_response(&serde_json::json!({ "items": items }).to_string())
+}
+
+#[tokio::test]
+async fn generate_persists_model_entries_as_pending_review() {
+    let (state, _server, _secrets) = state_with_bodies(vec![kb_json(&[
+        (
+            "sales_script",
+            "statement",
+            "开场一句话",
+            "我们帮客户做 GEO。",
+            Some("sales_first_contact"),
+        ),
+        (
+            "brand",
+            "text",
+            "品牌定义",
+            "专注生成式引擎优化。",
+            Some("sales_quote"),
+        ),
+    ])])
+    .await;
+    let project_id = project(&state).await;
+    let service = KbService::from_state(&state);
+    let created = service
+        .generate(
+            project_id,
+            KbGenerateOptions {
+                modules: vec![KbModule::SalesScript, KbModule::Brand],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect("生成成功");
+    assert_eq!(created.len(), 2);
+    assert!(created
+        .iter()
+        .all(|entry| entry.source == KbSource::Generated
+            && entry.status == ContentStatus::PendingReview
+            && entry.verified_at.is_none()));
+    assert_eq!(created[0].scenario, Some(KbScenario::SalesFirstContact));
+    assert_eq!(created[1].scenario, None, "非话术模块的场景必须被摘掉");
+    assert_eq!(created[0].position, 0);
+    assert_eq!(created[1].position, 1);
+}
+
+#[tokio::test]
+async fn generate_skips_titles_already_in_the_library() {
+    let (state, _server, _secrets) = state_with_bodies(vec![kb_json(&[
+        ("brand", "text", "已有标题", "新正文", None),
+        ("brand", "text", "新标题", "另一段正文", None),
+    ])])
+    .await;
+    let project_id = project(&state).await;
+    let service = KbService::from_state(&state);
+    let mut existing = draft("已有标题");
+    existing.module = KbModule::Brand;
+    existing.scenario = None;
+    service
+        .add(project_id, vec![existing], now())
+        .await
+        .expect("预置");
+
+    let created = service
+        .generate(
+            project_id,
+            KbGenerateOptions {
+                modules: vec![KbModule::Brand],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect("生成成功");
+    assert_eq!(created.len(), 1);
+    assert_eq!(created[0].title, "新标题");
+    assert_eq!(service.board(project_id).await.unwrap().entries.len(), 2);
+}
+
+#[tokio::test]
+async fn generate_rejects_compliance_violation_without_inserting() {
+    let (state, _server, _secrets) = state_with_bodies(vec![kb_json(&[(
+        "brand",
+        "text",
+        "品牌定义",
+        "我们保证排名第一。",
+        None,
+    )])])
+    .await;
+    let project_id = project(&state).await;
+    let error = KbService::from_state(&state)
+        .generate(
+            project_id,
+            KbGenerateOptions {
+                modules: vec![KbModule::Brand],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect_err("命中红线词必须拒绝");
+    assert_eq!(error.code, "compliance/violation");
+    assert!(!error.params["terms"].is_empty());
+    assert!(KbService::from_state(&state)
+        .board(project_id)
+        .await
+        .unwrap()
+        .entries
+        .is_empty());
+}
+
+#[tokio::test]
+async fn generate_rejects_empty_modules() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let error = KbService::from_state(&state)
+        .generate(
+            project_id,
+            KbGenerateOptions {
+                modules: Vec::new(),
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect_err("空 modules 必须报必填");
+    assert_eq!(error.code, "validation/failed");
+    assert_eq!(error.params["field"], "kb_modules");
+}
+
+#[tokio::test]
+async fn generate_without_secret_is_missing_secret() {
+    let (state, _server, _secrets) = test_state(ScriptedTransport::new(vec![kb_json(&[(
+        "brand", "text", "标题", "正文", None,
+    )])]))
+    .await;
+    let project_id = project(&state).await;
+    let error = KbService::from_state(&state)
+        .generate(
+            project_id,
+            KbGenerateOptions {
+                modules: vec![KbModule::Brand],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect_err("没有 Key 必须报 llm/missing_secret");
+    assert_eq!(error.code, "llm/missing_secret");
 }

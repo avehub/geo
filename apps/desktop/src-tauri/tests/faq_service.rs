@@ -3,9 +3,12 @@
 mod support;
 
 use geo_domain::{ContentStatus, FaqDraft, FaqId, IntentCategory, LibrarySource, ProjectId};
-use support::{now, sample_draft, test_state, OfflineTransport};
+use support::{
+    now, openai_response, sample_draft, state_with_bodies, test_state, OfflineTransport,
+    ScriptedTransport,
+};
 
-use geo_desktop_lib::services::{FaqService, ProjectService};
+use geo_desktop_lib::services::{FaqGenerateOptions, FaqService, ProjectService};
 
 fn draft(question: &str) -> FaqDraft {
     FaqDraft {
@@ -183,4 +186,143 @@ async fn missing_project_is_project_not_found() {
         .await
         .expect_err("未知项目必须报 project/not_found");
     assert_eq!(error.code, "project/not_found");
+}
+
+fn faq_json(items: &[(&str, &str, &str, &str)]) -> String {
+    let items: Vec<serde_json::Value> = items
+        .iter()
+        .map(|(question, answer, category, intent)| {
+            serde_json::json!({
+                "question": question,
+                "answer_markdown": answer,
+                "category": category,
+                "intent": intent,
+            })
+        })
+        .collect();
+    openai_response(&serde_json::json!({ "items": items }).to_string())
+}
+
+#[tokio::test]
+async fn generate_persists_model_answers_as_pending_review() {
+    let (state, _server, _secrets) = state_with_bodies(vec![faq_json(&[
+        (
+            "除尘器滤芯多久换一次？",
+            "- 视压差而定\n- 一般 3~6 个月",
+            "售后",
+            "after_sales_reputation",
+        ),
+        (
+            "防爆合格证怎么办？",
+            "按设备类别向具备资质的机构申请。",
+            "选型",
+            "purchase_recommendation",
+        ),
+    ])])
+    .await;
+    let project_id = project(&state).await;
+    let service = FaqService::from_state(&state);
+
+    let created = service
+        .generate(
+            project_id,
+            FaqGenerateOptions {
+                intents: vec![
+                    IntentCategory::AfterSalesReputation,
+                    IntentCategory::PurchaseRecommendation,
+                ],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect("生成成功");
+    assert_eq!(created.len(), 2);
+    assert!(created
+        .iter()
+        .all(|item| item.source == LibrarySource::Generated
+            && item.status == ContentStatus::PendingReview));
+    assert_eq!(created[0].answer_markdown, "- 视压差而定\n- 一般 3~6 个月");
+    assert_eq!(service.list(project_id).await.unwrap(), created);
+}
+
+#[tokio::test]
+async fn generate_skips_questions_already_in_the_library() {
+    let (state, _server, _secrets) = state_with_bodies(vec![faq_json(&[
+        ("已有问题？", "新答案", "售后", "after_sales_reputation"),
+        ("新问题？", "另一个答案", "售后", "after_sales_reputation"),
+    ])])
+    .await;
+    let project_id = project(&state).await;
+    let service = FaqService::from_state(&state);
+    let mut existing = draft("已有问题？");
+    existing.answer_markdown = "旧答案".to_string();
+    service
+        .add(project_id, vec![existing], now())
+        .await
+        .expect("预置");
+
+    let created = service
+        .generate(
+            project_id,
+            FaqGenerateOptions {
+                intents: vec![IntentCategory::AfterSalesReputation],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect("生成成功");
+    assert_eq!(created.len(), 1);
+    assert_eq!(created[0].question, "新问题？");
+    assert_eq!(service.list(project_id).await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn generate_rejects_compliance_violation_in_answer() {
+    let (state, _server, _secrets) = state_with_bodies(vec![faq_json(&[(
+        "选哪家？",
+        "我们保证排名第一，效果最好。",
+        "选型",
+        "purchase_recommendation",
+    )])])
+    .await;
+    let project_id = project(&state).await;
+    let error = FaqService::from_state(&state)
+        .generate(
+            project_id,
+            FaqGenerateOptions {
+                intents: vec![IntentCategory::PurchaseRecommendation],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect_err("命中红线词必须拒绝");
+    assert_eq!(error.code, "compliance/violation");
+    assert!(!error.params["terms"].is_empty());
+}
+
+#[tokio::test]
+async fn generate_without_secret_is_missing_secret() {
+    let (state, _server, _secrets) = test_state(ScriptedTransport::new(vec![faq_json(&[(
+        "问题？",
+        "答案",
+        "售后",
+        "after_sales_reputation",
+    )])]))
+    .await;
+    let project_id = project(&state).await;
+    let error = FaqService::from_state(&state)
+        .generate(
+            project_id,
+            FaqGenerateOptions {
+                intents: vec![IntentCategory::AfterSalesReputation],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect_err("没有 Key 必须报 llm/missing_secret");
+    assert_eq!(error.code, "llm/missing_secret");
 }

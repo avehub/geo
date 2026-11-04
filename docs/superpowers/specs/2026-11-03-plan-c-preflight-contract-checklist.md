@@ -82,3 +82,17 @@
 | 更新 | 保留 `source` / `position` / `created_at`；跨项目 id 报 `validation/failed { field: faq_id, reason: invalid_id }` |
 
 **状态（2026-11-03）**：✅ 已落地——domain 5 + repo 7 + service 7 条测试通过；`faq_generate` 仍 pending。
+
+## 8. 生成命令：keyword_generate / faq_generate（2026-11-04）
+
+| 项 | 冻结值 |
+|---|---|
+| 入参 | `keyword_generate { project_id, options: { kinds[], target_count } }`；`faq_generate { project_id, options: { intents[], target_count } }` |
+| 条数 | `target_count` 夹在 **1..=20**（与前端 `LIBRARY_GENERATE_MIN..MAX` 同档） |
+| 模型契约 | 只接受 JSON：关键词 `{ items: [{ text, kind, intent }] }`；FAQ `{ items: [{ question, answer_markdown, category?, intent }] }`。`kind` / `intent` 必须属于请求集合，空文本视为坏响应并触发 `chat_json` 追问 |
+| 合规 | 关键词文本、FAQ 问题与答案都跑 `compliance::is_clean`；命中任一红线词**整批拒绝**并返回 `compliance/violation { terms }`，不静默改写 |
+| 产物 | `source = generated`、`status = pending_review`；关键词 `monthly_volume` / `difficulty = null`（第三方关键词接口未接入） |
+| 去重 | 只跳过与库内已有条目**文本完全相同**的（关键词比 `text`、FAQ 比 `question`），不做相似度 |
+| 失败 | 未配 Key → `llm/missing_secret`；传输 / 结构化输出失败 → `llm/transport` / `llm/bad_response`；**不降级成假数据** |
+
+**状态（2026-11-04）**：✅ 已落地——`KeywordService::generate` / `FaqService::generate`，各 4 条生成测试；Rust 命令面 48 → 50，pending 57 → 55。

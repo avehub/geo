@@ -8,9 +8,12 @@ mod support;
 use geo_domain::{
     ContentStatus, IntentCategory, KeywordDraft, KeywordId, KeywordKind, LibrarySource, ProjectId,
 };
-use support::{now, sample_draft, test_state, OfflineTransport};
+use support::{
+    now, openai_response, sample_draft, state_with_bodies, test_state, OfflineTransport,
+    ScriptedTransport,
+};
 
-use geo_desktop_lib::services::{KeywordService, ProjectService};
+use geo_desktop_lib::services::{KeywordGenerateOptions, KeywordService, ProjectService};
 
 fn draft(text: &str) -> KeywordDraft {
     KeywordDraft {
@@ -20,6 +23,14 @@ fn draft(text: &str) -> KeywordDraft {
         priority: Some(3),
         note: None,
     }
+}
+
+async fn project(state: &geo_desktop_lib::state::AppState) -> geo_domain::ProjectId {
+    ProjectService::new(state.pool.clone())
+        .create_draft(&sample_draft(), now())
+        .await
+        .expect("建项目")
+        .id
 }
 
 #[tokio::test]
@@ -198,4 +209,127 @@ async fn missing_project_is_project_not_found() {
         .await
         .expect_err("未知项目必须报 project/not_found");
     assert_eq!(error.code, "project/not_found");
+}
+
+fn keyword_json(items: &[(&str, &str, &str)]) -> String {
+    let items: Vec<serde_json::Value> = items
+        .iter()
+        .map(|(text, kind, intent)| {
+            serde_json::json!({ "text": text, "kind": kind, "intent": intent })
+        })
+        .collect();
+    openai_response(&serde_json::json!({ "items": items }).to_string())
+}
+
+#[tokio::test]
+async fn generate_persists_model_candidates_as_pending_review() {
+    let (state, _server, _secrets) = state_with_bodies(vec![keyword_json(&[
+        ("工业除尘器", "core", "category_awareness"),
+        ("布袋除尘器厂家", "core", "purchase_recommendation"),
+    ])])
+    .await;
+    let project_id = project(&state).await;
+    let service = KeywordService::from_state(&state);
+
+    let created = service
+        .generate(
+            project_id,
+            KeywordGenerateOptions {
+                kinds: vec![KeywordKind::Core],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect("生成成功");
+    assert_eq!(created.len(), 2);
+    assert_eq!(created[0].position, 0);
+    assert_eq!(created[1].position, 1);
+    assert!(created
+        .iter()
+        .all(|item| item.source == LibrarySource::Generated
+            && item.status == ContentStatus::PendingReview
+            && item.monthly_volume.is_none()
+            && item.difficulty.is_none()));
+    assert_eq!(service.list(project_id).await.unwrap(), created);
+}
+
+#[tokio::test]
+async fn generate_skips_texts_already_in_the_library() {
+    let (state, _server, _secrets) = state_with_bodies(vec![keyword_json(&[
+        ("工业除尘器", "core", "category_awareness"),
+        ("新的长尾词", "core", "professional_long_tail"),
+    ])])
+    .await;
+    let project_id = project(&state).await;
+    let service = KeywordService::from_state(&state);
+    service
+        .add(project_id, vec![draft("工业除尘器")], now())
+        .await
+        .expect("预置已有词");
+
+    let created = service
+        .generate(
+            project_id,
+            KeywordGenerateOptions {
+                kinds: vec![KeywordKind::Core],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect("生成成功");
+    assert_eq!(created.len(), 1);
+    assert_eq!(created[0].text, "新的长尾词");
+    assert_eq!(service.list(project_id).await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn generate_rejects_compliance_violation_without_inserting() {
+    let (state, _server, _secrets) = state_with_bodies(vec![keyword_json(&[(
+        "保证排名第一的除尘器",
+        "core",
+        "category_awareness",
+    )])])
+    .await;
+    let project_id = project(&state).await;
+    let service = KeywordService::from_state(&state);
+
+    let error = service
+        .generate(
+            project_id,
+            KeywordGenerateOptions {
+                kinds: vec![KeywordKind::Core],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect_err("命中红线词必须拒绝");
+    assert_eq!(error.code, "compliance/violation");
+    assert!(!error.params["terms"].is_empty());
+    assert!(service.list(project_id).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn generate_without_secret_is_missing_secret() {
+    let (state, _server, _secrets) = test_state(ScriptedTransport::new(vec![keyword_json(&[(
+        "工业除尘器",
+        "core",
+        "category_awareness",
+    )])]))
+    .await;
+    let project_id = project(&state).await;
+    let error = KeywordService::from_state(&state)
+        .generate(
+            project_id,
+            KeywordGenerateOptions {
+                kinds: vec![KeywordKind::Core],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect_err("没有 Key 必须报 llm/missing_secret");
+    assert_eq!(error.code, "llm/missing_secret");
 }

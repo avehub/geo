@@ -33,6 +33,7 @@ use crate::services::templates::{
     co_mention_count, colloquial_variants, comparison_prompts, expand_with_context,
     item_from_model, prune_unnamed_competitors, select_items, templates_for, PromptContext,
 };
+use crate::services::{compliance_violation, violation_terms};
 use crate::state::{AppState, LlmFactory};
 
 /// 目标条数下限：再低就连一轮意图分层都铺不开。
@@ -789,26 +790,6 @@ fn reindex(items: &mut [PromptItem], set_id: PromptSetId) {
         item.position = index as i32;
         item.set_id = set_id;
     }
-}
-
-/// `compliance/violation` 的 params 形态：契约给它登记的键只有 `terms`，
-/// 装命中的红线词（**数据**，不是文案）。词典文案不得复述红线词本身（AGENTS 规则 6），
-/// 渲不渲染由 Task 7 的 code 级模板决定（裁定 §J）。
-fn compliance_violation(text: &str) -> IpcError {
-    IpcError::with_params(
-        err_codes::COMPLIANCE_VIOLATION,
-        [("terms", violation_terms(text).as_str())],
-    )
-}
-
-fn violation_terms(text: &str) -> String {
-    let mut terms: Vec<String> = compliance::scan(text)
-        .into_iter()
-        .map(|violation| violation.term)
-        .collect();
-    terms.sort();
-    terms.dedup();
-    terms.join("、")
 }
 
 /// `LlmError` → `IpcError`：`params` 由下游单点产出，`message` 用**已脱敏**的紧凑串兜底。

@@ -1,6 +1,6 @@
 //! 服务层错误站点的**结构性守卫**（Plan A Task 5 · 裁定 R-H 第三档）。
 //!
-//! 逐站点用例（`tests/*.rs` 的 params 级断言与各文件的表驱动用例）钉的是「今天这 42 处
+//! 逐站点用例（`tests/*.rs` 的 params 级断言与各文件的表驱动用例）钉的是「今天这 48 处
 //! 映射对不对」；本文件钉的是一件更耐时间的事：**以后谁在服务层新写一个中文 reason 站点，
 //! 立刻红**。Task 3 复审 I-1 的教训是「映射写错了没人知道」，Task 5 把服务层站点里那批
 //! 中文字面量 reason 全换成目录 key 之后（42 → 41 处，账见
@@ -76,6 +76,14 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../src/services/settings_service.rs"),
     ),
     (
+        "services/keyword_service.rs",
+        include_str!("../src/services/keyword_service.rs"),
+    ),
+    (
+        "services/faq_service.rs",
+        include_str!("../src/services/faq_service.rs"),
+    ),
+    (
         "services/templates/mod.rs",
         include_str!("../src/services/templates/mod.rs"),
     ),
@@ -94,6 +102,8 @@ const FILES: &[(&str, &str)] = &[
         "ipc/entity_card.rs",
         include_str!("../src/ipc/entity_card.rs"),
     ),
+    ("ipc/keyword.rs", include_str!("../src/ipc/keyword.rs")),
+    ("ipc/faq.rs", include_str!("../src/ipc/faq.rs")),
     // ---- Task 5b（裁定 A-4b，复审 Minor 4a）：壳的两个入口，期望站点数 0 ----
     ("lib.rs", include_str!("../src/lib.rs")),
     ("main.rs", include_str!("../src/main.rs")),
@@ -269,12 +279,14 @@ fn service_error_sites_carry_no_chinese_prose() {
 fn the_guard_sees_every_production_site() {
     let expected: &[(&str, usize)] = &[
         ("state.rs", 3),
-        ("services/mod.rs", 0),
+        ("services/mod.rs", 1),
         ("services/project_service.rs", 10),
         ("services/project_transfer.rs", 2),
-        ("services/prompt_service.rs", 14),
+        ("services/prompt_service.rs", 13),
         ("services/entity_card_service.rs", 2),
         ("services/settings_service.rs", 10),
+        ("services/keyword_service.rs", 3),
+        ("services/faq_service.rs", 3),
         ("services/templates/mod.rs", 0),
         ("services/templates/catalog.rs", 0),
         // Task 5b 新增（A-4）：`ipc/` 整棵树。只有 `export.rs` 有站点。
@@ -285,6 +297,8 @@ fn the_guard_sees_every_production_site() {
         ("ipc/settings.rs", 0),
         ("ipc/secret.rs", 0),
         ("ipc/entity_card.rs", 0),
+        ("ipc/keyword.rs", 0),
+        ("ipc/faq.rs", 0),
         // Task 5b 新增（A-4b，复审 Minor 4a）：壳入口，以「期望 0」入表，
         // 将来谁在这里直接拼中文 message 就会红。
         ("lib.rs", 0),
@@ -305,6 +319,6 @@ fn the_guard_sees_every_production_site() {
         assert_eq!(actual, *want, "{name} 的生产站点数变了，守卫清单要同步");
         total += actual;
     }
-    assert_eq!(total, 42, "壳侧生产站点总数");
+    assert_eq!(total, 48, "壳侧生产站点总数");
     assert_eq!(FILES.len(), expected.len(), "FILES 与期望表要一一对应");
 }

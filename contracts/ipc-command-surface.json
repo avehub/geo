@@ -37,10 +37,12 @@
     "keyword_add",
     "keyword_update",
     "keyword_delete",
+    "keyword_generate",
     "faq_list",
     "faq_add",
     "faq_update",
     "faq_delete",
+    "faq_generate",
     "export_write_file",
     "settings_get",
     "settings_update",
@@ -138,14 +140,6 @@
     {
       "command": "llm_models_list",
       "ledger": "E-46"
-    },
-    {
-      "command": "keyword_generate",
-      "ledger": "E-52"
-    },
-    {
-      "command": "faq_generate",
-      "ledger": "E-52"
     },
     {
       "command": "site_board",

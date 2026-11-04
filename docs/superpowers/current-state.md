@@ -12,10 +12,10 @@
 |---|---:|---|
 | `IPC_COMMANDS` | 105 | `apps/desktop/ui/src/api/client.ts` |
 | `demoBackend` 键 | 105 | `apps/desktop/ui/src/demo/backend.ts` |
-| Rust `generate_handler![]` | 48 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
-| demo-only | 57 | `contracts/ipc-command-surface.json` 的 `pending` |
+| Rust `generate_handler![]` | 50 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
+| demo-only | 55 | `contracts/ipc-command-surface.json` 的 `pending` |
 
-**105 = 48 条 Rust + 57 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
+**105 = 50 条 Rust + 55 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
 
 ### demo-only 族
 
@@ -188,8 +188,8 @@
   - `KeywordRepo`：按 `position, id` 排序、批量写入、按 `(id, project_id)` 取/改、幂等删除、`next_position`；
   - `KeywordService` / `FaqService`：新增全有或全无；更新保留 `source` / `position` / `created_at`，跨项目 id 报 `validation/failed {field: keyword_id|faq_id, reason: invalid_id}`；
   - FAQ 额外迁移 `20261103000003_faqs.sql`，仓储 `FaqRepo` 与 `FaqService` 同构；
-  - `keyword_generate` / `faq_generate` **仍 demo-only**，不伪造。
-- 判据：关键词 domain 6 + repo 7 + service 7，FAQ domain 5 + repo 7 + service 7；命令面契约 2 条（Rust）/ 5 条（TS）。
+  - `keyword_generate` / `faq_generate` 也已落 Rust：前者调模型生成候选（月搜索量 / 难度暂为 `null`，第三方关键词接口未接入）；后者调模型成文并跑广告法红线扫描，命中整批拒绝。两者产物一律 `generated` + `pending_review`，并按文本等值去重。
+- 判据：关键词 domain 6 + repo 7 + service 11（含 4 条生成），FAQ domain 5 + repo 7 + service 11（含 4 条生成）；命令面契约 2 条（Rust）/ 5 条（TS）。
 
 ## 4. 维护方式
 

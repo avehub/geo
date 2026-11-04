@@ -1,13 +1,13 @@
 //! M1.5 FAQ 素材库命令（Plan C 第二个纵向切片）。
 //!
-//! `faq_generate` 仍留在 demo-only 清单，本文件不提供伪造实现。
+//! `faq_generate` 调模型成文并跑广告法红线扫描。
 
 use chrono::Utc;
 use geo_domain::{FaqDraft, FaqId, FaqItem, ProjectId};
 use tauri::State;
 
 use crate::error::IpcError;
-use crate::services::FaqService;
+use crate::services::{FaqGenerateOptions, FaqService};
 use crate::state::AppState;
 
 #[tauri::command(rename_all = "snake_case")]
@@ -43,4 +43,15 @@ pub async fn faq_delete(
     ids: Vec<FaqId>,
 ) -> Result<Vec<FaqItem>, IpcError> {
     FaqService::from_state(&state).delete(project_id, ids).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn faq_generate(
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+    options: FaqGenerateOptions,
+) -> Result<Vec<FaqItem>, IpcError> {
+    FaqService::from_state(&state)
+        .generate(project_id, options, Utc::now())
+        .await
 }

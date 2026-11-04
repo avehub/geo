@@ -1,14 +1,14 @@
 //! M1.5 关键词素材库命令（Plan C 第一个纵向切片）。
 //!
 //! 只做参数解析与错误映射，业务全在 `services::KeywordService`。
-//! `keyword_generate` 仍留在 demo-only 清单，本文件不提供伪造实现。
+//! `keyword_generate` 调模型生成候选；月搜索量 / 难度暂为空（第三方关键词接口未接入）。
 
 use chrono::Utc;
 use geo_domain::{KeywordDraft, KeywordId, KeywordItem, ProjectId};
 use tauri::State;
 
 use crate::error::IpcError;
-use crate::services::KeywordService;
+use crate::services::{KeywordGenerateOptions, KeywordService};
 use crate::state::AppState;
 
 #[tauri::command(rename_all = "snake_case")]
@@ -48,5 +48,16 @@ pub async fn keyword_delete(
 ) -> Result<Vec<KeywordItem>, IpcError> {
     KeywordService::from_state(&state)
         .delete(project_id, ids)
+        .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn keyword_generate(
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+    options: KeywordGenerateOptions,
+) -> Result<Vec<KeywordItem>, IpcError> {
+    KeywordService::from_state(&state)
+        .generate(project_id, options, Utc::now())
         .await
 }

@@ -77,7 +77,7 @@ macro_rules! id_type {
     };
 }
 
-// 项目 ID / Prompt 集 ID / Prompt 条目 ID / 竞品 ID / 资产 ID / 修订 ID / 关键词 ID / FAQ ID
+// 项目 ID / Prompt 集 ID / Prompt 条目 ID / 竞品 ID / 资产 ID / 修订 ID / 关键词 ID / FAQ ID / 知识条目 ID
 id_type!(ProjectId);
 id_type!(PromptSetId);
 id_type!(PromptId);
@@ -86,6 +86,7 @@ id_type!(AssetId);
 id_type!(RevisionId);
 id_type!(KeywordId);
 id_type!(FaqId);
+id_type!(KbEntryId);
 
 #[cfg(test)]
 mod tests {

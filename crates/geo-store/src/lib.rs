@@ -18,8 +18,8 @@ mod testutil;
 pub use db::{open, open_in_memory};
 pub use error::StoreError;
 pub use repo::{
-    AssetRepo, CompetitorRepo, EntityCardRepo, FaqRepo, KeywordRepo, ProjectFilter, ProjectRepo,
-    PromptSetRepo, PromptSetSummary,
+    AssetRepo, CompetitorRepo, EntityCardRepo, FaqRepo, KbRepo, KeywordRepo, ProjectFilter,
+    ProjectRepo, PromptSetRepo, PromptSetSummary,
 };
 pub use secret::{
     parse_secret_ref, secret_ref, KeyringSecretStore, MemorySecretStore, SecretStore,

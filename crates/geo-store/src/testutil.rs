@@ -6,10 +6,10 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use geo_domain::{
     AssetKind, Competitor, CompetitorId, Contact, ContentStatus, EntityCard, EntityCardRevision,
-    EntityCardSource, EntityFields, FaqId, FaqItem, FieldStatus, Industry, IntentCategory,
-    KeywordId, KeywordItem, KeywordKind, Language, LibrarySource, ProductSpec, Project,
-    ProjectAsset, ProjectId, ProjectStatus, PromptItem, PromptSet, PromptSetId, PromptSource,
-    RevisionId,
+    EntityCardSource, EntityFields, FaqId, FaqItem, FieldStatus, Industry, IntentCategory, KbEntry,
+    KbEntryId, KbEntryKind, KbModule, KbScenario, KbSource, KeywordId, KeywordItem, KeywordKind,
+    Language, LibrarySource, ProductSpec, Project, ProjectAsset, ProjectId, ProjectStatus,
+    PromptItem, PromptSet, PromptSetId, PromptSource, RevisionId,
 };
 
 /// 固定基准时间，避免测试依赖真实时钟。
@@ -198,6 +198,27 @@ pub(crate) fn sample_faq(project_id: ProjectId, question: &str, position: i32) -
         intent: IntentCategory::AfterSalesReputation,
         status: ContentStatus::Approved,
         source: LibrarySource::Manual,
+        position,
+        created_at: base_time(),
+        updated_at: base_time(),
+    }
+}
+
+pub(crate) fn sample_kb_entry(project_id: ProjectId, title: &str, position: i32) -> KbEntry {
+    KbEntry {
+        id: KbEntryId::new(),
+        project_id,
+        module: KbModule::SalesScript,
+        kind: KbEntryKind::Statement,
+        title: title.to_string(),
+        body_markdown: "我们帮客户做 GEO。".to_string(),
+        url: None,
+        mime: None,
+        tags: vec!["开场".to_string()],
+        status: ContentStatus::Approved,
+        source: KbSource::Manual,
+        scenario: Some(KbScenario::SalesFirstContact),
+        verified_at: None,
         position,
         created_at: base_time(),
         updated_at: base_time(),

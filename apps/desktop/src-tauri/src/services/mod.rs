@@ -2,6 +2,7 @@
 
 pub mod entity_card_service;
 pub mod faq_service;
+pub mod kb_service;
 pub mod keyword_service;
 pub mod project_service;
 pub mod project_transfer;
@@ -11,6 +12,7 @@ pub mod templates;
 
 pub use entity_card_service::{EntityCardService, MAX_SITE_TEXT_CHARS};
 pub use faq_service::{FaqGenerateOptions, FaqService};
+pub use kb_service::{KbBoard, KbService};
 pub use keyword_service::{KeywordGenerateOptions, KeywordService};
 pub use project_service::{ProjectDetail, ProjectService};
 pub use project_transfer::{ImportReport, ProjectExport, EXPORT_FORMAT_VERSION};

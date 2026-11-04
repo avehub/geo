@@ -11,6 +11,7 @@ pub mod entity_card;
 pub mod error;
 pub mod faq;
 pub mod ids;
+pub mod kb;
 pub mod keyword;
 pub mod project;
 pub mod prompt;
@@ -29,7 +30,12 @@ pub use entity_card::{
 pub use error::GeoError;
 pub use faq::{FaqDraft, FaqItem};
 pub use ids::{
-    AssetId, CompetitorId, FaqId, KeywordId, ProjectId, PromptId, PromptSetId, RevisionId,
+    AssetId, CompetitorId, FaqId, KbEntryId, KeywordId, ProjectId, PromptId, PromptSetId,
+    RevisionId,
+};
+pub use kb::{
+    verify_revision, KbEntry, KbEntryDraft, KbEntryKind, KbEntryRevision, KbModule, KbScenario,
+    KbSource, KbStats, KB_REVISION_BODY_LIMIT,
 };
 pub use keyword::{
     KeywordDraft, KeywordItem, KeywordKind, LibrarySource, MAX_DIFFICULTY, MAX_KEYWORD_CHARS,

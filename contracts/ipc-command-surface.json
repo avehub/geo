@@ -38,6 +38,11 @@
     "keyword_update",
     "keyword_delete",
     "keyword_generate",
+    "kb_board",
+    "kb_entry_add",
+    "kb_entry_update",
+    "kb_entry_delete",
+    "kb_entry_verify",
     "faq_list",
     "faq_add",
     "faq_update",
@@ -186,28 +191,8 @@
       "ledger": "E-55"
     },
     {
-      "command": "kb_board",
-      "ledger": "E-61"
-    },
-    {
-      "command": "kb_entry_add",
-      "ledger": "E-61"
-    },
-    {
-      "command": "kb_entry_update",
-      "ledger": "E-61"
-    },
-    {
-      "command": "kb_entry_delete",
-      "ledger": "E-61"
-    },
-    {
-      "command": "kb_entry_verify",
-      "ledger": "E-61"
-    },
-    {
       "command": "kb_generate",
-      "ledger": "E-61"
+      "ledger": "E-60"
     },
     {
       "command": "article_direction_list",

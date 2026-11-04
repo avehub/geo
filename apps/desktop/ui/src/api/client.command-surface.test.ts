@@ -51,12 +51,12 @@ describe('contracts/ipc-command-surface.json', () => {
     const declared = [...surface.rust_registered, ...surface.pending.map((entry) => entry.command)];
     expect(new Set(IPC_COMMANDS), 'IPC_COMMANDS 与契约清单不一致').toEqual(new Set(declared));
     expect(IPC_COMMANDS).toHaveLength(105);
-    expect(surface.rust_registered).toHaveLength(50);
-    expect(surface.pending).toHaveLength(55);
+    expect(surface.rust_registered).toHaveLength(55);
+    expect(surface.pending).toHaveLength(50);
   });
 
   it('每条待落地命令都带台账编号（形如 E-33），且编号在已知集合内', () => {
-    const knownLedgers = new Set(['E-33', 'E-46', 'E-52', 'E-55', 'E-61', 'E-64', 'E-67']);
+    const knownLedgers = new Set(['E-33', 'E-46', 'E-52', 'E-55', 'E-60', 'E-61', 'E-64', 'E-67']);
     for (const entry of surface.pending) {
       expect(entry.ledger, `${entry.command} 缺台账编号`).toMatch(/^E-\d+$/);
       expect(knownLedgers.has(entry.ledger), `${entry.command} 的台账编号不在已知集合：${entry.ledger}`).toBe(true);
@@ -69,7 +69,7 @@ describe('contracts/ipc-command-surface.json', () => {
       [/^(app_environment|llm_models_list)$/, 'E-46'],
       [/^(keyword_|faq_)/, 'E-52'],
       [/^site_/, 'E-55'],
-      [/^kb_/, 'E-61'],
+      [/^kb_/, 'E-60'],
       [/^article_/, 'E-64'],
       [/^search_/, 'E-67'],
     ];

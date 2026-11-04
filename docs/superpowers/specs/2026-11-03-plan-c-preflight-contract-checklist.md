@@ -96,3 +96,20 @@
 | 失败 | 未配 Key → `llm/missing_secret`；传输 / 结构化输出失败 → `llm/transport` / `llm/bad_response`；**不降级成假数据** |
 
 **状态（2026-11-04）**：✅ 已落地——`KeywordService::generate` / `FaqService::generate`，各 4 条生成测试；Rust 命令面 48 → 50，pending 57 → 55。
+
+## 9. 第三个试点族：知识库 CRUD + board + verify（2026-11-04）
+
+**范围**：`kb_board` / `kb_entry_add` / `kb_entry_update` / `kb_entry_delete` / `kb_entry_verify`。`kb_generate` 需要模型成文 + 合规扫描，继续留在 `pending`。
+
+| 项 | 冻结值 |
+|---|---|
+| 表 | `kb_entries`（条目）+ `kb_entry_revisions`（字段级留痕）；删除条目**不删**留痕 |
+| DTO | `KbEntry` / `KbEntryDraft` / `KbStats` / `KbEntryRevision`；board 一次返回条目 + 统计 + 修订（新的在前） |
+| 校验 | 标题必填（`kb_title`）；`scenario` 只在 `sales_script` / `support_script` 保留，其余模块强制 `null` |
+| 来源 / 状态 | 人工恒 `manual + approved`；`source: imported` 是唯一覆盖值，其 `status` 只认 `approved` / `pending_review`；`generated` 不算数 |
+| 更新 | 保留 `source` / `position` / `created_at` / `verified_at`；逐字段 diff 每个变化记一条；`body_markdown` 留痕副本截断 120 字符 |
+| 删除 | 幂等、只删本项目、重排 `position` 为 `0..n-1` |
+| 核实 | `status → approved` + `verified_at → now` + 一条 `verified_at` 留痕；未知 id 忽略 |
+| 命令面 | 注册 5 条，50 → 55；`pending` 55 → 50 |
+
+**状态（2026-11-04）**：✅ 已落地——domain 6 + repo 7 + service 9 条测试通过；`kb_generate` 仍 pending。

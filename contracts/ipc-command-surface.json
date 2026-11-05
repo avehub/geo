@@ -61,6 +61,7 @@
     "search_source_upsert",
     "search_source_remove",
     "search_opportunity_update",
+    "search_source_test",
     "site_board",
     "site_profile_save",
     "site_channel_upsert",
@@ -207,10 +208,6 @@
     {
       "command": "article_list",
       "ledger": "E-64"
-    },
-    {
-      "command": "search_source_test",
-      "ledger": "E-67"
     },
     {
       "command": "search_metric_import_csv",

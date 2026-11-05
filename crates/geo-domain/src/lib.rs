@@ -4,6 +4,7 @@
 //! （不访问网络/数据库/文件系统；当前时间一律由调用方以参数注入）。
 
 pub mod asset;
+pub mod check;
 pub mod compliance;
 pub mod csv_io;
 pub mod dedupe;
@@ -21,6 +22,7 @@ pub mod site;
 pub mod site_patch;
 
 pub use asset::{clean_optional, normalize_url, AssetKind, ProjectAsset};
+pub use check::CheckDetail;
 pub use compliance::{ContentStatus, Violation};
 pub use csv_io::{
     assets_to_csv, competitors_to_csv, prompts_from_csv, prompts_to_csv, CsvImportResult,

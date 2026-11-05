@@ -81,6 +81,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         search::search_source_upsert,
         search::search_source_remove,
         search::search_opportunity_update,
+        search::search_source_test,
         site::site_board,
         site::site_profile_save,
         site::site_channel_upsert,

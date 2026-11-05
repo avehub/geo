@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { catalogEntryOf, searchSecretRef } from '../api/search-catalog';
 import type { SearchBindingField, SearchIngestMode, SearchSource } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
+import CheckDetailText from './CheckDetailText';
 import { dateTimeText } from './format';
 
 export interface SearchSourceDrawerProps {
@@ -176,7 +177,7 @@ export default function SearchSourceDrawer({
         </Typography.Text>
         {source.check_detail === null ? null : (
           <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
-            {`${t('webmasterData.sourceCards.checkDetail')}: ${source.check_detail}`}
+            {t('webmasterData.sourceCards.checkDetail')}: <CheckDetailText detail={source.check_detail} />
           </Typography.Paragraph>
         )}
 

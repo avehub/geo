@@ -74,6 +74,8 @@ const THROUGH_BAIDU = day(7);
 const THROUGH_GSC = day(10);
 /** 头条：40 天前 ⇒ 超过 `STALE_AFTER_DAYS`(35) 触发陈旧告警，同时它是区间末日的受限方。 */
 const THROUGH_TOUTIAO = day(40);
+/** 与 `THROUGH_*` 同一时刻求值，避免测试跨午夜后 as_of 与它们相差一天。 */
+const AS_OF = day(0);
 
 const SITE_URL = 'https://lanzhou.example.com';
 
@@ -267,7 +269,7 @@ function makeOpportunities(): SearchOpportunity[] {
 
 function makeBoard(overrides: Partial<SearchBoardResult> = {}): SearchBoardResult {
   return {
-    as_of: day(0),
+    as_of: AS_OF,
     sources: [
       makeSource('baidu_ziyuan_ai', { data_through: THROUGH_BAIDU }),
       makeSource('baidu_ziyuan', { data_through: THROUGH_BAIDU }),
@@ -315,7 +317,7 @@ function stubBoard(board: SearchBoardResult = makeBoard()): SearchBoardResult {
   mockInvoke.stubAlways('search_source_test', (args) =>
     makeSource(args.kind as SearchSourceKind, {
       checked_at: '2026-10-12T03:00:00Z',
-      check_detail: '预置自检结论',
+      check_detail: { code: 'search_ai_flow_verified', params: {} },
     }),
   );
   mockInvoke.stubAlways('search_metric_import_csv', () => structuredClone(EMPTY_IMPORT));

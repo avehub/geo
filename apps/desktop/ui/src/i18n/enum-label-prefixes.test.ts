@@ -83,6 +83,7 @@ const EXPECTED_PREFIXES = [
   'collection.sourceTypes',
   'collection.statuses',
   'collection.taskStatuses',
+  'common.checkDetails',
   'common.exportFormats',
   'common.languages',
   'common.sampleSizeGrades',
@@ -172,7 +173,7 @@ describe('i18n · enumLabel 命名空间守卫', () => {
     expect(Object.keys(SOURCES).length).toBeGreaterThan(60);
     expect(USED_PREFIXES.length).toBeGreaterThanOrEqual(30);
     expect(USED_PREFIXES).toEqual([...EXPECTED_PREFIXES]);
-    expect(EXPECTED_PREFIXES).toHaveLength(76);
+    expect(EXPECTED_PREFIXES).toHaveLength(77);
   });
 
   it('每个前缀在 zh-CN 与 en-US 两侧都解析出一张非空标签表', () => {

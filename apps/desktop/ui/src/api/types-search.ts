@@ -31,7 +31,7 @@ import type { AssertComplete, ValuesAreComplete } from './completeness';
 import type { SearchTableError, SearchTableWarning } from './search-paste';
 import type { ActionCategory, ActionLevel } from './types-action';
 import type { EngineId } from './types-collection';
-import type { SiteChannelStatus, SiteCredentialsState } from './types-site';
+import type { CheckDetail, SiteChannelStatus, SiteCredentialsState } from './types-site';
 
 // ---------------------------------------------------------------------------
 // 枚举
@@ -286,8 +286,8 @@ export interface SearchSource {
   data_through: string | null;
   /** 最近一次自检时间；`null` = 没自检过。demo 不联网（规则 2）。 */
   checked_at: string | null;
-  /** 自检结论（数据级中文，逐字来自种子）。 */
-  check_detail: string | null;
+  /** 自检结论（稳定 code + params；文案由前端 `checkDetails.<code>` 渲染）。 */
+  check_detail: CheckDetail | null;
   note: string | null;
   created_at: string;
   updated_at: string;

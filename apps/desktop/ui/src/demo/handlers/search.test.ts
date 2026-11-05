@@ -386,7 +386,7 @@ describe('demo/handlers/search · search_source_upsert / _remove / _test', () =>
       kind: 'toutiao',
     });
 
-    expect(source.check_detail).toBe(probe.check_detail);
+    expect(source.check_detail).toStrictEqual(probe.check_detail);
     expect(source.status).toBe(probe.status);
     expect(source.checked_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     expect(source.updated_at).toBe(source.checked_at);
@@ -406,8 +406,8 @@ describe('demo/handlers/search · search_source_upsert / _remove / _test', () =>
     // 预置结论是 `ready`，但这一行没有填任何绑定 ⇒ 不能把“未配置”说成可用。
     expect(source.status).toBe('not_configured');
     // 结论文字也必须跟状态一致：不能一边说未配置、一边说“站点已验证”。
-    expect(source.check_detail).not.toContain('站点已验证');
-    expect(source.check_detail).toBe(SEED_SEARCH_BINDING_BLOCKED_DETAIL);
+    expect(source.check_detail?.code).not.toBe('search_ai_flow_verified');
+    expect(source.check_detail).toStrictEqual(SEED_SEARCH_BINDING_BLOCKED_DETAIL);
   });
 });
 

@@ -10,6 +10,7 @@ import {
 } from '../api/search-compose';
 import type { SearchQueryMetric, SearchSource, SearchSourceKind } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
+import CheckDetailText from './CheckDetailText';
 import { percentText } from './format';
 
 export interface SearchSourceCardsProps {
@@ -188,7 +189,7 @@ export default function SearchSourceCards({
                     )}
                     {source?.check_detail == null ? null : (
                       <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>
-                        {`${t('webmasterData.sourceCards.checkDetail')}: ${source.check_detail}`}
+                        {t('webmasterData.sourceCards.checkDetail')}: <CheckDetailText detail={source.check_detail} />
                       </Typography.Paragraph>
                     )}
                     <Button

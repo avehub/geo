@@ -113,6 +113,30 @@ const common = {
     pdf: 'PDF',
     png: 'PNG',
   },
+  /**
+   * 自检结论（`CheckDetail.code` → 文案）。后端只回稳定码 + 语言中立 params；
+   * 查不到时由 `CheckDetailText` 回落到 code 本身，绝不回落到中文。
+   */
+  checkDetails: {
+    site_bundle_ready: '落地包通道不需要任何凭据；导出走本地文件，已确认导出目录可写。',
+    site_bundle_verified: '落地包不需要任何凭据；已确认导出目录可写，最近一次导出为 {{date}} 的资质页交接单。',
+    site_edge_not_deployed: '边缘函数尚未部署：patches.json 拉取地址返回 {{status}}。部署后重新自检即可。',
+    site_cms_not_configured: '未配置：需要先填站点 URL 与用户名，并在 WordPress 后台创建应用程序密码（演示模式不收密码）。',
+    site_repo_not_configured: '未配置：填仓库地址后可生成 diff 与交接说明，由用户自己在托管平台上提合并请求。',
+    search_ai_flow_verified: '站点已验证，《AI 流量分析》在灰度名单内：三段报表都能看到，其中只有「AI 引用热门关键词」带下载按钮（xlsx，无日期列）。',
+    search_traffic_keywords_verified: '站点已验证，「数据统计 → 流量与关键词」可导出；平均排名与索引量两列没有规范落点，按原样留在平台独有维度里。',
+    search_toutiao_delayed: '站点已验证，但后台只给到 {{through}}：新站数据延时，这一批还没出。距今已 {{days}} 天，界面上会挂陈旧告警。',
+    search_gsc_export_verified: '资源库属性已核对（含结尾斜杠的 URL 前缀）；本轮数据由 CSV 导出接入，接口授权还没配。数据延迟 {{lag_days}} 天，且每天每类型最多 {{row_cap}} 行、超出静默采样。',
+    search_bing_verified_no_api: '站点已通过 DNS 验证；AI Performance 报表今天只有界面、没有接口，Grounding Queries 这一列按原样留在平台独有维度里。',
+    search_tongji_verified: '站点 ID 已核对；会话数与来源分析可读。它是站内分析、量纲是会话，永不进曝光合计，只用于流量来源分布与接入建议。',
+    search_binding_missing: '尚未完成必填绑定：{{fields}}。',
+    search_binding_blocked: '尚未完成必填绑定：预置探测结论显示平台本身可用，但当前源缺少取数所需的站点绑定；演示模式不发请求。',
+    search_credentials_missing: '尚未授权：{{kind}} 需要先完成官方授权。',
+    search_reachable: '站点可达（HTTP {{status}}）。',
+    search_unreachable: '站点不可达：{{reason}}。',
+    search_manual_no_probe: '人工填报不需要探测：没有平台、没有凭据，填的是哪个区间就是哪个区间。',
+    search_phase_two: '二期数据源：目录表里已经建齐，界面本轮不渲染接入入口。',
+  },
 };
 
 export default common;

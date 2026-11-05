@@ -85,6 +85,30 @@ fn serde_error(reason: String) -> StoreError {
     StoreError::Serde(SerdeDeError::custom(reason))
 }
 
+/// 可空 JSON 列：`None` 存 NULL；`Some` 存 serde JSON 文本。
+pub(crate) fn encode_optional_json<T: Serialize>(
+    value: &Option<T>,
+) -> Result<Option<String>, StoreError> {
+    match value {
+        Some(value) => Ok(Some(
+            serde_json::to_string(value).map_err(StoreError::Serde)?,
+        )),
+        None => Ok(None),
+    }
+}
+
+/// 可空 JSON 列 → `Option<T>`；NULL 回 `None`。
+pub(crate) fn decode_optional_json<T: DeserializeOwned>(
+    raw: Option<String>,
+) -> Result<Option<T>, StoreError> {
+    match raw {
+        Some(text) => Ok(Some(
+            serde_json::from_str(&text).map_err(StoreError::Serde)?,
+        )),
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

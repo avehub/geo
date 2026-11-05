@@ -452,7 +452,7 @@ describe('demo/handlers/site · site_channel_test（🔴 不联网，回预置�
 
       expect(channel.kind, kind).toBe(kind);
       expect(channel.status, kind).toBe(probe.status);
-      expect(channel.check_detail, kind).toBe(probe.check_detail);
+      expect(channel.check_detail, kind).toStrictEqual(probe.check_detail);
       expect(channel.checked_at, kind).toMatch(RFC3339);
       expect(channel.updated_at, kind).toBe(channel.checked_at);
     }

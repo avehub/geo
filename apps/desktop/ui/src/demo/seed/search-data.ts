@@ -31,6 +31,7 @@
  * 外部 CTR 曲线不在本文件（在 `api/search-benchmark.ts`，每条带机构名 + 年份 + 链接，默认不参与判定）。
  */
 import type {
+  CheckDetail,
   SearchAiOverview,
   SearchCompleteness,
   SearchNativeExtra,
@@ -150,7 +151,7 @@ export const SEED_SEARCH_SOURCES: SearchSource[] = [
     status: 'ready', region: 'cn', group: 'webmaster_cn',
     binding: { siteUrl: SEED_SITE_DOMAIN }, credentials_state: 'not_required', secret_ref: null,
     data_through: SEED_SEARCH_DATA_THROUGH, checked_at: '2026-09-28T01:20:00Z',
-    check_detail: '站点已验证，《AI 流量分析》在灰度名单内：三段报表都能看到，其中只有「AI 引用热门关键词」带下载按钮（xlsx，无日期列）。',
+    check_detail: { code: 'search_ai_flow_verified', params: {} },
     note: '客户自己每周一下午从后台复制热门关键词表粘贴进来；导出没有日期列，区间要在导入时确认。',
     created_at: '2026-09-12T02:10:00Z', updated_at: '2026-09-28T01:20:00Z',
   },
@@ -160,7 +161,7 @@ export const SEED_SEARCH_SOURCES: SearchSource[] = [
     status: 'ready', region: 'cn', group: 'webmaster_cn',
     binding: { siteUrl: SEED_SITE_DOMAIN }, credentials_state: 'not_required', secret_ref: null,
     data_through: SEED_SEARCH_DATA_THROUGH, checked_at: '2026-09-28T01:24:00Z',
-    check_detail: '站点已验证，「数据统计 → 流量与关键词」可导出；平均排名与索引量两列没有规范落点，按原样留在平台独有维度里。',
+    check_detail: { code: 'search_traffic_keywords_verified', params: {} },
     note: null,
     created_at: '2026-09-12T02:12:00Z', updated_at: '2026-09-28T01:24:00Z',
   },
@@ -170,7 +171,7 @@ export const SEED_SEARCH_SOURCES: SearchSource[] = [
     status: 'ready', region: 'cn', group: 'webmaster_cn',
     binding: { siteUrl: SEED_SITE_DOMAIN }, credentials_state: 'not_required', secret_ref: null,
     data_through: SEED_SEARCH_TOUTIAO_DATA_THROUGH, checked_at: '2026-09-02T03:10:00Z',
-    check_detail: '站点已验证，但后台只给到 2026-08-20：新站数据延时，9 月这一批还没出。距今已 41 天，界面上会挂陈旧告警。',
+    check_detail: { code: 'search_toutiao_delayed', params: { through: '2026-08-20', days: '41' } },
     note: '等头条把 9 月的数据放出来再导一次；这一批不参与"近 30 天"的合计。',
     created_at: '2026-09-02T03:00:00Z', updated_at: '2026-09-02T03:10:00Z',
   },
@@ -181,7 +182,7 @@ export const SEED_SEARCH_SOURCES: SearchSource[] = [
     binding: { siteUrl: `${SEED_SITE_DOMAIN}/` }, credentials_state: 'missing',
     secret_ref: 'keyring://search/gsc',
     data_through: SEED_SEARCH_GSC_DATA_THROUGH, checked_at: '2026-09-28T01:30:00Z',
-    check_detail: '资源库属性已核对（含结尾斜杠的 URL 前缀）；本轮数据由 CSV 导出接入，接口授权还没配。数据延迟 3 天，且每天每类型最多 5 万行、超出静默采样。',
+    check_detail: { code: 'search_gsc_export_verified', params: { lag_days: '3', row_cap: '50000' } },
     note: '海外流量占两成，主要是 bag filter / dust collector 这两个英文词族。',
     created_at: '2026-09-12T02:14:00Z', updated_at: '2026-09-28T01:30:00Z',
   },
@@ -192,7 +193,7 @@ export const SEED_SEARCH_SOURCES: SearchSource[] = [
     binding: { siteUrl: `${SEED_SITE_DOMAIN}/` }, credentials_state: 'missing',
     secret_ref: 'keyring://search/bing_wmt',
     data_through: SEED_SEARCH_DATA_THROUGH, checked_at: '2026-09-28T01:34:00Z',
-    check_detail: '站点已通过 DNS 验证；AI Performance 报表今天只有界面、没有接口，Grounding Queries 这一列按原样留在平台独有维度里。',
+    check_detail: { code: 'search_bing_verified_no_api', params: {} },
     note: null,
     created_at: '2026-09-12T02:16:00Z', updated_at: '2026-09-28T01:34:00Z',
   },
@@ -203,7 +204,7 @@ export const SEED_SEARCH_SOURCES: SearchSource[] = [
     binding: { siteId: 'lanz-hb-2024' }, credentials_state: 'missing',
     secret_ref: 'keyring://search/baidu_tongji',
     data_through: SEED_SEARCH_DATA_THROUGH, checked_at: '2026-09-28T01:40:00Z',
-    check_detail: '站点 ID 已核对；会话数与来源分析可读。它是站内分析、量纲是会话，永不进曝光合计，只用于流量来源分布与接入建议。',
+    check_detail: { code: 'search_tongji_verified', params: {} },
     note: '接进来只为回答"客户到底该先接哪个站长平台"，不当曝光数据用。',
     created_at: '2026-09-12T02:18:00Z', updated_at: '2026-09-28T01:40:00Z',
   },
@@ -225,43 +226,43 @@ export const SEED_SEARCH_SOURCES: SearchSource[] = [
  */
 export const SEED_SEARCH_SOURCE_PROBES: Record<
   SearchSourceKind,
-  { status: SiteChannelStatus; check_detail: string }
+  { status: SiteChannelStatus; check_detail: CheckDetail }
 > = {
   baidu_ziyuan_ai: {
     status: 'ready',
-    check_detail: '站点已验证，《AI 流量分析》入口可达；演示模式不发请求，这一句是预置结论。真后端要真打开一次后台并核对灰度名单。',
+    check_detail: { code: 'search_ai_flow_verified', params: {} },
   },
   baidu_ziyuan: {
     status: 'ready',
-    check_detail: '站点已验证，「流量与关键词」可读；演示模式不发请求。真后端要核对站点归属并读一次索引量。',
+    check_detail: { code: 'search_traffic_keywords_verified', params: {} },
   },
   toutiao: {
     status: 'failed',
-    check_detail: '后台只给到 2026-08-20，9 月这一批还没出（新站延时）；演示模式不发请求，这一句是预置结论。',
+    check_detail: { code: 'search_toutiao_delayed', params: { through: '2026-08-20', days: '41' } },
   },
   gsc: {
     status: 'pending_verify',
-    check_detail: '尚未授权：接口取数需要先走一次 Google OAuth（演示模式不收任何凭据、也不联网）。今天的数据来自 CSV 导出。',
+    check_detail: { code: 'search_credentials_missing', params: { kind: 'gsc' } },
   },
   bing_wmt: {
     status: 'pending_verify',
-    check_detail: '尚未授权：Bing 的 AI Performance 今天只有界面、没有接口，授权也只能取传统搜索那部分（演示模式不联网）。',
+    check_detail: { code: 'search_credentials_missing', params: { kind: 'bing_wmt' } },
   },
   sogou: {
     status: 'not_configured',
-    check_detail: '二期数据源：目录表里已经建齐，界面本轮不渲染接入入口（DR-92 / DR-108）。',
+    check_detail: { code: 'search_phase_two', params: {} },
   },
   so_360: {
     status: 'not_configured',
-    check_detail: '二期数据源：目录表里已经建齐，界面本轮不渲染接入入口（DR-92 / DR-108）。',
+    check_detail: { code: 'search_phase_two', params: {} },
   },
   baidu_tongji: {
     status: 'ready',
-    check_detail: '站点 ID 已核对，会话数与来源分析可读；演示模式不发请求。它是站内分析，永不进曝光合计（DR-110 护栏 2）。',
+    check_detail: { code: 'search_tongji_verified', params: {} },
   },
   manual: {
     status: 'ready',
-    check_detail: '人工填报不需要探测：没有平台、没有凭据，填的是哪个区间就是哪个区间（window_source = user_stated）。',
+    check_detail: { code: 'search_manual_no_probe', params: {} },
   },
 };
 
@@ -272,8 +273,10 @@ export const SEED_SEARCH_SOURCE_PROBES: Record<
  * （`i18n/no-hardcoded-strings.test.ts`）；而这句话描述的是演示里的预置探测结论，
  * 与 `SEED_SEARCH_SOURCE_PROBES` 同族，所以放这边。
  */
-export const SEED_SEARCH_BINDING_BLOCKED_DETAIL =
-  '尚未完成必填绑定：预置探测结论显示平台本身可用，但当前源缺少取数所需的站点绑定；演示模式不发请求。';
+export const SEED_SEARCH_BINDING_BLOCKED_DETAIL: CheckDetail = {
+  code: 'search_binding_blocked',
+  params: {},
+};
 
 // ---------------------------------------------------------------------------
 // 关键词 / 页面级指标明细（约 30 行，两面都有）

@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { SiteChannel, SiteChannelKind, SiteChannelStatus } from '../api/types';
 import { SITE_CHANNEL_KIND_VALUES } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
+import CheckDetailText from './CheckDetailText';
 import { dateTimeText } from './format';
 
 export interface SiteChannelCardsProps {
@@ -216,7 +217,7 @@ function ChannelCard({
             type="secondary"
             style={{ fontSize: 12, marginBottom: 0 }}
           >
-            {`${t('site.channels.checkDetail')}: ${channel.check_detail}`}
+            {t('site.channels.checkDetail')}: <CheckDetailText detail={channel.check_detail} />
           </Typography.Paragraph>
         )}
         {channel?.secret_ref === undefined || channel.secret_ref === null ? null : (

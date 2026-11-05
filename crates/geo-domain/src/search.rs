@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::check::CheckDetail;
 use crate::ids::{ProjectId, SearchSourceId};
 use crate::site::{SiteChannelStatus, SiteCredentialsState};
 
@@ -247,7 +248,7 @@ pub struct SearchSource {
     pub secret_ref: Option<String>,
     pub data_through: Option<String>,
     pub checked_at: Option<DateTime<Utc>>,
-    pub check_detail: Option<String>,
+    pub check_detail: Option<CheckDetail>,
     pub note: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

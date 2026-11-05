@@ -8,12 +8,14 @@
 //! `search_board` 对这些字段返回空数组（或 `null`），不伪造种子数据。
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use geo_crawler::{CrawlerError, SiteFetcher};
 use geo_domain::{
-    clean_binding, credentials_state, secret_ref, source_status, GeoError, ProjectId,
+    clean_binding, credentials_state, secret_ref, source_status, CheckDetail, GeoError, ProjectId,
     SearchAuthMode, SearchOpportunity, SearchOpportunityId, SearchOpportunityStatus, SearchSource,
-    SearchSourceId, SearchSourceKind,
+    SearchSourceId, SearchSourceKind, SiteChannelStatus,
 };
 use geo_store::{ProjectRepo, SearchRepo, StoreError};
 use serde::Serialize;
@@ -38,15 +40,16 @@ pub struct SearchBoardResult {
 #[derive(Debug, Clone)]
 pub struct SearchService {
     pool: SqlitePool,
+    fetcher: Arc<SiteFetcher>,
 }
 
 impl SearchService {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, fetcher: Arc<SiteFetcher>) -> Self {
+        Self { pool, fetcher }
     }
 
     pub fn from_state(state: &AppState) -> Self {
-        Self::new(state.pool.clone())
+        Self::new(state.pool.clone(), state.fetcher.clone())
     }
 
     fn search(&self) -> SearchRepo {
@@ -173,5 +176,127 @@ impl SearchService {
         opportunity.status = status;
         opportunity.updated_at = now;
         Ok(opportunity)
+    }
+    /// 跑一次源自检：不伪造结论。可探测的源真发一次 HTTP GET；OAuth 源在未授权时只报缺少授权。
+    pub async fn test_source(
+        &self,
+        project_id: ProjectId,
+        kind: SearchSourceKind,
+        now: DateTime<Utc>,
+    ) -> Result<SearchSource, IpcError> {
+        self.require_project(project_id).await?;
+        let catalog = kind.catalog();
+        if catalog.phase != 1 {
+            return Err(GeoError::validation("source_kind", "not_allowed")
+                .with_param("value", kind.as_str())
+                .into());
+        }
+        let mut source = match self
+            .search()
+            .sources(project_id)
+            .await?
+            .into_iter()
+            .find(|source| source.kind == kind)
+        {
+            Some(source) => source,
+            None => SearchSource {
+                id: SearchSourceId::new(),
+                project_id,
+                kind,
+                auth_mode: catalog.auth_mode,
+                ingest_modes: catalog.ingest_modes.to_vec(),
+                status: SiteChannelStatus::NotConfigured,
+                region: catalog.region,
+                group: catalog.group,
+                binding: BTreeMap::new(),
+                credentials_state: credentials_state(kind),
+                secret_ref: secret_ref(kind),
+                data_through: None,
+                checked_at: None,
+                check_detail: None,
+                note: None,
+                created_at: now,
+                updated_at: now,
+            },
+        };
+
+        let (status, detail) = if kind == SearchSourceKind::Manual {
+            (
+                SiteChannelStatus::Ready,
+                CheckDetail::new("search_manual_no_probe"),
+            )
+        } else if catalog.auth_mode == SearchAuthMode::Oauth {
+            (
+                SiteChannelStatus::PendingVerify,
+                CheckDetail::new("search_credentials_missing").with_param("kind", kind.as_str()),
+            )
+        } else if catalog
+            .binding_fields
+            .iter()
+            .any(|field| !source.binding.contains_key(field.as_str()))
+        {
+            let fields = catalog
+                .binding_fields
+                .iter()
+                .map(|field| field.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            (
+                SiteChannelStatus::NotConfigured,
+                CheckDetail::new("search_binding_missing").with_param("fields", fields),
+            )
+        } else {
+            match source
+                .binding
+                .get("siteUrl")
+                .and_then(|raw| url::Url::parse(raw).ok())
+            {
+                None => (
+                    SiteChannelStatus::Failed,
+                    CheckDetail::new("search_unreachable").with_param("reason", "invalid_url"),
+                ),
+                Some(target) => match self.fetcher.fetch(&target).await {
+                    Ok(page) => (
+                        SiteChannelStatus::Ready,
+                        CheckDetail::new("search_reachable")
+                            .with_param("status", page.status.to_string()),
+                    ),
+                    Err(error) => {
+                        let (reason, status_code) = crawler_reason(&error);
+                        let mut detail =
+                            CheckDetail::new("search_unreachable").with_param("reason", reason);
+                        if let Some(code) = status_code {
+                            detail = detail.with_param("status", code);
+                        }
+                        (SiteChannelStatus::Failed, detail)
+                    }
+                },
+            }
+        };
+
+        source.status = status;
+        source.check_detail = Some(detail);
+        source.checked_at = Some(now);
+        source.updated_at = now;
+        self.search().upsert_source(&source).await?;
+        Ok(source)
+    }
+}
+
+fn crawler_reason(error: &CrawlerError) -> (&'static str, Option<String>) {
+    match error {
+        CrawlerError::Timeout { .. } => ("timeout", None),
+        CrawlerError::Network { status, .. } => (
+            if status.is_some() {
+                "http_status"
+            } else {
+                "network"
+            },
+            status.map(|value| value.to_string()),
+        ),
+        CrawlerError::InvalidUrl { .. } => ("invalid_url", None),
+        CrawlerError::Blocked { .. } => ("blocked", None),
+        CrawlerError::TooLarge { .. } => ("too_large", None),
+        CrawlerError::Decode(_) => ("decode", None),
     }
 }

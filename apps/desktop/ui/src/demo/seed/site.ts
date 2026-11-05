@@ -22,6 +22,7 @@
  * `demo-act-007` 的口径写"贰级"（种子里那条事实纠错处方纠正的正是"壹级"这个错法）。
  */
 import type {
+  CheckDetail,
   SiteChannel,
   SiteChannelKind,
   SiteChannelStatus,
@@ -92,7 +93,7 @@ export const SEED_SITE_CHANNELS: SiteChannel[] = [
     note: '默认通道：把补丁渲染成可上传的文件与交接单，交给站长或外包执行。',
     credentials_state: 'not_required', secret_ref: null,
     checked_at: '2026-09-26T01:10:00Z',
-    check_detail: '落地包不需要任何凭据；已确认导出目录可写，最近一次导出为 2026-09-25 的资质页交接单。',
+    check_detail: { code: 'site_bundle_verified', params: { date: '2026-09-25' } },
     updated_at: '2026-09-26T01:10:00Z',
   },
   {
@@ -102,7 +103,7 @@ export const SEED_SITE_CHANNELS: SiteChannel[] = [
     credentials_state: 'missing',
     secret_ref: `keyring://site/edge/${SEED_ACTIVE_PROJECT_ID}`,
     checked_at: '2026-09-26T01:12:00Z',
-    check_detail: '尚未验证：边缘函数还没有部署，patches.json 拉取地址返回 404。部署后重新自检即可。',
+    check_detail: { code: 'site_edge_not_deployed', params: { status: '404' } },
     updated_at: '2026-09-26T01:12:00Z',
   },
   {
@@ -127,23 +128,23 @@ export const SEED_SITE_CHANNELS: SiteChannel[] = [
  */
 export const SEED_SITE_CHANNEL_PROBES: Record<
   SiteChannelKind,
-  { status: SiteChannelStatus; check_detail: string }
+  { status: SiteChannelStatus; check_detail: CheckDetail }
 > = {
   bundle: {
     status: 'ready',
-    check_detail: '落地包通道不需要探测：导出走本地文件，已确认导出目录可写。',
+    check_detail: { code: 'site_bundle_ready', params: {} },
   },
   cms: {
     status: 'failed',
-    check_detail: '未配置：需要先填站点 URL 与用户名，并在 WordPress 后台创建应用程序密码（演示模式不收密码）。',
+    check_detail: { code: 'site_cms_not_configured', params: {} },
   },
   edge: {
     status: 'pending_verify',
-    check_detail: '边缘函数尚未部署：patches.json 拉取地址返回 404。把生成的函数贴进控制台后重新自检。',
+    check_detail: { code: 'site_edge_not_deployed', params: { status: '404' } },
   },
   repo: {
     status: 'not_configured',
-    check_detail: '未配置：填仓库地址后可生成 diff 与交接说明，由用户自己在托管平台上提合并请求。',
+    check_detail: { code: 'site_repo_not_configured', params: {} },
   },
 };
 

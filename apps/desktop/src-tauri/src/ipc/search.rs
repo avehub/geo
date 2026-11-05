@@ -1,6 +1,6 @@
 //! M5.5 站长数据命令（Plan C 第五切片第一段）。
 //!
-//! `search_source_test` 与 `search_metric_import_csv` 仍留在 demo-only。
+//! `search_metric_import_csv` 仍留在 demo-only。
 
 use std::collections::BTreeMap;
 
@@ -55,5 +55,16 @@ pub async fn search_opportunity_update(
 ) -> Result<SearchOpportunity, IpcError> {
     SearchService::from_state(&state)
         .update_opportunity(opportunity_id, status, Utc::now())
+        .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn search_source_test(
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+    kind: SearchSourceKind,
+) -> Result<SearchSource, IpcError> {
+    SearchService::from_state(&state)
+        .test_source(project_id, kind, Utc::now())
         .await
 }

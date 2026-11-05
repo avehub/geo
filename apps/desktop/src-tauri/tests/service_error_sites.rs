@@ -313,7 +313,7 @@ fn the_guard_sees_every_production_site() {
         ("services/kb_service.rs", 2),
         ("services/site_service.rs", 0),
         ("services/site_patch_service.rs", 5),
-        ("services/search_service.rs", 3),
+        ("services/search_service.rs", 4),
         ("services/templates/mod.rs", 0),
         ("services/templates/catalog.rs", 0),
         // Task 5b 新增（A-4）：`ipc/` 整棵树。只有 `export.rs` 有站点。
@@ -350,6 +350,6 @@ fn the_guard_sees_every_production_site() {
         assert_eq!(actual, *want, "{name} 的生产站点数变了，守卫清单要同步");
         total += actual;
     }
-    assert_eq!(total, 58, "壳侧生产站点总数");
+    assert_eq!(total, 59, "壳侧生产站点总数");
     assert_eq!(FILES.len(), expected.len(), "FILES 与期望表要一一对应");
 }

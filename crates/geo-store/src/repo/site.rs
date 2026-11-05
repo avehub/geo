@@ -81,7 +81,7 @@ impl ChannelRow {
                 Some(raw) => Some(codec::decode_time(&raw)?),
                 None => None,
             },
-            check_detail: self.check_detail,
+            check_detail: codec::decode_optional_json(self.check_detail)?,
             updated_at: codec::decode_time(&self.updated_at)?,
         })
     }
@@ -166,7 +166,7 @@ impl SiteRepo {
         .bind(codec::encode_scalar(&channel.credentials_state)?)
         .bind(&channel.secret_ref)
         .bind(channel.checked_at.map(|value| codec::encode_time(&value)))
-        .bind(&channel.check_detail)
+        .bind(codec::encode_optional_json(&channel.check_detail)?)
         .bind(codec::encode_time(&channel.updated_at))
         .execute(&self.pool)
         .await?;
@@ -237,7 +237,7 @@ mod tests {
         let (repo, project_id, _other, _other_id) = setup().await;
         let mut channel = sample_site_channel(project_id, SiteChannelKind::Cms);
         channel.checked_at = Some(base_time());
-        channel.check_detail = Some("old".to_string());
+        channel.check_detail = Some(geo_domain::CheckDetail::new("legacy"));
         repo.save_channel(&channel).await.expect("写入");
         channel.endpoint = Some("https://new.example".to_string());
         channel.updated_at = later(5);

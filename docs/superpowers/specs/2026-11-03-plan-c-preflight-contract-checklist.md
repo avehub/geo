@@ -150,6 +150,6 @@
 | 机会 | 只翻 `new / adopted / ignored` 状态，不重算依据 |
 | 命令面 | 注册 4 条，65 → 69；pending 40 → 36 |
 
-**状态（2026-11-04）**：✅ 已落地——domain 4 + repo 3 + service 7 条测试通过。
+**状态（2026-11-04）**：✅ 第一段已落地——domain 4 + repo 3 + service 12 条测试通过；`search_source_test` 已转正；`check_detail` 已改为结构化 `{ code, params }`。
 
-**下一段前置**：`search_source_test` 的 `check_detail` 与站点通道共用同一套稳定码改造；导入需要 CSV / xlsx 解析与 fixture 对拍。
+**下一段前置**：`search_metric_import_csv` 需要 CSV / xlsx 解析与 TS / Rust fixture 对拍；建议先落 Baidu AI 五列模板，再扩其它源。

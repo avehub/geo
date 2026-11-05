@@ -1141,7 +1141,7 @@ describe('demo/seed · M6.5 站点接入：补丁 ↔ 处方 ↔ 归因三者自
     expect(new Set(SEED_SITE_CHANNELS.map((row) => row.kind)).size).toBe(SEED_SITE_CHANNELS.length);
     for (const kind of SITE_CHANNEL_KIND_VALUES) {
       expect(SEED_SITE_CHANNELS.map((row) => row.kind), kind).toContain(kind);
-      expect(SEED_SITE_CHANNEL_PROBES[kind]?.check_detail?.length ?? 0, kind).toBeGreaterThan(0);
+      expect(SEED_SITE_CHANNEL_PROBES[kind]?.check_detail?.code, kind).toBeTruthy();
     }
     // 🔴 零凭据那条不该有 endpoint / username（后端也会把它们清成 null，DR-46）
     const bundle = SEED_SITE_CHANNELS.find((row) => row.kind === 'bundle');
@@ -1431,7 +1431,7 @@ describe('demo/seed · M5.5 站长数据：源清单钉在目录表上（DR-92 /
       expect(SEED_SEARCH_SOURCES.some((row) => row.kind === entry.kind), entry.kind).toBe(false);
       expect(SEED_SEARCH_QUERY_METRICS.some((row) => row.source_kind === entry.kind), entry.kind).toBe(false);
       // 自检结论仍然要有（`Record<SearchSourceKind, …>` 的穷尽性网）：开放二期时命令面自动放开。
-      expect(SEED_SEARCH_SOURCE_PROBES[entry.kind].check_detail.trim(), entry.kind).not.toBe('');
+      expect(SEED_SEARCH_SOURCE_PROBES[entry.kind].check_detail.code, entry.kind).not.toBe('');
     }
     expect(Object.keys(SEED_SEARCH_SOURCE_PROBES).sort()).toEqual([...SEARCH_SOURCE_VALUES].sort());
   });

@@ -587,7 +587,7 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     expect(paths).toContain('../main.tsx');
   });
 
-  it('components/ 下扫到了 109 个文件（99 个 .tsx + 10 个非组件模块：entity-fields / wizard-steps / format / library-generate-defaults / kb-view / kb-import / kb-fields / site-patch-filters / article-slots / article-studio-view）', () => {
+  it('components/ 下扫到了 110 个文件（100 个 .tsx + 10 个非组件模块：entity-fields / wizard-steps / format / library-generate-defaults / kb-view / kb-import / kb-fields / site-patch-filters / article-slots / article-studio-view）', () => {
     const paths = Object.keys(COMPONENT_SOURCES);
     // Plan B Task 6 新增 `components/SideNav.tsx`（导航从 AppLayout 搬出来）⇒ 34 个 .tsx；
     // M1.5 素材层再加 8 个（关键词/FAQ 各一套表格 + 录入 + 生成弹窗，外加两个共用弹窗）⇒ 42 个。
@@ -616,8 +616,8 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     // 组装逻辑全在 `api/overview-compose.ts`（纯函数），视图里只有词典键与数据。
     // M9 组合总览再加 1 个 .tsx（分布卡），组装与筛选在 `api/portfolio-compose.ts`。
     // P1 站外对账 / 交付进度再加 2 个 .tsx（`OverviewStationCard` / `OverviewDeliveryCard`）。
-    expect(paths).toHaveLength(109);
-    expect(paths.filter((path) => path.endsWith('.tsx'))).toHaveLength(99);
+    expect(paths).toHaveLength(110);
+    expect(paths.filter((path) => path.endsWith('.tsx'))).toHaveLength(100);
     expect(paths).toContain('../components/SideNav.tsx');
     expect(paths).toContain('../components/LibraryReferenceModal.tsx');
     expect(paths).toContain('../components/KbModulePanels.tsx');
@@ -675,9 +675,9 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     ]);
   });
 
-  it('B-1 · 抽取面 = components(109) + pages(28) + App.tsx + main.tsx，且不含 api/', () => {
+  it('B-1 · 抽取面 = components(110) + pages(28) + App.tsx + main.tsx，且不含 api/', () => {
     const paths = Object.keys(EXTRACTION_SOURCES);
-    expect(paths).toHaveLength(139);
+    expect(paths).toHaveLength(140);
     expect(paths.filter((path) => path.startsWith('../api/'))).toEqual([]);
     expect(paths.filter((path) => EXTRACTION_ROOTS.some((root) => !path.startsWith(root))).length)
       .toBeGreaterThan(0);

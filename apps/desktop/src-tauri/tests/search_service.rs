@@ -84,7 +84,7 @@ async fn upsert_source_derives_catalog_fields_and_clears_check_state() {
     )
     .bind("2026-10-01")
     .bind("2026-09-16T08:00:00.000000000Z")
-    .bind("old")
+    .bind("{\"code\":\"legacy\",\"params\":{}}")
     .bind(source.id.to_string())
     .execute(&state.pool)
     .await
@@ -226,4 +226,100 @@ async fn missing_project_is_project_not_found() {
         .await
         .expect_err("未知项目必须报 project/not_found");
     assert_eq!(error.code, "project/not_found");
+}
+
+#[tokio::test]
+async fn test_source_probes_reachable_site_and_marks_ready() {
+    let (state, server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SearchService::from_state(&state);
+    let source = service
+        .upsert_source(
+            project_id,
+            SearchSourceKind::BaiduZiyuan,
+            binding(&[("siteUrl", server.uri().as_str())]),
+            None,
+            now(),
+        )
+        .await
+        .expect("新增");
+    let tested = service
+        .test_source(project_id, SearchSourceKind::BaiduZiyuan, now())
+        .await
+        .expect("自检");
+    assert_eq!(tested.id, source.id);
+    assert_eq!(tested.status, SiteChannelStatus::Ready);
+    let detail = tested.check_detail.unwrap();
+    assert_eq!(detail.code, "search_reachable");
+    assert_eq!(detail.params.get("status").map(String::as_str), Some("200"));
+    assert_eq!(tested.data_through, source.data_through, "自检不动数据");
+}
+
+#[tokio::test]
+async fn test_source_missing_binding_reports_the_required_fields() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SearchService::from_state(&state);
+    let tested = service
+        .test_source(project_id, SearchSourceKind::BaiduZiyuan, now())
+        .await
+        .expect("自检即建档");
+    assert_eq!(tested.status, SiteChannelStatus::NotConfigured);
+    let detail = tested.check_detail.unwrap();
+    assert_eq!(detail.code, "search_binding_missing");
+    assert_eq!(
+        detail.params.get("fields").map(String::as_str),
+        Some("siteUrl")
+    );
+}
+
+#[tokio::test]
+async fn test_source_manual_is_ready_without_probe() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let tested = SearchService::from_state(&state)
+        .test_source(project_id, SearchSourceKind::Manual, now())
+        .await
+        .expect("自检");
+    assert_eq!(tested.status, SiteChannelStatus::Ready);
+    assert_eq!(tested.check_detail.unwrap().code, "search_manual_no_probe");
+}
+
+#[tokio::test]
+async fn test_source_oauth_without_credentials_is_pending_verify() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let tested = SearchService::from_state(&state)
+        .test_source(project_id, SearchSourceKind::Gsc, now())
+        .await
+        .expect("自检");
+    assert_eq!(tested.status, SiteChannelStatus::PendingVerify);
+    let detail = tested.check_detail.unwrap();
+    assert_eq!(detail.code, "search_credentials_missing");
+    assert_eq!(detail.params.get("kind").map(String::as_str), Some("gsc"));
+}
+
+#[tokio::test]
+async fn test_source_unreachable_reports_stable_reason() {
+    let (state, server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SearchService::from_state(&state);
+    service
+        .upsert_source(
+            project_id,
+            SearchSourceKind::BaiduZiyuan,
+            binding(&[("siteUrl", format!("{}/missing", server.uri()).as_str())]),
+            None,
+            now(),
+        )
+        .await
+        .expect("新增");
+    let tested = service
+        .test_source(project_id, SearchSourceKind::BaiduZiyuan, now())
+        .await
+        .expect("自检");
+    assert_eq!(tested.status, SiteChannelStatus::Failed);
+    let detail = tested.check_detail.unwrap();
+    assert_eq!(detail.code, "search_unreachable");
+    assert!(detail.params.contains_key("reason"));
 }

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::asset::{AssetKind, ProjectAsset};
+use crate::check::CheckDetail;
 use crate::ids::{ProjectId, SiteChannelId, SiteProfileId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -149,7 +150,7 @@ pub struct SiteChannel {
     /// 规则 3：只存 `keyring://site/<kind>/<project_id>` 引用串，不存凭据值。
     pub secret_ref: Option<String>,
     pub checked_at: Option<DateTime<Utc>>,
-    pub check_detail: Option<String>,
+    pub check_detail: Option<CheckDetail>,
     pub updated_at: DateTime<Utc>,
 }
 

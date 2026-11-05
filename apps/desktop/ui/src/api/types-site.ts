@@ -195,6 +195,12 @@ export const SITE_PAGE_ROLE_VALUES = [
 // DTO
 // ---------------------------------------------------------------------------
 
+/** 一条自检结论的稳定形状：`code` + 语言中立 `params`，文案由前端词典渲染（规则 7）。 */
+export interface CheckDetail {
+  code: string;
+  params: Record<string, string>;
+}
+
 /** 站点档案：把"这个站点长什么样、谁能改它"引进来（spec DR-49）。 */
 export interface SiteProfile {
   id: string;
@@ -242,8 +248,8 @@ export interface SiteChannel {
   secret_ref: string | null;
   /** 最近一次自检时间；`null` = 没自检过。 */
   checked_at: string | null;
-  /** 自检结论（数据级中文；demo 里逐字来自种子，不联网）。 */
-  check_detail: string | null;
+  /** 自检结论（稳定 code + params；文案由前端 `checkDetails.<code>` 渲染）。 */
+  check_detail: CheckDetail | null;
   updated_at: string;
 }
 

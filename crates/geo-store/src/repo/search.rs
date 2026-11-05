@@ -68,7 +68,7 @@ impl SourceRow {
                 Some(raw) => Some(codec::decode_time(&raw)?),
                 None => None,
             },
-            check_detail: self.check_detail,
+            check_detail: codec::decode_optional_json(self.check_detail)?,
             note: self.note,
             created_at: codec::decode_time(&self.created_at)?,
             updated_at: codec::decode_time(&self.updated_at)?,
@@ -163,7 +163,7 @@ impl SearchRepo {
         .bind(&source.secret_ref)
         .bind(&source.data_through)
         .bind(source.checked_at.map(|value| codec::encode_time(&value)))
-        .bind(&source.check_detail)
+        .bind(codec::encode_optional_json(&source.check_detail)?)
         .bind(&source.note)
         .bind(codec::encode_time(&source.created_at))
         .bind(codec::encode_time(&source.updated_at))

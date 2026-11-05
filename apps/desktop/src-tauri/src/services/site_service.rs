@@ -9,9 +9,9 @@
 use chrono::{DateTime, Utc};
 use geo_domain::{
     channel_secret_ref, channel_status, page_from_asset, ProjectId, SiteChannel, SiteChannelId,
-    SiteChannelKind, SiteOwnership, SitePage, SitePlatform, SiteProfile, SiteProfileId,
+    SiteChannelKind, SiteOwnership, SitePage, SitePatch, SitePlatform, SiteProfile, SiteProfileId,
 };
-use geo_store::{AssetRepo, ProjectRepo, SiteRepo};
+use geo_store::{AssetRepo, ProjectRepo, SitePatchRepo, SiteRepo};
 use serde::Serialize;
 use sqlx::SqlitePool;
 
@@ -24,7 +24,7 @@ pub struct SiteBoard {
     pub profile: Option<SiteProfile>,
     pub pages: Vec<SitePage>,
     pub channels: Vec<SiteChannel>,
-    pub patches: Vec<serde_json::Value>,
+    pub patches: Vec<SitePatch>,
     pub pool: Vec<serde_json::Value>,
 }
 
@@ -54,6 +54,10 @@ impl SiteService {
         AssetRepo::new(self.pool.clone())
     }
 
+    fn patches(&self) -> SitePatchRepo {
+        SitePatchRepo::new(self.pool.clone())
+    }
+
     async fn require_project(
         &self,
         project_id: ProjectId,
@@ -74,7 +78,7 @@ impl SiteService {
             profile: self.sites().profile(project_id).await?,
             pages,
             channels: self.sites().channels(project_id).await?,
-            patches: Vec::new(),
+            patches: self.patches().list_by_project(project_id).await?,
             pool: Vec::new(),
         })
     }

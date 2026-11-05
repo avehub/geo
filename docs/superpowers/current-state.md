@@ -12,10 +12,10 @@
 |---|---:|---|
 | `IPC_COMMANDS` | 105 | `apps/desktop/ui/src/api/client.ts` |
 | `demoBackend` 键 | 105 | `apps/desktop/ui/src/demo/backend.ts` |
-| Rust `generate_handler![]` | 60 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
-| demo-only | 45 | `contracts/ipc-command-surface.json` 的 `pending` |
+| Rust `generate_handler![]` | 65 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
+| demo-only | 40 | `contracts/ipc-command-surface.json` 的 `pending` |
 
-**105 = 60 条 Rust + 45 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
+**105 = 65 条 Rust + 40 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
 
 ### demo-only 族
 
@@ -190,8 +190,9 @@
   - FAQ 额外迁移 `20261103000003_faqs.sql`，仓储 `FaqRepo` 与 `FaqService` 同构；
   - `keyword_generate` / `faq_generate` 也已落 Rust：前者调模型生成候选（月搜索量 / 难度暂为 `null`，第三方关键词接口未接入）；后者调模型成文并跑广告法红线扫描，命中整批拒绝。两者产物一律 `generated` + `pending_review`，并按文本等值去重。
   - **知识库切片**：`kb_board` / `kb_entry_add` / `kb_entry_update` / `kb_entry_delete` / `kb_entry_verify` / `kb_generate` 已全部落 Rust；迁移 `20261104000004_kb.sql` 建 `kb_entries` + `kb_entry_revisions`。更新逐字段 diff 留痕（正文截断 120 字符），删除重排 `position` 且不删留痕，核实写 `verified_at` 留痕；生成调模型并按模块产出 `generated` + `pending_review`，命中红线词整批拒绝。
-  - **站点档案 / 通道切片**：`site_board` / `site_profile_save` / `site_channel_upsert` / `site_channel_remove` 已落 Rust；迁移 `20261104000005_site_profile_channels.sql` 建 `site_profiles` + `site_channels`。页面清单暂由项目自有页面资产投影（真后端由爬虫发现），`patches` / `pool` 暂为空；`site_channel_test` 与补丁台账 6 条仍 demo-only（自检的 `check_detail` 需要先改成稳定码 + params）。
-- 判据：关键词 domain 6 + repo 7 + service 11，FAQ domain 5 + repo 7 + service 11，KB domain 6 + repo 7 + service 14，站点 domain 7 + repo 3 + service 5；命令面契约 2 条（Rust）/ 5 条（TS）。
+  - **站点档案 / 通道切片**：`site_board` / `site_profile_save` / `site_channel_upsert` / `site_channel_remove` 已落 Rust；迁移 `20261104000005_site_profile_channels.sql` 建 `site_profiles` + `site_channels`。页面清单暂由项目自有页面资产投影（真后端由爬虫发现）。
+  - **补丁台账切片**：`site_patch_add` / `site_patch_save` / `site_patch_transition` / `site_patch_history` / `site_patch_delete` 已落 Rust；迁移 `20261104000006_site_patches.sql` 建 `site_patches` + `site_patch_events`。手动补丁三态状态机、发布快照、事件历史、已发布拒删、删除重排 `position` 与事件级联均已落地；`site_patch_generate`（依赖行动中心）与 `site_channel_test`（`check_detail` 需稳定码）仍 demo-only。
+- 判据：关键词 domain 6 + repo 7 + service 11，FAQ domain 5 + repo 7 + service 11，KB domain 6 + repo 7 + service 14，站点 domain 7 + repo 3 + service 5，补丁 domain 5 + repo 6 + service 8；命令面契约 2 条（Rust）/ 5 条（TS）。
 
 ## 4. 维护方式
 

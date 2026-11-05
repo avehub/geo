@@ -10,8 +10,8 @@ use geo_domain::{
     KbEntryId, KbEntryKind, KbModule, KbScenario, KbSource, KeywordId, KeywordItem, KeywordKind,
     Language, LibrarySource, ProductSpec, Project, ProjectAsset, ProjectId, ProjectStatus,
     PromptItem, PromptSet, PromptSetId, PromptSource, RevisionId, SiteChannel, SiteChannelId,
-    SiteChannelKind, SiteChannelStatus, SiteCredentialsState, SiteOwnership, SitePlatform,
-    SiteProfile, SiteProfileId,
+    SiteChannelKind, SiteChannelStatus, SiteCredentialsState, SiteOwnership, SitePatch,
+    SitePatchDraft, SitePatchKind, SitePlatform, SiteProfile, SiteProfileId,
 };
 
 /// 固定基准时间，避免测试依赖真实时钟。
@@ -255,4 +255,18 @@ pub(crate) fn sample_site_channel(project_id: ProjectId, kind: SiteChannelKind) 
         check_detail: None,
         updated_at: base_time(),
     }
+}
+
+pub(crate) fn sample_site_patch(project_id: ProjectId, title: &str, position: i32) -> SitePatch {
+    SitePatchDraft {
+        kind: SitePatchKind::LlmsTxt,
+        title: title.to_string(),
+        target_url: "/llms.txt".to_string(),
+        target_hint: None,
+        body: "User-agent: *".to_string(),
+        channel_kind: SiteChannelKind::Bundle,
+        action_id: None,
+    }
+    .into_patch(project_id, position, base_time())
+    .expect("样例补丁合法")
 }

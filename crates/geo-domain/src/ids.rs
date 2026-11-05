@@ -89,6 +89,8 @@ id_type!(FaqId);
 id_type!(KbEntryId);
 id_type!(SiteProfileId);
 id_type!(SiteChannelId);
+id_type!(SitePatchId);
+id_type!(SitePatchEventId);
 
 #[cfg(test)]
 mod tests {

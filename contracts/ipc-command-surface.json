@@ -60,7 +60,12 @@
     "site_board",
     "site_profile_save",
     "site_channel_upsert",
-    "site_channel_remove"
+    "site_channel_remove",
+    "site_patch_add",
+    "site_patch_save",
+    "site_patch_transition",
+    "site_patch_history",
+    "site_patch_delete"
   ],
   "pending": [
     {
@@ -156,27 +161,7 @@
       "ledger": "E-55"
     },
     {
-      "command": "site_patch_add",
-      "ledger": "E-55"
-    },
-    {
       "command": "site_patch_generate",
-      "ledger": "E-55"
-    },
-    {
-      "command": "site_patch_save",
-      "ledger": "E-55"
-    },
-    {
-      "command": "site_patch_transition",
-      "ledger": "E-55"
-    },
-    {
-      "command": "site_patch_history",
-      "ledger": "E-55"
-    },
-    {
-      "command": "site_patch_delete",
       "ledger": "E-55"
     },
     {

@@ -130,4 +130,6 @@
 
 **状态（2026-11-04）**：✅ 第一段已落地——domain 7 + repo 3 + service 5 条测试通过。
 
-**下一段前置**：`site_channel_test` 的 `check_detail` 必须先定义稳定码 + params（不能用中文散文），补丁台账需要 `site_patches` + `site_patch_events` 两张表与三态状态机。
+**第二段（补丁台账）已落地**：`site_patch_add/save/transition/history/delete`——domain 5 + repo 6 + service 8 条测试通过；手动补丁 `action_id` 非空拒绝，`round_id` 空串待行动族落地。
+
+**仍前置**：`site_channel_test` 的 `check_detail` 必须先定义稳定码 + params；`site_patch_generate` 依赖行动中心（`action_*`）。

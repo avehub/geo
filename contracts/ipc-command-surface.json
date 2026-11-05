@@ -66,6 +66,7 @@
     "faq_delete",
     "faq_generate",
     "export_write_file",
+    "report_render",
     "settings_get",
     "settings_update",
     "secret_set",
@@ -101,10 +102,6 @@
     },
     {
       "command": "content_generate",
-      "ledger": "E-33"
-    },
-    {
-      "command": "report_render",
       "ledger": "E-33"
     },
     {

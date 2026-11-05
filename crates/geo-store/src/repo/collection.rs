@@ -462,4 +462,14 @@ impl CollectionRepo {
         transaction.commit().await?;
         Ok(())
     }
+    /// 证据附录用：一次取回 id → 回答全文，避免逐条 record_get 的 N+1。
+    pub async fn answer_texts(&self, round_id: &str) -> Result<Vec<(String, String)>, StoreError> {
+        let rows = sqlx::query_as::<_, (String, String)>(
+            "SELECT id, answer_text FROM collection_records WHERE round_id = ?",
+        )
+        .bind(round_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
 }

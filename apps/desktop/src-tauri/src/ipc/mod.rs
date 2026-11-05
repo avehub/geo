@@ -16,6 +16,7 @@ pub mod kb;
 pub mod keyword;
 pub mod project;
 pub mod prompt;
+pub mod report;
 pub mod search;
 pub mod secret;
 pub mod settings;
@@ -90,6 +91,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         faq::faq_delete,
         faq::faq_generate,
         export::export_write_file,
+        report::report_render,
         settings::settings_get,
         settings::settings_update,
         secret::secret_set,

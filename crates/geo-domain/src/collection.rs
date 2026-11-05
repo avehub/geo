@@ -23,6 +23,20 @@ pub enum EngineId {
     Metaso,
 }
 
+impl EngineId {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Doubao => "doubao",
+            Self::Deepseek => "deepseek",
+            Self::Kimi => "kimi",
+            Self::Qwen => "qwen",
+            Self::Yuanbao => "yuanbao",
+            Self::BaiduAi => "baidu_ai",
+            Self::Metaso => "metaso",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EngineChannel {

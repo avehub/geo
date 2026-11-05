@@ -20,6 +20,7 @@ pub mod kb;
 pub mod keyword;
 pub mod project;
 pub mod prompt;
+pub mod report;
 pub mod search;
 pub mod search_import;
 pub mod search_metrics;
@@ -82,6 +83,10 @@ pub use prompt::{
     content_hash, sample_size_grade, IntentCategory, PromptItem, PromptSet, PromptSource,
     SampleSizeGrade, MAX_PROMPT_CHARS, MAX_REPEAT_COUNT, MAX_WEIGHT, METRIC_SPEC_VERSION,
     MINIMUM_SAMPLE_SIZE, SUFFICIENT_SAMPLE_SIZE,
+};
+pub use report::{
+    ReportBlock, ReportDocument, ReportMethodology, ReportMetricUnit, ReportRenderOptions,
+    ReportSection, ReportVariant, WhiteLabelProfile,
 };
 pub use search::{
     clean_binding, credentials_state, secret_ref, source_status, SearchAuthMode,

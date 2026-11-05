@@ -27,6 +27,16 @@ pub enum FunnelStage {
     Decision,
 }
 
+impl FunnelStage {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Awareness => "awareness",
+            Self::Recommendation => "recommendation",
+            Self::Decision => "decision",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AlertKind {

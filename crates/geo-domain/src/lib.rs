@@ -30,9 +30,9 @@ pub mod site;
 pub mod site_patch;
 
 pub use action::{
-    ActionBoard, ActionCategory, ActionItem, ActionLevel, ActionStatus, AttributionCard,
-    AttributionMetric, AttributionMetricKey, ContentTemplate, ContentTemplateKind, ExportFormat,
-    GeneratedContent,
+    content_template, content_templates, ActionBoard, ActionCategory, ActionItem, ActionLevel,
+    ActionStatus, AttributionCard, AttributionMetric, AttributionMetricKey, ContentTemplate,
+    ContentTemplateKind, ExportFormat, GeneratedContent,
 };
 pub use app_env::{AppEnvironment, AppStorageInfo, PermissionState, Permissions};
 pub use asset::{clean_optional, normalize_url, AssetKind, ProjectAsset};

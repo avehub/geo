@@ -42,6 +42,19 @@ pub enum AttributionMetricKey {
     NegativeRate,
 }
 
+impl ContentTemplateKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::QaArticle => "qa_article",
+            Self::ComparisonTable => "comparison_table",
+            Self::SpecCard => "spec_card",
+            Self::CaseCard => "case_card",
+            Self::FaqPage => "faq_page",
+            Self::GlossaryPage => "glossary_page",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContentTemplateKind {
@@ -137,4 +150,137 @@ pub struct ActionBoard {
     pub attribution: Vec<AttributionCard>,
     pub contents: Vec<GeneratedContent>,
     pub templates: Vec<ContentTemplate>,
+}
+
+/// 行动中心的内容模板目录（真实后端的内置清单，不随项目变化）。
+///
+/// 🔴 与 demo 种子逐条同构：id 是稳定记号，`section_keys` 只用于生成提示词与前端预览，
+/// `target_categories` 决定「哪类处方能选到它」。模板不是用户数据，因此不落库。
+pub fn content_templates() -> Vec<ContentTemplate> {
+    vec![
+        ContentTemplate {
+            id: "tpl-glossary-page".to_string(),
+            kind: ContentTemplateKind::GlossaryPage,
+            section_keys: strings(&[
+                "term_definition",
+                "working_principle",
+                "selection_guide",
+                "related_terms",
+                "references",
+            ]),
+            export_formats: formats(&[
+                ExportFormat::Markdown,
+                ExportFormat::Html,
+                ExportFormat::Docx,
+            ]),
+            target_categories: vec![
+                ActionCategory::ContentProduction,
+                ActionCategory::SiteStructure,
+            ],
+        },
+        ContentTemplate {
+            id: "tpl-qa-article".to_string(),
+            kind: ContentTemplateKind::QaArticle,
+            section_keys: strings(&["question", "short_answer", "detail", "faq", "sources"]),
+            export_formats: formats(&[
+                ExportFormat::Markdown,
+                ExportFormat::Html,
+                ExportFormat::Docx,
+            ]),
+            target_categories: vec![
+                ActionCategory::ContentProduction,
+                ActionCategory::SiteStructure,
+            ],
+        },
+        ContentTemplate {
+            id: "tpl-comparison-table".to_string(),
+            kind: ContentTemplateKind::ComparisonTable,
+            section_keys: strings(&["scope", "criteria", "table", "how_to_read", "sources"]),
+            export_formats: formats(&[
+                ExportFormat::Markdown,
+                ExportFormat::Html,
+                ExportFormat::Csv,
+            ]),
+            target_categories: vec![
+                ActionCategory::ContentProduction,
+                ActionCategory::SourceLayout,
+            ],
+        },
+        ContentTemplate {
+            id: "tpl-spec-card".to_string(),
+            kind: ContentTemplateKind::SpecCard,
+            section_keys: strings(&[
+                "model",
+                "parameters",
+                "applications",
+                "certification",
+                "delivery",
+            ]),
+            export_formats: formats(&[
+                ExportFormat::Markdown,
+                ExportFormat::Html,
+                ExportFormat::Csv,
+            ]),
+            target_categories: vec![
+                ActionCategory::SiteStructure,
+                ActionCategory::ContentProduction,
+            ],
+        },
+        ContentTemplate {
+            id: "tpl-case-card".to_string(),
+            kind: ContentTemplateKind::CaseCard,
+            section_keys: strings(&[
+                "client_context",
+                "challenge",
+                "solution",
+                "results",
+                "verification",
+            ]),
+            export_formats: formats(&[
+                ExportFormat::Markdown,
+                ExportFormat::Html,
+                ExportFormat::Docx,
+            ]),
+            target_categories: vec![
+                ActionCategory::ContentProduction,
+                ActionCategory::SourceLayout,
+            ],
+        },
+        ContentTemplate {
+            id: "tpl-fact-correction".to_string(),
+            kind: ContentTemplateKind::QaArticle,
+            section_keys: strings(&["question", "short_answer", "detail", "sources"]),
+            export_formats: formats(&[
+                ExportFormat::Markdown,
+                ExportFormat::Html,
+                ExportFormat::Docx,
+            ]),
+            target_categories: vec![ActionCategory::FactCorrection],
+        },
+        ContentTemplate {
+            id: "tpl-faq-page".to_string(),
+            kind: ContentTemplateKind::FaqPage,
+            section_keys: strings(&["faq_price", "faq_delivery", "faq_service", "schema_note"]),
+            export_formats: formats(&[ExportFormat::Markdown, ExportFormat::Html]),
+            target_categories: vec![
+                ActionCategory::SiteStructure,
+                ActionCategory::ContentProduction,
+            ],
+        },
+    ]
+}
+
+/// 按 id 取模板；认不出返回 `None`（调用方发 `validation/failed {field:'template_id'}`）。
+pub fn content_template(id: &str) -> Option<ContentTemplate> {
+    content_templates()
+        .into_iter()
+        .find(|template| template.id == id)
+}
+
+fn strings(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_string()).collect()
+}
+
+fn formats(values: &[ExportFormat]) -> Vec<ExportFormat> {
+    values.to_vec()
 }

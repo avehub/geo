@@ -26,6 +26,19 @@ pub enum SitePlatform {
     Unknown,
 }
 
+impl SitePlatform {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Wordpress => "wordpress",
+            Self::Static => "static",
+            Self::Custom => "custom",
+            Self::SaasBuilder => "saas_builder",
+            Self::Ecommerce => "ecommerce",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SiteOwnership {

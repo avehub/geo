@@ -47,6 +47,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         action::action_board,
         action::action_update_status,
         action::content_update_status,
+        action::content_generate,
         collection::collection_board,
         environment::app_environment,
         diagnosis::diagnosis_overview,
@@ -118,5 +119,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         site_patch::site_patch_transition,
         site_patch::site_patch_history,
         site_patch::site_patch_delete,
+        site_patch::site_patch_generate,
     ]
 }

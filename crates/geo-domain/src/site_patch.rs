@@ -30,6 +30,23 @@ pub enum SitePatchKind {
     EntityConsistency,
 }
 
+impl SitePatchKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::LlmsTxt => "llms_txt",
+            Self::RobotsTxt => "robots_txt",
+            Self::Jsonld => "jsonld",
+            Self::HtmlFragment => "html_fragment",
+            Self::MetaTitle => "meta_title",
+            Self::MetaDescription => "meta_description",
+            Self::Canonical => "canonical",
+            Self::AltText => "alt_text",
+            Self::InternalLink => "internal_link",
+            Self::EntityConsistency => "entity_consistency",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SitePatchStatus {

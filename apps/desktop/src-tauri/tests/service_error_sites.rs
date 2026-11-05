@@ -348,13 +348,13 @@ fn the_guard_sees_every_production_site() {
         ("services/faq_service.rs", 3),
         ("services/kb_service.rs", 2),
         ("services/site_service.rs", 0),
-        ("services/site_patch_service.rs", 5),
+        ("services/site_patch_service.rs", 7),
         ("services/search_service.rs", 8),
         ("services/collection_service.rs", 2),
         ("services/insight_service.rs", 4),
         ("services/diagnosis_service.rs", 2),
         ("services/environment_service.rs", 0),
-        ("services/action_service.rs", 2),
+        ("services/action_service.rs", 4),
         ("services/report_service.rs", 3),
         ("services/templates/mod.rs", 0),
         ("services/templates/catalog.rs", 0),
@@ -398,6 +398,6 @@ fn the_guard_sees_every_production_site() {
         assert_eq!(actual, *want, "{name} 的生产站点数变了，守卫清单要同步");
         total += actual;
     }
-    assert_eq!(total, 78, "壳侧生产站点总数");
+    assert_eq!(total, 82, "壳侧生产站点总数");
     assert_eq!(FILES.len(), expected.len(), "FILES 与期望表要一一对应");
 }

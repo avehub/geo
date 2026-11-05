@@ -21,6 +21,7 @@
     "action_board",
     "action_update_status",
     "content_update_status",
+    "content_generate",
     "collection_board",
     "app_environment",
     "diagnosis_overview",
@@ -91,7 +92,8 @@
     "site_patch_save",
     "site_patch_transition",
     "site_patch_history",
-    "site_patch_delete"
+    "site_patch_delete",
+    "site_patch_generate"
   ],
   "pending": [
     {
@@ -101,14 +103,6 @@
     {
       "command": "collection_task_retry",
       "ledger": "E-33"
-    },
-    {
-      "command": "content_generate",
-      "ledger": "E-33"
-    },
-    {
-      "command": "site_patch_generate",
-      "ledger": "E-55"
     },
     {
       "command": "article_direction_list",

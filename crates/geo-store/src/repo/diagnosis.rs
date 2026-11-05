@@ -73,4 +73,24 @@ impl DiagnosisRepo {
         .await?;
         Ok(())
     }
+    /// 所有轮次的某类快照（告警已读需要按 alert id 定位轮次）。
+    pub async fn snapshots_of_kind(&self, kind: &str) -> Result<Vec<(String, String)>, StoreError> {
+        let rows = sqlx::query_as::<_, (String, String)>(
+            "SELECT round_id, payload FROM diagnosis_snapshots WHERE kind = ? ORDER BY round_id ASC",
+        )
+        .bind(kind)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// 所有项目的行动看板快照。
+    pub async fn all_action_boards(&self) -> Result<Vec<(String, String)>, StoreError> {
+        let rows = sqlx::query_as::<_, (String, String)>(
+            "SELECT project_id, payload FROM action_boards ORDER BY project_id ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
 }

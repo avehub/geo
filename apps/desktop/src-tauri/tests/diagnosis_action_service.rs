@@ -5,9 +5,9 @@ mod support;
 use geo_domain::{
     ActionBoard, ActionCategory, ActionItem, ActionLevel, ActionStatus, AlertItem, AlertKind,
     AlertSeverity, AttributionCard, AttributionMetric, AttributionMetricKey, CollectionRound,
-    CompetitorMatrix, CompetitorMatrixRow, DiagnosisDimension, DiagnosisOverview, DimensionScore,
-    EngineId, EngineScore, FunnelRow, FunnelStage, IntentFunnel, ProjectId, RoundStatus,
-    SampleSizeGrade, TrendPoint,
+    CompetitorMatrix, CompetitorMatrixRow, ContentStatus, DiagnosisDimension, DiagnosisOverview,
+    DimensionScore, EngineId, EngineScore, ExportFormat, FunnelRow, FunnelStage, GeneratedContent,
+    IntentFunnel, ProjectId, RoundStatus, SampleSizeGrade, TrendPoint,
 };
 use geo_store::{CollectionRepo, DiagnosisRepo};
 use support::{now, sample_draft, test_state, OfflineTransport};
@@ -321,4 +321,106 @@ async fn action_board_missing_project_is_project_not_found() {
         .await
         .expect_err("未知项目");
     assert_eq!(error.code, "project/not_found");
+}
+
+#[tokio::test]
+async fn alert_acknowledge_updates_overview_snapshot() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = seed_round(&state).await;
+    DiagnosisRepo::new(state.pool.clone())
+        .save_snapshot(
+            "round-1",
+            "overview",
+            &serde_json::to_string(&overview(project_id)).unwrap(),
+        )
+        .await
+        .unwrap();
+    let service = DiagnosisService::from_state(&state);
+    let alert = service
+        .acknowledge_alert("alert-1".to_string(), true)
+        .await
+        .expect("标记已读");
+    assert!(alert.acknowledged);
+    let stored = service
+        .overview("round-1".to_string())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(stored.alerts[0].acknowledged);
+    let error = service
+        .acknowledge_alert("missing".to_string(), true)
+        .await
+        .expect_err("未知告警");
+    assert_eq!(error.params["field"], "alert_id");
+}
+
+#[tokio::test]
+async fn action_status_flips_completion_time() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = seed_round(&state).await;
+    DiagnosisRepo::new(state.pool.clone())
+        .save_action_board(
+            &project_id.to_string(),
+            &serde_json::to_string(&action_board(project_id)).unwrap(),
+            &now().to_rfc3339(),
+        )
+        .await
+        .unwrap();
+    let service = ActionService::from_state(&state);
+    let done = service
+        .update_action_status("action-1".to_string(), ActionStatus::Done)
+        .await
+        .expect("完成");
+    assert_eq!(done.status, ActionStatus::Done);
+    assert!(done.completed_at.is_some());
+    let reopened = service
+        .update_action_status("action-1".to_string(), ActionStatus::Todo)
+        .await
+        .expect("退回");
+    assert_eq!(reopened.status, ActionStatus::Todo);
+    assert!(reopened.completed_at.is_none());
+    let error = service
+        .update_action_status("missing".to_string(), ActionStatus::Done)
+        .await
+        .expect_err("未知处方");
+    assert_eq!(error.params["field"], "action_id");
+}
+
+#[tokio::test]
+async fn content_status_flips_and_unknown_id_is_invalid() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = seed_round(&state).await;
+    let mut board = action_board(project_id);
+    board.contents.push(GeneratedContent {
+        id: "content-1".to_string(),
+        project_id: project_id.to_string(),
+        action_id: Some("action-1".to_string()),
+        template_id: "template-1".to_string(),
+        title: "文稿".to_string(),
+        body_markdown: "正文".to_string(),
+        status: ContentStatus::PendingReview,
+        compliance_checked: true,
+        export_formats: vec![ExportFormat::Markdown],
+        created_at: now(),
+        updated_at: now(),
+    });
+    DiagnosisRepo::new(state.pool.clone())
+        .save_action_board(
+            &project_id.to_string(),
+            &serde_json::to_string(&board).unwrap(),
+            &now().to_rfc3339(),
+        )
+        .await
+        .unwrap();
+    let service = ActionService::from_state(&state);
+    let approved = service
+        .update_content_status("content-1".to_string(), ContentStatus::Approved)
+        .await
+        .expect("审核");
+    assert_eq!(approved.status, ContentStatus::Approved);
+    let error = service
+        .update_content_status("missing".to_string(), ContentStatus::Approved)
+        .await
+        .expect_err("未知文稿");
+    assert_eq!(error.params["field"], "content_id");
 }

@@ -196,3 +196,18 @@
 | 命令面 | 注册 5 条，78 → 83；pending 27 → 22 |
 
 **状态（2026-11-05）**：✅ 已落地——repo 2 + service 5 条测试通过。M3–M7 读面已全部铺平。
+
+## 15. M3–M7 本地写路径（2026-11-05）
+
+**范围**：`insight_correct` / `fact_check_resolve` / `diagnosis_alert_acknowledge` / `action_update_status` / `content_update_status`。
+
+| 项 | 冻结值 |
+|---|---|
+| 纠正 | 只改提及 / 位次 / 情感；未提及自动清空位次与情感；同步提及明细与证据投影；`confidence` 不动 |
+| 核查结办 | `corrected` / `false_positive` 盖 `resolved_at`，`open` 清空；`note` 只在传入非空时更新 |
+| 告警已读 | 只改 overview 快照里的那一条（写路径落地后再拆关系表） |
+| 处方状态 | `done` 首次完成盖 `completed_at`，回退清空；`updated_at` 每次刷新 |
+| 文稿审核 | 只翻 `status` 与 `updated_at` |
+| 命令面 | 注册 5 条，83 → 88；pending 22 → 17 |
+
+**状态（2026-11-05）**：✅ 已落地——insight service 9 条 + diagnosis/action service 8 条测试通过。

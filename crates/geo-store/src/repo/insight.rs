@@ -2,6 +2,7 @@
 //!
 //! 只提供读取与测试用写入；`insight_correct` / `fact_check_resolve` 仍 demo-only。
 
+use chrono::{DateTime, Utc};
 use geo_domain::{
     AnswerInsight, AnswerShape, BrandMention, CorrectionChannel, EngineId, FactCheckIssue,
     FactCheckSummary, FactIssueKind, FactIssueStatus, RiskFlag, Sentiment,
@@ -243,6 +244,104 @@ impl InsightRepo {
         .bind(summary.false_positive_count)
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+    pub async fn get_insight(&self, id: &str) -> Result<Option<AnswerInsight>, StoreError> {
+        let row = sqlx::query_as::<_, InsightRow>(concat!(
+            "SELECT id, round_id, record_id, prompt_id, prompt_text, engine, mentions, ",
+            "self_mentioned, self_rank, self_sentiment, answer_shape, source_types, confidence, ",
+            "needs_review, risks, corrected_fields, reviewed_at FROM answer_insights WHERE id = ?"
+        ))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(InsightRow::into_insight).transpose()
+    }
+
+    /// 保存人工纠正，并同步证据行上的投影（mentioned / rank / sentiment）。
+    pub async fn save_insight_correction(&self, insight: &AnswerInsight) -> Result<(), StoreError> {
+        let mut transaction = self.pool.begin().await?;
+        let affected = sqlx::query(concat!(
+            "UPDATE answer_insights SET mentions = ?, self_mentioned = ?, self_rank = ?, ",
+            "self_sentiment = ?, needs_review = ?, corrected_fields = ?, reviewed_at = ? ",
+            "WHERE id = ?"
+        ))
+        .bind(codec::encode_json(&insight.mentions)?)
+        .bind(i64::from(insight.self_mentioned))
+        .bind(insight.self_rank)
+        .bind(
+            insight
+                .self_sentiment
+                .map(|value| codec::encode_scalar(&value))
+                .transpose()?,
+        )
+        .bind(i64::from(insight.needs_review))
+        .bind(codec::encode_json(&insight.corrected_fields)?)
+        .bind(insight.reviewed_at.map(|value| codec::encode_time(&value)))
+        .bind(&insight.id)
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected();
+        if affected == 0 {
+            return Err(crate::error::StoreError::NotFound {
+                kind: "insight".to_string(),
+                id: insight.id.clone(),
+            });
+        }
+        sqlx::query(
+            "UPDATE collection_records SET mentioned = ?, rank = ?, sentiment = ? WHERE id = ?",
+        )
+        .bind(i64::from(insight.self_mentioned))
+        .bind(insight.self_rank)
+        .bind(
+            insight
+                .self_sentiment
+                .map(|value| codec::encode_scalar(&value))
+                .transpose()?,
+        )
+        .bind(&insight.record_id)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn get_issue(&self, id: &str) -> Result<Option<FactCheckIssue>, StoreError> {
+        let row = sqlx::query_as::<_, IssueRow>(concat!(
+            "SELECT id, round_id, record_id, prompt_id, prompt_text, engine, kind, field_path, ",
+            "answer_excerpt, entity_value, confidence, status, correction_channel, note, ",
+            "resolved_at FROM fact_check_issues WHERE id = ?"
+        ))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(IssueRow::into_issue).transpose()
+    }
+
+    pub async fn save_issue_resolution(
+        &self,
+        id: &str,
+        status: FactIssueStatus,
+        note: Option<&str>,
+        resolved_at: Option<DateTime<Utc>>,
+    ) -> Result<(), StoreError> {
+        let affected = sqlx::query(
+            "UPDATE fact_check_issues SET status = ?, note = COALESCE(?, note), resolved_at = ? \
+             WHERE id = ?",
+        )
+        .bind(codec::encode_scalar(&status)?)
+        .bind(note)
+        .bind(resolved_at.map(|value| codec::encode_time(&value)))
+        .bind(id)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        if affected == 0 {
+            return Err(crate::error::StoreError::NotFound {
+                kind: "fact_check_issue".to_string(),
+                id: id.to_string(),
+            });
+        }
         Ok(())
     }
 }

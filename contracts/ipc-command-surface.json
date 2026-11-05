@@ -19,11 +19,14 @@
     "asset_list",
     "asset_delete",
     "action_board",
+    "action_update_status",
+    "content_update_status",
     "collection_board",
     "diagnosis_overview",
     "diagnosis_competitors",
     "diagnosis_funnel",
     "diagnosis_engines",
+    "diagnosis_alert_acknowledge",
     "collection_round_get",
     "collection_record_list",
     "collection_record_get",
@@ -49,6 +52,8 @@
     "keyword_generate",
     "insight_list",
     "fact_check_list",
+    "insight_correct",
+    "fact_check_resolve",
     "kb_board",
     "kb_entry_add",
     "kb_entry_update",
@@ -95,27 +100,7 @@
       "ledger": "E-33"
     },
     {
-      "command": "insight_correct",
-      "ledger": "E-33"
-    },
-    {
-      "command": "fact_check_resolve",
-      "ledger": "E-33"
-    },
-    {
-      "command": "diagnosis_alert_acknowledge",
-      "ledger": "E-33"
-    },
-    {
-      "command": "action_update_status",
-      "ledger": "E-33"
-    },
-    {
       "command": "content_generate",
-      "ledger": "E-33"
-    },
-    {
-      "command": "content_update_status",
       "ledger": "E-33"
     },
     {

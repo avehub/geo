@@ -1,8 +1,10 @@
 //! M6 行动中心命令（Plan C M3–M7 读路径）。
 //!
-//! `action_update_status` / `content_generate` / `content_update_status` 仍留在 demo-only。
+//! `content_generate` 仍留在 demo-only。
 
-use geo_domain::{ActionBoard, ProjectId};
+use geo_domain::{
+    ActionBoard, ActionItem, ActionStatus, ContentStatus, GeneratedContent, ProjectId,
+};
 use tauri::State;
 
 use crate::error::IpcError;
@@ -15,4 +17,26 @@ pub async fn action_board(
     project_id: ProjectId,
 ) -> Result<ActionBoard, IpcError> {
     ActionService::from_state(&state).board(project_id).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn action_update_status(
+    state: State<'_, AppState>,
+    action_id: String,
+    status: ActionStatus,
+) -> Result<ActionItem, IpcError> {
+    ActionService::from_state(&state)
+        .update_action_status(action_id, status)
+        .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn content_update_status(
+    state: State<'_, AppState>,
+    content_id: String,
+    status: ContentStatus,
+) -> Result<GeneratedContent, IpcError> {
+    ActionService::from_state(&state)
+        .update_content_status(content_id, status)
+        .await
 }

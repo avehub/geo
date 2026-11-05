@@ -1,8 +1,7 @@
 //! M5 诊断命令（Plan C M3–M7 读路径）。
 //!
-//! `diagnosis_alert_acknowledge` 仍留在 demo-only。
 
-use geo_domain::{CompetitorMatrix, DiagnosisOverview, EngineScore, IntentFunnel};
+use geo_domain::{AlertItem, CompetitorMatrix, DiagnosisOverview, EngineScore, IntentFunnel};
 use tauri::State;
 
 use crate::error::IpcError;
@@ -43,4 +42,15 @@ pub async fn diagnosis_engines(
     round_id: String,
 ) -> Result<Vec<EngineScore>, IpcError> {
     DiagnosisService::from_state(&state).engines(round_id).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn diagnosis_alert_acknowledge(
+    state: State<'_, AppState>,
+    alert_id: String,
+    acknowledged: bool,
+) -> Result<AlertItem, IpcError> {
+    DiagnosisService::from_state(&state)
+        .acknowledge_alert(alert_id, acknowledged)
+        .await
 }

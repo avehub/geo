@@ -1,8 +1,8 @@
 //! M4 解析与核查命令（Plan C M3–M7 读路径第二段）。
 //!
-//! `insight_correct` / `fact_check_resolve` 仍留在 demo-only。
 
-use geo_domain::{AnswerInsight, FactCheckBoard, InsightFilter};
+use chrono::Utc;
+use geo_domain::{AnswerInsight, FactCheckBoard, FactCheckIssue, InsightCorrection, InsightFilter};
 use tauri::State;
 
 use crate::error::IpcError;
@@ -27,5 +27,28 @@ pub async fn fact_check_list(
 ) -> Result<FactCheckBoard, IpcError> {
     InsightService::from_state(&state)
         .fact_check_list(round_id)
+        .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn insight_correct(
+    state: State<'_, AppState>,
+    id: String,
+    correction: InsightCorrection,
+) -> Result<AnswerInsight, IpcError> {
+    InsightService::from_state(&state)
+        .correct_insight(id, correction, Utc::now())
+        .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn fact_check_resolve(
+    state: State<'_, AppState>,
+    id: String,
+    status: String,
+    note: Option<String>,
+) -> Result<FactCheckIssue, IpcError> {
+    InsightService::from_state(&state)
+        .resolve_fact_issue(id, status, note, Utc::now())
         .await
 }

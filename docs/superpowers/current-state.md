@@ -12,10 +12,10 @@
 |---|---:|---|
 | `IPC_COMMANDS` | 105 | `apps/desktop/ui/src/api/client.ts` |
 | `demoBackend` 键 | 105 | `apps/desktop/ui/src/demo/backend.ts` |
-| Rust `generate_handler![]` | 83 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
-| demo-only | 22 | `contracts/ipc-command-surface.json` 的 `pending` |
+| Rust `generate_handler![]` | 88 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
+| demo-only | 17 | `contracts/ipc-command-surface.json` 的 `pending` |
 
-**105 = 83 条 Rust + 22 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
+**105 = 88 条 Rust + 17 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
 
 ### demo-only 族
 
@@ -197,7 +197,8 @@
   - **M3–M7 读路径（第一段）**：`collection_board` / `collection_round_get` / `collection_record_list` / `collection_record_get` 已落 Rust；迁移 `20261105000009_collection_read.sql` 建轮次 / 引擎汇总 / 任务 / 记录 / 引用五张表。采集页可渲染空态或已有数据；写路径（`collection_start` / `collection_task_retry`）与解析 / 诊断 / 行动 / 报告仍 demo-only。
   - **M4 读路径**：`insight_list` / `fact_check_list` 已落 Rust；迁移 `20261105000010_insight_fact.sql` 建 `answer_insights` / `fact_check_issues` / `fact_check_summaries`。解析页可按引擎 / 复核队列 / 提及 / 风险筛选，核查页返回问题清单与汇总。纠正与结办仍 demo-only。
   - **M5 / M6 读路径**：`diagnosis_overview` / `diagnosis_competitors` / `diagnosis_funnel` / `diagnosis_engines` / `action_board` 已落 Rust；迁移 `20261105000011_diagnosis_action_read.sql` 建 `diagnosis_snapshots` + `action_boards`。诊断四视图按轮次读整份类型化快照（缺失回 `null` / `[]`），行动看板按项目读快照（缺失回空数组）；写路径与告警已读 / 处方状态仍 demo-only。
-- 判据：关键词 domain 6 + repo 7 + service 11，FAQ domain 5 + repo 7 + service 11，KB domain 6 + repo 7 + service 14，站点 domain 7 + repo 3 + service 5，补丁 domain 5 + repo 6 + service 8，站长数据 domain 10 + repo 5 + service 17，站点 service 9，采集 domain 0 + repo 6 + service 6，M4 domain 0 + repo 3 + service 4，M5/M6 domain 0 + repo 2 + service 5；命令面契约 2 条（Rust）/ 5 条（TS）。
+  - **M4 / M5 / M6 本地写路径**：`insight_correct` / `fact_check_resolve` / `diagnosis_alert_acknowledge` / `action_update_status` / `content_update_status` 已落 Rust。人工纠正同步提及明细与证据投影；核查结办维护 `resolved_at` 且保留备注；告警已读改 overview 快照；处方完成时间首次盖章、回退清空；文稿只翻审核态。`content_generate` 与采集执行仍 demo-only。
+- 判据：关键词 domain 6 + repo 7 + service 11，FAQ domain 5 + repo 7 + service 11，KB domain 6 + repo 7 + service 14，站点 domain 7 + repo 3 + service 5，补丁 domain 5 + repo 6 + service 8，站长数据 domain 10 + repo 5 + service 17，站点 service 9，采集 domain 0 + repo 6 + service 6，M4 domain 0 + repo 3 + service 4，M5/M6 domain 0 + repo 2 + service 5（+本地写路径）；命令面契约 2 条（Rust）/ 5 条（TS）。
 
 ## 4. 维护方式
 

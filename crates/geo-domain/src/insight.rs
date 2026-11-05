@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::collection::{EngineId, Sentiment, SourceType};
 
@@ -91,6 +91,26 @@ pub struct AnswerInsight {
     pub risks: Vec<RiskFlag>,
     pub corrected_fields: Vec<String>,
     pub reviewed_at: Option<DateTime<Utc>>,
+}
+
+fn double_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// 人工纠正入参：只允许改提及与否 / 推荐位次 / 情感。
+/// `self_rank` / `self_sentiment` 用双层 `Option` 区分「没传」与「显式传 null」。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct InsightCorrection {
+    #[serde(default)]
+    pub self_mentioned: Option<bool>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub self_rank: Option<Option<i32>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub self_sentiment: Option<Option<Sentiment>>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

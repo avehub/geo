@@ -20,8 +20,25 @@ const FIXTURE_KEY_HEX_LEN: usize = 16;
 ///
 /// API Key 只出现在 `headers` 里，因此 [`Debug`] 是手写实现：敏感头一律打码，
 /// 即使上层把整个结构体丢进 `tracing::debug!` 或 panic 消息也不会漏密钥。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HttpMethod {
+    Get,
+    #[default]
+    Post,
+}
+
+impl HttpMethod {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Get => "GET",
+            Self::Post => "POST",
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct HttpRequest {
+    pub method: HttpMethod,
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: String,
@@ -61,6 +78,7 @@ impl fmt::Debug for MaskedHeaders<'_> {
 impl fmt::Debug for HttpRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HttpRequest")
+            .field("method", &self.method)
             .field("url", &self.url)
             .field("headers", &MaskedHeaders(&self.headers))
             .field("body", &self.body)
@@ -72,12 +90,23 @@ impl HttpRequest {
     /// OpenAI 兼容服务统一用的 JSON POST 请求。
     pub fn bearer_json(url: impl Into<String>, api_key: &str, body: impl Into<String>) -> Self {
         Self {
+            method: HttpMethod::Post,
             url: url.into(),
             headers: vec![
                 ("Authorization".to_string(), format!("Bearer {api_key}")),
                 ("Content-Type".to_string(), "application/json".to_string()),
             ],
             body: body.into(),
+        }
+    }
+
+    /// 只带请求头的 GET（模型清单等只读接口用）。
+    pub fn get(url: impl Into<String>, headers: Vec<(String, String)>) -> Self {
+        Self {
+            method: HttpMethod::Get,
+            url: url.into(),
+            headers,
+            body: String::new(),
         }
     }
 
@@ -197,7 +226,13 @@ impl ReqwestTransport {
 #[async_trait]
 impl Transport for ReqwestTransport {
     async fn send(&self, req: HttpRequest) -> Result<HttpResponse, TransportError> {
-        let mut request = self.client.post(&req.url);
+        let mut request = self.client.request(
+            match req.method {
+                HttpMethod::Get => reqwest::Method::GET,
+                HttpMethod::Post => reqwest::Method::POST,
+            },
+            &req.url,
+        );
         for (name, value) in &req.headers {
             request = request.header(name.as_str(), value.as_str());
         }
@@ -371,6 +406,7 @@ mod tests {
     #[test]
     fn debug_output_masks_other_secret_header_names() {
         let req = HttpRequest {
+            method: HttpMethod::Post,
             url: URL.to_string(),
             headers: vec![
                 ("api-key".to_string(), "sk-qn-secret".to_string()),

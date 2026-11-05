@@ -7,7 +7,7 @@
  *   `generate_handler![]` 相等（Rust 侧另有 `tests/contract_surface.rs` 逐条比对源码）；
  * - Rust 侧：`generate_handler![]` == `rust_registered`。
  *
- * 🔴 为什么不是直接全等：今天仍有 16 条 demo-only 命令，直接做全等会红。
+ * 🔴 为什么不是直接全等：今天仍有 14 条 demo-only 命令，直接做全等会红。
  * allowlist 的意义是**只减不增**——每转正一条就从 `pending` 删除一条，差集永远等于台账里的待办。
  */
 import { describe, expect, it } from 'vitest';
@@ -51,8 +51,8 @@ describe('contracts/ipc-command-surface.json', () => {
     const declared = [...surface.rust_registered, ...surface.pending.map((entry) => entry.command)];
     expect(new Set(IPC_COMMANDS), 'IPC_COMMANDS 与契约清单不一致').toEqual(new Set(declared));
     expect(IPC_COMMANDS).toHaveLength(105);
-    expect(surface.rust_registered).toHaveLength(89);
-    expect(surface.pending).toHaveLength(16);
+    expect(surface.rust_registered).toHaveLength(91);
+    expect(surface.pending).toHaveLength(14);
   });
 
   it('每条待落地命令都带台账编号（形如 E-33），且编号在已知集合内', () => {

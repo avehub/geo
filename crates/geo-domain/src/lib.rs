@@ -4,6 +4,7 @@
 //! （不访问网络/数据库/文件系统；当前时间一律由调用方以参数注入）。
 
 pub mod action;
+pub mod app_env;
 pub mod asset;
 pub mod check;
 pub mod collection;
@@ -33,6 +34,7 @@ pub use action::{
     AttributionMetric, AttributionMetricKey, ContentTemplate, ContentTemplateKind, ExportFormat,
     GeneratedContent,
 };
+pub use app_env::{AppEnvironment, AppStorageInfo, PermissionState, Permissions};
 pub use asset::{clean_optional, normalize_url, AssetKind, ProjectAsset};
 pub use check::CheckDetail;
 pub use collection::{

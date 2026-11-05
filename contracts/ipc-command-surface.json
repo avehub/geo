@@ -22,6 +22,7 @@
     "action_update_status",
     "content_update_status",
     "collection_board",
+    "app_environment",
     "diagnosis_overview",
     "diagnosis_competitors",
     "diagnosis_funnel",
@@ -69,6 +70,7 @@
     "report_render",
     "settings_get",
     "settings_update",
+    "llm_models_list",
     "secret_set",
     "secret_status",
     "secret_delete",
@@ -103,14 +105,6 @@
     {
       "command": "content_generate",
       "ledger": "E-33"
-    },
-    {
-      "command": "app_environment",
-      "ledger": "E-46"
-    },
-    {
-      "command": "llm_models_list",
-      "ledger": "E-46"
     },
     {
       "command": "site_patch_generate",

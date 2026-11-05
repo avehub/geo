@@ -4,6 +4,7 @@ pub mod action_service;
 pub mod collection_service;
 pub mod diagnosis_service;
 pub mod entity_card_service;
+pub mod environment_service;
 pub mod faq_service;
 pub mod insight_service;
 pub mod kb_service;
@@ -22,6 +23,7 @@ pub use action_service::ActionService;
 pub use collection_service::CollectionService;
 pub use diagnosis_service::DiagnosisService;
 pub use entity_card_service::{EntityCardService, MAX_SITE_TEXT_CHARS};
+pub use environment_service::{EnvironmentPaths, EnvironmentService};
 pub use faq_service::{FaqGenerateOptions, FaqService};
 pub use insight_service::InsightService;
 pub use kb_service::{KbBoard, KbGenerateOptions, KbService};
@@ -32,7 +34,8 @@ pub use prompt_service::{GenerateOptions, PromptDraft, PromptService, DEFAULT_TA
 pub use report_service::ReportService;
 pub use search_service::{SearchBoardResult, SearchMetricImportResult, SearchService};
 pub use settings_service::{
-    active_proxy, LlmTestResult, ProviderInfo, SecretStatus, SettingsService, SECRET_KIND,
+    active_proxy, LlmModelsQuery, LlmTestResult, ModelsListResult, ModelsListSource, ProviderInfo,
+    SecretStatus, SettingsService, SECRET_KIND,
 };
 pub use site_patch_service::SitePatchService;
 pub use site_service::{SiteBoard, SiteService};

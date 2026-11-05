@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use geo_domain::GeoError;
-use geo_llm::{ChatMessage, ChatRequest, LlmError, LlmProvider};
+use geo_llm::{ChatMessage, ChatRequest, HttpMethod, HttpRequest, LlmError, LlmProvider};
 use geo_store::{secret_ref, AppSettings, ProxyConfig, SecretStore, SettingsRepo};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -83,6 +83,32 @@ impl From<LlmProvider> for ProviderInfo {
             output_per_mtok: pricing.output_per_mtok,
         }
     }
+}
+
+/// `llm_models_list` 的入参 = **界面上的草稿配置**（DR-34），不是已落库那份。
+#[derive(Debug, Clone, Deserialize)]
+pub struct LlmModelsQuery {
+    pub provider: String,
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    /// 契约里保留的临时 Key 位；真后端一律读钥匙串，**不使用**这个字段。
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelsListSource {
+    Preset,
+    Upstream,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModelsListResult {
+    pub models: Vec<String>,
+    pub source: ModelsListSource,
 }
 
 /// 设置与密钥服务。
@@ -241,6 +267,104 @@ impl SettingsService {
                     message: Some(redact(&error.user_message())),
                 }
             }
+        })
+    }
+
+    /// 按**界面草稿**拉模型清单：`GET {base_url}/models`。
+    ///
+    /// - Key 只读钥匙串（`api_key` 入参刻意忽略，杜绝密钥经 IPC 回传）；
+    /// - `custom` 缺接口地址 ⇒ `llm/config {reason: missing_base_url}`；
+    /// - `anthropic` 协议只影响鉴权头（`x-api-key` + `anthropic-version`），
+    ///   路径仍是 `{base_url}/models`；其余按 OpenAI 兼容的 Bearer。
+    pub async fn list_models(&self, query: LlmModelsQuery) -> Result<ModelsListResult, IpcError> {
+        let provider = parse_provider(&query.provider)?;
+        let draft_base = query
+            .base_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let base_url = match (provider, draft_base) {
+            (_, Some(value)) => value.to_string(),
+            (LlmProvider::Custom, None) => {
+                return Err(IpcError::with_params(
+                    err_codes::LLM_CONFIG,
+                    [("reason", "missing_base_url"), ("value", provider.as_str())],
+                ));
+            }
+            (provider, None) => provider.base_url().to_string(),
+        };
+        let secret_ref = geo_store::secret_ref(SECRET_KIND, provider.as_str());
+        let api_key = self
+            .secrets
+            .get(&secret_ref)
+            .await?
+            .filter(|key| !key.trim().is_empty())
+            .ok_or(IpcError::from(LlmError::MissingSecret))?;
+
+        let url = format!("{}/models", base_url.trim_end_matches('/'));
+        let anthropic = query
+            .protocol
+            .as_deref()
+            .map(|value| value.trim().eq_ignore_ascii_case("anthropic"))
+            .unwrap_or(false);
+        let headers = if anthropic {
+            vec![
+                ("x-api-key".to_string(), api_key),
+                ("anthropic-version".to_string(), "2023-06-01".to_string()),
+                ("Accept".to_string(), "application/json".to_string()),
+            ]
+        } else {
+            vec![
+                ("Authorization".to_string(), format!("Bearer {api_key}")),
+                ("Accept".to_string(), "application/json".to_string()),
+            ]
+        };
+        let response = self
+            .llm
+            .transport()
+            .send(HttpRequest {
+                method: HttpMethod::Get,
+                url,
+                headers,
+                body: String::new(),
+            })
+            .await?;
+        if response.status == 429 {
+            return Err(IpcError::from(LlmError::RateLimited));
+        }
+        if !response.is_success() {
+            return Err(IpcError::from(LlmError::Server {
+                status: response.status,
+            }));
+        }
+        let value: serde_json::Value = serde_json::from_str(&response.body)
+            .map_err(|_| IpcError::from(LlmError::bad_response("parse_failed")))?;
+        let mut models = Vec::new();
+        if let Some(items) = value.get("data").and_then(|value| value.as_array()) {
+            for item in items {
+                if let Some(id) = item.get("id").and_then(|value| value.as_str()) {
+                    models.push(id.to_string());
+                }
+            }
+        } else if let Some(items) = value.get("models").and_then(|value| value.as_array()) {
+            for item in items {
+                let id = item.as_str().map(str::to_string).or_else(|| {
+                    item.get("id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string)
+                });
+                if let Some(id) = id {
+                    models.push(id);
+                }
+            }
+        } else {
+            return Err(IpcError::from(LlmError::bad_response("missing_choices")));
+        }
+        let mut seen = std::collections::HashSet::new();
+        models.retain(|model| seen.insert(model.clone()));
+        Ok(ModelsListResult {
+            models,
+            source: ModelsListSource::Upstream,
         })
     }
 

@@ -9,6 +9,7 @@ pub mod action;
 pub mod collection;
 pub mod diagnosis;
 pub mod entity_card;
+pub mod environment;
 pub mod export;
 pub mod faq;
 pub mod insight;
@@ -47,6 +48,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         action::action_update_status,
         action::content_update_status,
         collection::collection_board,
+        environment::app_environment,
         diagnosis::diagnosis_overview,
         diagnosis::diagnosis_competitors,
         diagnosis::diagnosis_funnel,
@@ -94,6 +96,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         report::report_render,
         settings::settings_get,
         settings::settings_update,
+        settings::llm_models_list,
         secret::secret_set,
         secret::secret_status,
         secret::secret_delete,

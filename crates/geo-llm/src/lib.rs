@@ -43,6 +43,6 @@ pub use error::LlmError;
 pub use json::{chat_json, extract_json};
 pub use provider::{LlmConfig, LlmProvider, Pricing};
 pub use transport::{
-    fixture_key, FixtureTransport, HttpRequest, HttpResponse, ReqwestTransport, Transport,
-    TransportError,
+    fixture_key, FixtureTransport, HttpMethod, HttpRequest, HttpResponse, ReqwestTransport,
+    Transport, TransportError,
 };

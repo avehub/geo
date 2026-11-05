@@ -4,7 +4,7 @@ use geo_store::AppSettings;
 use tauri::State;
 
 use crate::error::IpcError;
-use crate::services::SettingsService;
+use crate::services::{LlmModelsQuery, ModelsListResult, SettingsService};
 use crate::state::AppState;
 
 #[tauri::command(rename_all = "snake_case")]
@@ -18,4 +18,12 @@ pub async fn settings_update(
     settings: AppSettings,
 ) -> Result<AppSettings, IpcError> {
     SettingsService::from_state(&state).update(settings).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn llm_models_list(
+    state: State<'_, AppState>,
+    query: LlmModelsQuery,
+) -> Result<ModelsListResult, IpcError> {
+    SettingsService::from_state(&state).list_models(query).await
 }

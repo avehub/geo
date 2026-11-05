@@ -80,6 +80,35 @@ async fn send_returns_status_and_body() {
 }
 
 #[tokio::test]
+async fn get_requests_use_get_method_and_headers() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{ "id": "m1" }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let transport = ReqwestTransport::new(Duration::from_secs(5), None).unwrap();
+    let response = transport
+        .send(HttpRequest::get(
+            format!("{}/models", server.uri()),
+            vec![("x-api-key".to_string(), "sk-secret".to_string())],
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status, 200);
+    let received = &server.received_requests().await.unwrap()[0];
+    assert_eq!(received.method.as_str(), "GET");
+    assert_eq!(
+        received.headers.get("x-api-key").unwrap().to_str().unwrap(),
+        "sk-secret"
+    );
+}
+
+#[tokio::test]
 async fn send_propagates_error_status_without_failing() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

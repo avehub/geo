@@ -29,6 +29,7 @@ import {
   SITE_CHANNEL_KIND_VALUES,
   SITE_PATCH_STATUS_VALUES,
 } from '../api/types';
+import { RUST_REVIEW_CONFIDENCE_FLOOR } from '../test/truth-source';
 import {
   MINIMUM_SAMPLE_SIZE,
   REVIEW_CONFIDENCE_FLOOR,
@@ -1764,7 +1765,7 @@ describe('demo/seed · M5.5 站长数据：§5.2 的 16 条自洽判据', () => 
     }
     // confidence 刻意跨过 REVIEW_CONFIDENCE_FLOOR 两侧（DR-100：不新造第二套置信度口径），
     // 好让"进不进复核队列"这道门槛在界面上走得查。
-    expect(REVIEW_CONFIDENCE_FLOOR).toBe(0.75);
+    expect(REVIEW_CONFIDENCE_FLOOR).toBe(RUST_REVIEW_CONFIDENCE_FLOOR);
     expect(SEED_SEARCH_OPPORTUNITIES.some((row) => row.confidence >= REVIEW_CONFIDENCE_FLOOR)).toBe(true);
     expect(SEED_SEARCH_OPPORTUNITIES.some((row) => row.confidence < REVIEW_CONFIDENCE_FLOOR)).toBe(true);
     // 状态三值都要出现（新 / 已采纳 / 已忽略），否则界面上的筛选与徽章只有一种形态可看。

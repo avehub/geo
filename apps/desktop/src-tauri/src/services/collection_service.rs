@@ -74,6 +74,14 @@ impl CollectionService {
         ProjectRepo::new(self.pool.clone())
     }
 
+    fn insights(&self) -> crate::services::InsightService {
+        crate::services::InsightService::new(
+            self.pool.clone(),
+            self.llm.clone(),
+            self.secrets.clone(),
+        )
+    }
+
     async fn require_project(&self, project_id: ProjectId) -> Result<(), IpcError> {
         self.projects().get(project_id).await?;
         Ok(())
@@ -250,6 +258,7 @@ impl CollectionService {
             }
         }
         self.recompute_round(round_id).await?;
+        self.parse_round_quietly(round_id).await;
         Ok(())
     }
 
@@ -304,7 +313,19 @@ impl CollectionService {
             Err(reason) => self.fail_task(&mut task, reason).await?,
         }
         self.recompute_round(&task.round_id).await?;
+        self.parse_round_quietly(&task.round_id).await;
         Ok(task)
+    }
+
+    /// 解析失败不改变采集结果（轮次仍然成功），只写日志等下次续跑补。
+    async fn parse_round_quietly(&self, round_id: &str) {
+        if let Err(error) = self.insights().parse_round(round_id).await {
+            tracing::warn!(
+                round_id,
+                code = error.code.as_str(),
+                "answer parsing stopped with an error"
+            );
+        }
     }
 
     /// 按引擎装配客户端：复用用户已填的「模型服务商」Key（产品负责人 2026-11-05 裁定）。

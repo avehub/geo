@@ -10,9 +10,13 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::collection::{EngineId, Sentiment, SourceType};
 
+/// 解析置信度低于此值时进入人工复核队列（与前端 `api/constants.ts` 同值）。
+pub const REVIEW_CONFIDENCE_FLOOR: f64 = 0.75;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrandRole {
+    #[serde(rename = "self")]
     Self_,
     Competitor,
     Other,
@@ -53,7 +57,7 @@ pub enum CorrectionChannel {
     BusinessDirectory,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AnswerShape {
     pub has_conclusion: bool,
     pub has_table: bool,
@@ -204,6 +208,16 @@ mod tests {
             corrected_fields: Vec::new(),
             reviewed_at: None,
         }
+    }
+
+    #[test]
+    fn brand_role_serializes_as_self() {
+        assert_eq!(
+            serde_json::to_string(&BrandRole::Self_).unwrap(),
+            "\"self\""
+        );
+        let parsed: BrandRole = serde_json::from_str("\"self\"").unwrap();
+        assert_eq!(parsed, BrandRole::Self_);
     }
 
     #[test]

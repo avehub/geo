@@ -12,6 +12,26 @@ use support::{
 
 use geo_desktop_lib::services::{CollectionService, CollectionStartOptions, ProjectService};
 
+fn parse_body() -> String {
+    openai_response(
+        &serde_json::json!({
+            "mentions": [{
+                "brand": "澜舟", "role": "self", "count": 1, "sentiment": "positive",
+                "rank": 2, "in_comparison_table": false, "excerpt": "推荐澜舟"
+            }],
+            "self_mentioned": true,
+            "self_rank": 2,
+            "self_sentiment": "positive",
+            "answer_shape": { "has_conclusion": true, "has_table": false, "asks_back": false, "refused": false },
+            "sources": [{ "url": "https://example.com/a", "title": "来源", "type": "owned_page" }],
+            "risks": [],
+            "issues": [],
+            "confidence": 0.9
+        })
+        .to_string(),
+    )
+}
+
 async fn seed_set(state: &geo_desktop_lib::state::AppState, items: usize) -> (ProjectId, String) {
     let project_id = ProjectService::new(state.pool.clone())
         .create_draft(&sample_draft(), now())
@@ -47,7 +67,10 @@ fn options(set_id: &str, engines: Vec<EngineId>, repeat: i32) -> CollectionStart
 
 #[tokio::test]
 async fn start_queues_tasks_and_executes_deepseek() {
-    let transport = ScriptedTransport::new(vec![openai_response("推荐澜舟，价格 199 元起。")]);
+    let transport = ScriptedTransport::new(vec![
+        openai_response("推荐澜舟，价格 199 元起。"),
+        parse_body(),
+    ]);
     let (state, _server, _secrets) = state_with_transport(transport.clone()).await;
     let (project_id, set_id) = seed_set(&state, 1).await;
     let service = CollectionService::from_state(&state);
@@ -93,7 +116,7 @@ async fn start_queues_tasks_and_executes_deepseek() {
     assert_eq!(runs[0].succeeded, 1);
     assert_eq!(runs[0].failed, 0);
     assert!(runs[0].prompt_tokens > 0);
-    assert_eq!(transport.request_count(), 1);
+    assert_eq!(transport.request_count(), 2, "一次采集 + 一次解析");
 }
 
 #[tokio::test]
@@ -127,7 +150,7 @@ async fn unsupported_engines_are_skipped_and_retry_is_refused() {
 
 #[tokio::test]
 async fn missing_key_fails_login_required_then_retry_succeeds() {
-    let transport = ScriptedTransport::new(vec![openai_response("Kimi 的回答")]);
+    let transport = ScriptedTransport::new(vec![openai_response("Kimi 的回答"), parse_body()]);
     let (state, _server, secrets) = state_with_transport(transport.clone()).await;
     let (project_id, set_id) = seed_set(&state, 1).await;
     let service = CollectionService::from_state(&state);
@@ -153,7 +176,7 @@ async fn missing_key_fails_login_required_then_retry_succeeds() {
     assert_eq!(retried.status, CollectionStatus::Succeeded);
     assert_eq!(retried.attempt, 2);
     assert!(retried.record_id.is_some());
-    assert_eq!(transport.request_count(), 1);
+    assert_eq!(transport.request_count(), 2, "一次采集 + 一次解析");
     let round = repo.round(&round.id).await.expect("轮次").expect("存在");
     assert_eq!(round.status, RoundStatus::Succeeded);
 }
@@ -196,8 +219,11 @@ async fn start_validates_scope_repeat_and_prompt_set() {
 
 #[tokio::test]
 async fn resume_pending_executes_unfinished_rounds() {
-    let (state, _server, _secrets) =
-        state_with_transport(ScriptedTransport::new(vec![openai_response("续跑回答")])).await;
+    let (state, _server, _secrets) = state_with_transport(ScriptedTransport::new(vec![
+        openai_response("续跑回答"),
+        parse_body(),
+    ]))
+    .await;
     let (project_id, set_id) = seed_set(&state, 1).await;
     let service = CollectionService::from_state(&state);
     let round = service

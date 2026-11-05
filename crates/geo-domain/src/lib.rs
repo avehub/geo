@@ -75,7 +75,7 @@ pub use ids::{
 pub use insight::{
     AnswerInsight, AnswerShape, BrandMention, BrandRole, CorrectionChannel, FactCheckBoard,
     FactCheckIssue, FactCheckSummary, FactIssueKind, FactIssueStatus, InsightCorrection,
-    InsightFilter, RiskFlag,
+    InsightFilter, RiskFlag, REVIEW_CONFIDENCE_FLOOR,
 };
 pub use kb::{
     verify_revision, KbEntry, KbEntryDraft, KbEntryKind, KbEntryRevision, KbModule, KbScenario,

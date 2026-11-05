@@ -21,6 +21,21 @@ const PROJECT_TRANSFER_RS = readRepoFile(
   'project_transfer.rs',
 );
 
+const INSIGHT_RS = readRepoFile('crates', 'geo-domain', 'src', 'insight.rs');
+
+/**
+ * `REVIEW_CONFIDENCE_FLOOR`（真值源 `crates/geo-domain/src/insight.rs`）。
+ *
+ * M4 解析（Rust）与 demo 种子 / 页面共用同一个门槛；两边不一致时这条会先红。
+ */
+export const RUST_REVIEW_CONFIDENCE_FLOOR: number = (() => {
+  const parsed = /pub const REVIEW_CONFIDENCE_FLOOR: f64 = ([0-9.]+);/.exec(INSIGHT_RS)?.[1];
+  if (parsed === undefined) {
+    throw new Error('REVIEW_CONFIDENCE_FLOOR not found in insight.rs');
+  }
+  return Number(parsed);
+})();
+
 /**
  * `pub const EXPORT_FORMAT_VERSION: &str = "...";`（真值源 `project_transfer.rs:19`）。
  *

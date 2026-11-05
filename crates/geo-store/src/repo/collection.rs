@@ -586,6 +586,40 @@ impl CollectionRepo {
         transaction.commit().await?;
         Ok(())
     }
+    /// 解析后覆盖一条记录的引用（先删后插入，位置从 0 开始）。
+    pub async fn replace_citations(
+        &self,
+        record_id: &str,
+        citations: &[Citation],
+    ) -> Result<(), StoreError> {
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query("DELETE FROM collection_citations WHERE record_id = ?")
+            .bind(record_id)
+            .execute(&mut *transaction)
+            .await?;
+        for (position, citation) in citations.iter().enumerate() {
+            sqlx::query(concat!(
+                "INSERT INTO collection_citations (record_id, position, url, domain, title, ",
+                "source_type) VALUES (?, ?, ?, ?, ?, ?)"
+            ))
+            .bind(record_id)
+            .bind(i32::try_from(position).unwrap_or(0))
+            .bind(&citation.url)
+            .bind(&citation.domain)
+            .bind(&citation.title)
+            .bind(codec::encode_scalar(&citation.source_type)?)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        sqlx::query("UPDATE collection_records SET citation_count = ? WHERE id = ?")
+            .bind(i32::try_from(citations.len()).unwrap_or(i32::MAX))
+            .bind(record_id)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
     /// 证据附录用：一次取回 id → 回答全文，避免逐条 record_get 的 N+1。
     pub async fn answer_texts(&self, round_id: &str) -> Result<Vec<(String, String)>, StoreError> {
         let rows = sqlx::query_as::<_, (String, String)>(

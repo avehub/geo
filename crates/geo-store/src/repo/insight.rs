@@ -233,9 +233,17 @@ impl InsightRepo {
     }
 
     pub async fn insert_summary(&self, summary: &FactCheckSummary) -> Result<(), StoreError> {
+        self.save_summary(summary).await
+    }
+
+    /// 重新解析一轮后覆盖汇总（同一轮只有一份汇总）。
+    pub async fn save_summary(&self, summary: &FactCheckSummary) -> Result<(), StoreError> {
         sqlx::query(concat!(
             "INSERT INTO fact_check_summaries (round_id, by_kind, checked_answers, ",
-            "fact_accuracy, false_positive_count) VALUES (?, ?, ?, ?, ?)"
+            "fact_accuracy, false_positive_count) VALUES (?, ?, ?, ?, ?) ",
+            "ON CONFLICT(round_id) DO UPDATE SET by_kind = excluded.by_kind, ",
+            "checked_answers = excluded.checked_answers, fact_accuracy = excluded.fact_accuracy, ",
+            "false_positive_count = excluded.false_positive_count"
         ))
         .bind(&summary.round_id)
         .bind(codec::encode_json(&summary.by_kind)?)

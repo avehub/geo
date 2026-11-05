@@ -15,6 +15,7 @@ pub mod kb;
 pub mod keyword;
 pub mod project;
 pub mod prompt_set;
+pub mod search;
 pub mod site;
 pub mod site_patch;
 
@@ -26,6 +27,7 @@ pub use kb::KbRepo;
 pub use keyword::KeywordRepo;
 pub use project::{ProjectFilter, ProjectRepo};
 pub use prompt_set::{PromptSetRepo, PromptSetSummary};
+pub use search::SearchRepo;
 pub use site::SiteRepo;
 pub use site_patch::SitePatchRepo;
 

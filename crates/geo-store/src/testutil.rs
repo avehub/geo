@@ -5,13 +5,15 @@
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use geo_domain::{
-    AssetKind, Competitor, CompetitorId, Contact, ContentStatus, EntityCard, EntityCardRevision,
-    EntityCardSource, EntityFields, FaqId, FaqItem, FieldStatus, Industry, IntentCategory, KbEntry,
-    KbEntryId, KbEntryKind, KbModule, KbScenario, KbSource, KeywordId, KeywordItem, KeywordKind,
-    Language, LibrarySource, ProductSpec, Project, ProjectAsset, ProjectId, ProjectStatus,
-    PromptItem, PromptSet, PromptSetId, PromptSource, RevisionId, SiteChannel, SiteChannelId,
-    SiteChannelKind, SiteChannelStatus, SiteCredentialsState, SiteOwnership, SitePatch,
-    SitePatchDraft, SitePatchKind, SitePlatform, SiteProfile, SiteProfileId,
+    credentials_state, secret_ref, source_status, AssetKind, Competitor, CompetitorId, Contact,
+    ContentStatus, EntityCard, EntityCardRevision, EntityCardSource, EntityFields, FaqId, FaqItem,
+    FieldStatus, Industry, IntentCategory, KbEntry, KbEntryId, KbEntryKind, KbModule, KbScenario,
+    KbSource, KeywordId, KeywordItem, KeywordKind, Language, LibrarySource, ProductSpec, Project,
+    ProjectAsset, ProjectId, ProjectStatus, PromptItem, PromptSet, PromptSetId, PromptSource,
+    RevisionId, SearchActionLevel, SearchOpportunity, SearchOpportunityId, SearchOpportunityStatus,
+    SearchPrescriptionCategory, SearchSource, SearchSourceId, SearchSourceKind, SiteChannel,
+    SiteChannelId, SiteChannelKind, SiteChannelStatus, SiteCredentialsState, SiteOwnership,
+    SitePatch, SitePatchDraft, SitePatchKind, SitePlatform, SiteProfile, SiteProfileId,
 };
 
 /// 固定基准时间，避免测试依赖真实时钟。
@@ -269,4 +271,58 @@ pub(crate) fn sample_site_patch(project_id: ProjectId, title: &str, position: i3
     }
     .into_patch(project_id, position, base_time())
     .expect("样例补丁合法")
+}
+
+pub(crate) fn sample_search_source(project_id: ProjectId, kind: SearchSourceKind) -> SearchSource {
+    let catalog = kind.catalog();
+    let binding: std::collections::BTreeMap<String, String> = catalog
+        .binding_fields
+        .iter()
+        .map(|field| {
+            (
+                field.as_str().to_string(),
+                "https://example.com".to_string(),
+            )
+        })
+        .collect();
+    SearchSource {
+        id: SearchSourceId::new(),
+        project_id,
+        kind,
+        auth_mode: catalog.auth_mode,
+        ingest_modes: catalog.ingest_modes.to_vec(),
+        status: source_status(kind, &binding),
+        region: catalog.region,
+        group: catalog.group,
+        binding,
+        credentials_state: credentials_state(kind),
+        secret_ref: secret_ref(kind),
+        data_through: None,
+        checked_at: None,
+        check_detail: None,
+        note: None,
+        created_at: base_time(),
+        updated_at: base_time(),
+    }
+}
+
+pub(crate) fn sample_search_opportunity(
+    project_id: ProjectId,
+    status: SearchOpportunityStatus,
+) -> SearchOpportunity {
+    SearchOpportunity {
+        id: SearchOpportunityId::new(),
+        project_id,
+        rule_id: 1,
+        title_key: "high_impression_low_ctr".to_string(),
+        basis: "曝光 1200，点击 12".to_string(),
+        evidence_metric_ids: vec!["metric-1".to_string()],
+        prescription_category: SearchPrescriptionCategory::ContentProduction,
+        impact: SearchActionLevel::High,
+        difficulty: SearchActionLevel::Medium,
+        confidence: 0.82,
+        status,
+        created_at: base_time(),
+        updated_at: base_time(),
+    }
 }

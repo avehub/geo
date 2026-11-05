@@ -15,6 +15,8 @@ pub mod kb;
 pub mod keyword;
 pub mod project;
 pub mod prompt;
+pub mod search;
+pub mod search_opportunity;
 pub mod site;
 pub mod site_patch;
 
@@ -33,7 +35,8 @@ pub use error::GeoError;
 pub use faq::{FaqDraft, FaqItem};
 pub use ids::{
     AssetId, CompetitorId, FaqId, KbEntryId, KeywordId, ProjectId, PromptId, PromptSetId,
-    RevisionId, SiteChannelId, SitePatchEventId, SitePatchId, SiteProfileId,
+    RevisionId, SearchOpportunityId, SearchSourceId, SiteChannelId, SitePatchEventId, SitePatchId,
+    SiteProfileId,
 };
 pub use kb::{
     verify_revision, KbEntry, KbEntryDraft, KbEntryKind, KbEntryRevision, KbModule, KbScenario,
@@ -51,6 +54,14 @@ pub use prompt::{
     content_hash, sample_size_grade, IntentCategory, PromptItem, PromptSet, PromptSource,
     SampleSizeGrade, MAX_PROMPT_CHARS, MAX_REPEAT_COUNT, MAX_WEIGHT, METRIC_SPEC_VERSION,
     MINIMUM_SAMPLE_SIZE, SUFFICIENT_SAMPLE_SIZE,
+};
+pub use search::{
+    clean_binding, credentials_state, secret_ref, source_status, SearchAuthMode,
+    SearchBindingField, SearchGroup, SearchIngestMode, SearchRegion, SearchSource,
+    SearchSourceCatalog, SearchSourceKind, SEARCH_CATALOG,
+};
+pub use search_opportunity::{
+    SearchActionLevel, SearchOpportunity, SearchOpportunityStatus, SearchPrescriptionCategory,
 };
 pub use site::{
     channel_secret_ref, channel_status, page_from_asset, page_role_for_url, SiteChannel,

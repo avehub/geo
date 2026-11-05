@@ -91,6 +91,8 @@ id_type!(SiteProfileId);
 id_type!(SiteChannelId);
 id_type!(SitePatchId);
 id_type!(SitePatchEventId);
+id_type!(SearchSourceId);
+id_type!(SearchOpportunityId);
 
 #[cfg(test)]
 mod tests {

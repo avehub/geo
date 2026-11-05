@@ -29,7 +29,7 @@
 
 ### 当前关键不变量
 
-- **命令面**：`api/client.ts` 的 `IPC_COMMANDS` 是单一清单；2026-11-04 核对为 **105 条 = 65 条 Rust + 40 条 demo-only**（关键词与 FAQ 各 5 条、知识库 6 条、站点档案 / 通道 4 条、补丁台账 5 条已转正）。
+- **命令面**：`api/client.ts` 的 `IPC_COMMANDS` 是单一清单；2026-11-04 核对为 **105 条 = 69 条 Rust + 36 条 demo-only**（关键词与 FAQ 各 5 条、知识库 6 条、站点档案 / 通道 4 条、补丁台账 5 条、站长数据 4 条已转正）。
   demo 后端必须 105 条全覆盖；Rust 注册按规格 / 差异台账，demo-only 命令桌面端报 `ipc/unknown_command`，**不屏蔽**（规则 8）。
 - **demo 边界**：去重率、字段完整率、样本量分级、机会判定等领域算法只在 Rust 纯函数里真算；demo 只呈现预置值 / 静态清单（规则 9）。
 - **站点接入 demo**：`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成交接文件，**不真的改线上站点**；`site.demoBody` / `site.staticNote` 常驻。

@@ -57,6 +57,10 @@
     "secret_delete",
     "llm_provider_test",
     "llm_providers",
+    "search_board",
+    "search_source_upsert",
+    "search_source_remove",
+    "search_opportunity_update",
     "site_board",
     "site_profile_save",
     "site_channel_upsert",
@@ -205,27 +209,11 @@
       "ledger": "E-64"
     },
     {
-      "command": "search_board",
-      "ledger": "E-67"
-    },
-    {
-      "command": "search_source_upsert",
-      "ledger": "E-67"
-    },
-    {
-      "command": "search_source_remove",
-      "ledger": "E-67"
-    },
-    {
       "command": "search_source_test",
       "ledger": "E-67"
     },
     {
       "command": "search_metric_import_csv",
-      "ledger": "E-67"
-    },
-    {
-      "command": "search_opportunity_update",
       "ledger": "E-67"
     }
   ]

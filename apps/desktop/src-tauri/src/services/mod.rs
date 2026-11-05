@@ -7,6 +7,7 @@ pub mod keyword_service;
 pub mod project_service;
 pub mod project_transfer;
 pub mod prompt_service;
+pub mod search_service;
 pub mod settings_service;
 pub mod site_patch_service;
 pub mod site_service;
@@ -19,6 +20,7 @@ pub use keyword_service::{KeywordGenerateOptions, KeywordService};
 pub use project_service::{ProjectDetail, ProjectService};
 pub use project_transfer::{ImportReport, ProjectExport, EXPORT_FORMAT_VERSION};
 pub use prompt_service::{GenerateOptions, PromptDraft, PromptService, DEFAULT_TARGET_COUNT};
+pub use search_service::{SearchBoardResult, SearchService};
 pub use settings_service::{
     active_proxy, LlmTestResult, ProviderInfo, SecretStatus, SettingsService, SECRET_KIND,
 };

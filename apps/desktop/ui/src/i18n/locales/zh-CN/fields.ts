@@ -128,6 +128,11 @@ const fields = {
   question: '问题',
   answer_markdown: '答案原文',
   category: '分类',
+  // M5.5 站长数据（Plan C 第五切片）
+  source_kind: '数据源类型',
+  opportunity_id: '优化机会 ID',
+  opportunity_status: '机会状态',
+  binding: '站点绑定',
 };
 
 export default fields;

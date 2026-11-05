@@ -396,6 +396,11 @@ const FIELD_VALUES = [
   'question',
   'answer_markdown',
   'category',
+  // M5.5 站长数据（Plan C 第五切片）
+  'source_kind',
+  'opportunity_id',
+  'opportunity_status',
+  'binding',
 ];
 
 describe('B-1 · reason 目录运行时解析（不手抄键集）', () => {

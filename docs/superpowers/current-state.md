@@ -12,10 +12,10 @@
 |---|---:|---|
 | `IPC_COMMANDS` | 105 | `apps/desktop/ui/src/api/client.ts` |
 | `demoBackend` 键 | 105 | `apps/desktop/ui/src/demo/backend.ts` |
-| Rust `generate_handler![]` | 65 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
-| demo-only | 40 | `contracts/ipc-command-surface.json` 的 `pending` |
+| Rust `generate_handler![]` | 69 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
+| demo-only | 36 | `contracts/ipc-command-surface.json` 的 `pending` |
 
-**105 = 65 条 Rust + 40 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
+**105 = 69 条 Rust + 36 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
 
 ### demo-only 族
 
@@ -192,7 +192,8 @@
   - **知识库切片**：`kb_board` / `kb_entry_add` / `kb_entry_update` / `kb_entry_delete` / `kb_entry_verify` / `kb_generate` 已全部落 Rust；迁移 `20261104000004_kb.sql` 建 `kb_entries` + `kb_entry_revisions`。更新逐字段 diff 留痕（正文截断 120 字符），删除重排 `position` 且不删留痕，核实写 `verified_at` 留痕；生成调模型并按模块产出 `generated` + `pending_review`，命中红线词整批拒绝。
   - **站点档案 / 通道切片**：`site_board` / `site_profile_save` / `site_channel_upsert` / `site_channel_remove` 已落 Rust；迁移 `20261104000005_site_profile_channels.sql` 建 `site_profiles` + `site_channels`。页面清单暂由项目自有页面资产投影（真后端由爬虫发现）。
   - **补丁台账切片**：`site_patch_add` / `site_patch_save` / `site_patch_transition` / `site_patch_history` / `site_patch_delete` 已落 Rust；迁移 `20261104000006_site_patches.sql` 建 `site_patches` + `site_patch_events`。手动补丁三态状态机、发布快照、事件历史、已发布拒删、删除重排 `position` 与事件级联均已落地；`site_patch_generate`（依赖行动中心）与 `site_channel_test`（`check_detail` 需稳定码）仍 demo-only。
-- 判据：关键词 domain 6 + repo 7 + service 11，FAQ domain 5 + repo 7 + service 11，KB domain 6 + repo 7 + service 14，站点 domain 7 + repo 3 + service 5，补丁 domain 5 + repo 6 + service 8；命令面契约 2 条（Rust）/ 5 条（TS）。
+  - **站长数据切片（第一段）**：`search_board` / `search_source_upsert` / `search_source_remove` / `search_opportunity_update` 已落 Rust；迁移 `20261104000007_search_sources_opportunities.sql` 建 `search_sources` + `search_opportunities`。源目录的 9 个 kind / 分组 / 区域 / 绑定字段 / 凭证引用串全部由 `geo-domain::search` 的目录表推导；`search_source_test` 与 `search_metric_import_csv` 仍 demo-only。`search_board` 的指标 / AI 汇总 / C 类留档 / 自建索引 / 流量分布暂返回空数组或 `null`。
+- 判据：关键词 domain 6 + repo 7 + service 11，FAQ domain 5 + repo 7 + service 11，KB domain 6 + repo 7 + service 14，站点 domain 7 + repo 3 + service 5，补丁 domain 5 + repo 6 + service 8，站长数据 domain 4 + repo 3 + service 7；命令面契约 2 条（Rust）/ 5 条（TS）。
 
 ## 4. 维护方式
 

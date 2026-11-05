@@ -118,6 +118,11 @@ const fields: ResourceBundle['fields'] = {
   question: 'Question',
   answer_markdown: 'Answer text',
   category: 'Category',
+  // M5.5 Webmaster data (Plan C fifth slice).
+  source_kind: 'Data source type',
+  opportunity_id: 'Optimization opportunity ID',
+  opportunity_status: 'Opportunity state',
+  binding: 'Site binding',
 };
 
 export default fields;

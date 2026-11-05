@@ -133,3 +133,23 @@
 **第二段（补丁台账）已落地**：`site_patch_add/save/transition/history/delete`——domain 5 + repo 6 + service 8 条测试通过；手动补丁 `action_id` 非空拒绝，`round_id` 空串待行动族落地。
 
 **仍前置**：`site_channel_test` 的 `check_detail` 必须先定义稳定码 + params；`site_patch_generate` 依赖行动中心（`action_*`）。
+
+## 11. 第五个试点族（第一段）：站长数据 read + CRUD（2026-11-04）
+
+**范围**：`search_board` / `search_source_upsert` / `search_source_remove` / `search_opportunity_update`。
+`search_source_test` 与 `search_metric_import_csv` 仍 pending。
+
+| 项 | 冻结值 |
+|---|---|
+| 表 | `search_sources`（project_id, kind 唯一）+ `search_opportunities` |
+| 源目录 | 9 个 kind / 3 分组 / 3 区域 / 4 种取数形态 / 2 种认证，全部在 `geo-domain::search` 的目录表；二期源（sogou / so_360）拒绝 upsert |
+| 绑定 | 只保留目录表点名的 `siteUrl` / `siteId`，凭据形状的键一律丢弃；状态按绑定齐全度推导 |
+| 凭据 | OAuth 源只存 `keyring://search/<kind>` 引用串；无凭据源为 `null` |
+| upsert | 同 kind 覆盖，保留 id / created_at / data_through，清空 checked_at / check_detail |
+| board | `as_of` 取命令端当前日期；指标 / AI 汇总 / C 类 / 自建索引 / 流量分布暂为空 |
+| 机会 | 只翻 `new / adopted / ignored` 状态，不重算依据 |
+| 命令面 | 注册 4 条，65 → 69；pending 40 → 36 |
+
+**状态（2026-11-04）**：✅ 已落地——domain 4 + repo 3 + service 7 条测试通过。
+
+**下一段前置**：`search_source_test` 的 `check_detail` 与站点通道共用同一套稳定码改造；导入需要 CSV / xlsx 解析与 fixture 对拍。

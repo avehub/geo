@@ -12,6 +12,7 @@ pub mod kb;
 pub mod keyword;
 pub mod project;
 pub mod prompt;
+pub mod search;
 pub mod secret;
 pub mod settings;
 pub mod site;
@@ -76,6 +77,10 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         secret::secret_delete,
         secret::llm_provider_test,
         secret::llm_providers,
+        search::search_board,
+        search::search_source_upsert,
+        search::search_source_remove,
+        search::search_opportunity_update,
         site::site_board,
         site::site_profile_save,
         site::site_channel_upsert,

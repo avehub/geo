@@ -484,6 +484,26 @@ impl ArticleService {
             }
         }
         if existing.iter().any(|article| article.title == title) {
+            // 标题重复不产出，但排期照常推进，避免调度器每分钟重试同一篇。
+            if let Some(schedule) = schedule {
+                let next = if schedule.enabled {
+                    Some(next_run_at(
+                        now,
+                        schedule.freq,
+                        &schedule.time,
+                        schedule.weekday,
+                    )?)
+                } else {
+                    None
+                };
+                let updated = ArticleSchedule {
+                    last_run_at: Some(now),
+                    run_count: schedule.run_count + 1,
+                    next_run_at: next,
+                    ..schedule
+                };
+                self.repo().save_schedule(&updated).await?;
+            }
             return Ok(Vec::new());
         }
         let word_count = i32::try_from(body.chars().filter(|ch| !ch.is_whitespace()).count())
@@ -526,6 +546,29 @@ impl ArticleService {
             self.repo().save_schedule(&updated).await?;
         }
         Ok(vec![article])
+    }
+
+    /// 调度器每分钟调用一次：跑所有到点排期，返回本次生成的文章数。
+    pub async fn run_due(&self, now: DateTime<Utc>) -> Result<usize, IpcError> {
+        let schedules = self.repo().due_schedules(now).await?;
+        let mut created = 0;
+        for schedule in schedules {
+            let project_id = schedule.project_id;
+            match self
+                .run_schedule(project_id, Some(schedule.id.clone()), None, now)
+                .await
+            {
+                Ok(articles) => created += articles.len(),
+                Err(error) => {
+                    tracing::warn!(
+                        schedule_id = schedule.id.as_str(),
+                        code = error.code.as_str(),
+                        "scheduled article generation failed"
+                    );
+                }
+            }
+        }
+        Ok(created)
     }
 
     // -----------------------------------------------------------------------

@@ -414,6 +414,86 @@ async fn article_list_reviews_and_filters() {
 }
 
 #[tokio::test]
+async fn due_schedule_generates_article_and_advances_even_on_duplicate() {
+    let (state, _server, _secrets) = state_with_bodies(vec![openai_response(
+        &serde_json::json!({
+            "title": "排期文章",
+            "body_markdown": "## 正文\n\n内容"
+        })
+        .to_string(),
+    )])
+    .await;
+    let project_id = seed_project(&state).await;
+    let direction_id = seed_direction(&state, project_id).await;
+    let service = ArticleService::from_state(&state);
+    let template_id = seed_template(&state, project_id, &direction_id).await;
+    let schedule = service
+        .save_schedule(
+            project_id,
+            ArticleScheduleDraft {
+                id: None,
+                template_id,
+                freq: "daily".to_string(),
+                time: "09:30".to_string(),
+                weekday: None,
+                enabled: true,
+            },
+            now(),
+        )
+        .await
+        .expect("排期");
+    let past = now() - chrono::Duration::days(1);
+    let make_due = |id: &str| {
+        let pool = state.pool.clone();
+        let id = id.to_string();
+        async move {
+            sqlx::query("UPDATE article_schedules SET next_run_at = ? WHERE id = ?")
+                .bind(past.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true))
+                .bind(id)
+                .execute(&pool)
+                .await
+                .expect("置为到点");
+        }
+    };
+    make_due(&schedule.id).await;
+
+    assert_eq!(service.run_due(now()).await.expect("调度"), 1);
+    let articles = service
+        .articles(
+            project_id,
+            ArticleListQuery {
+                status: Some("all".to_string()),
+                review: None,
+            },
+        )
+        .await
+        .expect("文章");
+    assert_eq!(articles.len(), 1);
+    assert_eq!(articles[0].status, ArticleStatus::PendingReview);
+    let schedules = service.schedules(project_id).await.expect("排期");
+    assert_eq!(schedules[0].run_count, 1);
+    assert!(schedules[0].next_run_at > Some(now()));
+
+    // 同一标题再跑：不新增文章，但排期继续推进，避免每分钟重试。
+    make_due(&schedule.id).await;
+    assert_eq!(service.run_due(now()).await.expect("重复调度"), 0);
+    let schedules = service.schedules(project_id).await.expect("排期");
+    assert_eq!(schedules[0].run_count, 2);
+    assert!(schedules[0].next_run_at > Some(now()));
+    let articles = service
+        .articles(
+            project_id,
+            ArticleListQuery {
+                status: Some("all".to_string()),
+                review: None,
+            },
+        )
+        .await
+        .expect("文章");
+    assert_eq!(articles.len(), 1);
+}
+
+#[tokio::test]
 async fn article_commands_reject_unknown_parents() {
     let (state, _server, _secrets) = state_with_bodies(Vec::new()).await;
     let project_id = seed_project(&state).await;

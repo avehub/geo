@@ -71,6 +71,21 @@ pub fn run() {
             init_logging(&app.path().app_log_dir()?);
             let state = AppState::initialize(app.handle())?;
             app.manage(state);
+            // 文章排期：每分钟扫一次已启用且到点的排期（无外部 cron）。
+            let article_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let service = {
+                    let state = article_handle.state::<AppState>();
+                    services::ArticleService::from_state(&state)
+                };
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                loop {
+                    interval.tick().await;
+                    if let Err(error) = service.run_due(chrono::Utc::now()).await {
+                        tracing::warn!(code = error.code.as_str(), "article scheduler failed");
+                    }
+                }
+            });
             // 断点续跑：上次退出时停在 queued / running 的轮次，启动后接着跑。
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

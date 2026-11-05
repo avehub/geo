@@ -337,6 +337,22 @@ impl ArticleRepo {
         rows.into_iter().map(ScheduleRow::into_schedule).collect()
     }
 
+    /// 到点该跑的排期（`enabled = 1` 且 `next_run_at <= now`）。
+    pub async fn due_schedules(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<ArticleSchedule>, StoreError> {
+        let rows = sqlx::query_as::<_, ScheduleRow>(concat!(
+            "SELECT id, project_id, template_id, freq, time, weekday, enabled, next_run_at, ",
+            "last_run_at, run_count FROM article_schedules WHERE enabled = 1 ",
+            "AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at ASC, id ASC"
+        ))
+        .bind(codec::encode_time(&now))
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(ScheduleRow::into_schedule).collect()
+    }
+
     pub async fn schedule(&self, id: &str) -> Result<ArticleSchedule, StoreError> {
         let row = sqlx::query_as::<_, ScheduleRow>(SELECT_SCHEDULE)
             .bind(id)

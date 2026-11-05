@@ -215,6 +215,9 @@ async fn collection_triggers_parsing_fact_check_and_citations() {
 
     let repo = CollectionRepo::new(state.pool.clone());
     let record = repo.records(&round_id).await.expect("记录")[0].clone();
+    assert!(record.mentioned, "解析结果必须投影回证据记录");
+    assert_eq!(record.rank, Some(2));
+    assert_eq!(record.sentiment, Some(Sentiment::Positive));
     assert_eq!(record.citation_count, 1);
     let detail = repo.record(&record.id).await.expect("证据").expect("存在");
     assert_eq!(detail.citations.len(), 1);

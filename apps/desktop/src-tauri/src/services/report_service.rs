@@ -74,6 +74,15 @@ impl ReportService {
         let board: Option<ActionBoard> =
             decode_optional(snapshots.action_board(&project_id.to_string()).await?)?;
         let actions = board.map(|board| board.actions).unwrap_or_default();
+        let mut model_versions: Vec<String> = CollectionRepo::new(self.pool.clone())
+            .engine_runs(&round_id)
+            .await?
+            .into_iter()
+            .map(|run| run.model)
+            .filter(|model| !model.trim().is_empty())
+            .collect();
+        model_versions.sort();
+        model_versions.dedup();
 
         let mut next_steps: Vec<String> = actions
             .iter()
@@ -302,7 +311,7 @@ impl ReportService {
                 sample_size_grade: overview.sample_size_grade,
                 collected_at: overview.collected_at,
                 engines: round.engine_scope.clone(),
-                model_versions: Vec::new(),
+                model_versions,
                 prompt_set_label: round.prompt_set_label.clone(),
                 prompt_set_version: round.prompt_set_version,
                 metric_spec_version: round.metric_spec_version.clone(),

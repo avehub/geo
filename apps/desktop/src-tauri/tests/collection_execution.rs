@@ -99,7 +99,7 @@ async fn start_queues_tasks_and_executes_deepseek() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].engine, EngineId::Deepseek);
     assert!(records[0].prompt_tokens > 0);
-    assert!(!records[0].mentioned, "采集不判定提及");
+    assert!(records[0].mentioned, "解析结果已投影回证据记录");
     let detail = repo
         .record(done[0].record_id.as_deref().unwrap())
         .await

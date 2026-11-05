@@ -172,7 +172,9 @@ impl InsightRepo {
         }
     }
 
+    /// 写入解析结果，并把提及 / 位次 / 情感投影回证据记录（采集页矩阵与证据表读的是后者）。
     pub async fn insert_insight(&self, insight: &AnswerInsight) -> Result<(), StoreError> {
+        let mut transaction = self.pool.begin().await?;
         sqlx::query(concat!(
             "INSERT INTO answer_insights (id, round_id, record_id, prompt_id, prompt_text, ",
             "engine, mentions, self_mentioned, self_rank, self_sentiment, answer_shape, ",
@@ -201,8 +203,23 @@ impl InsightRepo {
         .bind(codec::encode_json(&insight.risks)?)
         .bind(codec::encode_json(&insight.corrected_fields)?)
         .bind(insight.reviewed_at.map(|value| codec::encode_time(&value)))
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await?;
+        sqlx::query(
+            "UPDATE collection_records SET mentioned = ?, rank = ?, sentiment = ? WHERE id = ?",
+        )
+        .bind(i64::from(insight.self_mentioned))
+        .bind(insight.self_rank)
+        .bind(
+            insight
+                .self_sentiment
+                .map(|value| codec::encode_scalar(&value))
+                .transpose()?,
+        )
+        .bind(&insight.record_id)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
         Ok(())
     }
 

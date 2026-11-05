@@ -33,7 +33,7 @@
 
 - **领域算法**：去重率、字段完整率、样本量分级、机会判定等只在 Rust 纯函数里真算；demo 只呈现预置值或静态清单（规则 9）。
 - **站点接入**：demo 不真的改线上站点；`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成交接文件；`site.demoBody` / `site.staticNote` 常驻。
-- **文章管理**：demo 没有真定时任务；`next_run_at` 只是按频率 + 时间算出的显示值，到点不跑；“立即运行”从预置文章池取，刷新即重置；生成物一律 `pending_review` 且不做合规扫描。
+- **文章管理**：demo 没有真定时任务；桌面端有一个 **60 秒轮询**的排期扫描器（启动即跑一次，之后每分钟扫 `enabled=1 AND next_run_at <= now`），到点调模型生成文章并把排期推进；标题重复时不新增文章但照常推进，避免每分钟重试。生成物一律 `pending_review`。
 - **站长数据**：demo 的 OAuth 一条都没实现；只走导入 / 填报 / 汇总 / 筛选 / 机会处置。归一 / 求和 / 重算 / 筛选 / 区间收敛在前端 `api/search-compose.ts` 真做；机会清单是静态 6 条。
 - **项目概览**：M9 组合只有数据层、没有页面；`summarizePortfolio` 只给计数 + 每个指标的 min/median/max 分布 + 逐项目行。
 
@@ -205,7 +205,7 @@
   - **文章管理（Article Studio）**：10 条 `article_*` 已落 Rust；迁移 `20261105000012_articles.sql` 建方向 / 模板 / 排期 / 文章四张表。方向与文章生成调模型，产物恒 `pending_review`；槽位替换统一走 `geo-domain::article::render_prompt`。没有后台 cron，`next_run_at` 只是显示值；`article_list` 的 review 与 `article_direction_add` 的 id 仍按 demo 契约承担写副作用（E-64 契约债）。
   - **内容生成与站点补丁生成**：`content_generate` / `site_patch_generate` 已落 Rust。两者都调模型并跑红线词扫描，产物恒待审（文稿 `pending_review`、补丁 `draft` + `pending_review`）；模板目录内置在 `geo-domain::action`，补丁通道按类型映射。
   - **本机环境与模型清单**：`app_environment` / `llm_models_list` 已落 Rust。环境事实读真实数据目录、库文件大小与已应用迁移数；三项系统权限没有原生探针，如实回 `not_determined`，`export_dir` 恒 `null`。模型清单按界面草稿地址真发 `GET {base_url}/models`，Key 只读钥匙串。
-  - **M7 报告组装**：`report_render` 已落 Rust（`geo-domain::report` + `ReportService`）。从既有诊断快照 / 核查问题 / 行动看板 / 证据记录组装三种版本（老板版只有结论，执行版全节，白标版去掉漏斗与核查明细），`include_evidence` 追加证据附录；不调模型、不生成散文。白标未传 `white_label` 时返回 `null`（demo 回落到种子示例机构），`model_versions` 暂为空数组。
+  - **M7 报告组装**：`report_render` 已落 Rust（`geo-domain::report` + `ReportService`）。从既有诊断快照 / 核查问题 / 行动看板 / 证据记录组装三种版本（老板版只有结论，执行版全节，白标版去掉漏斗与核查明细），`include_evidence` 追加证据附录；不调模型、不生成散文。白标未传 `white_label` 时返回 `null`（demo 回落到种子示例机构），`model_versions` 从引擎汇总的 `model` 去重汇总。
   - **M4 / M5 / M6 本地写路径**：`insight_correct` / `fact_check_resolve` / `diagnosis_alert_acknowledge` / `action_update_status` / `content_update_status` 已落 Rust。人工纠正同步提及明细与证据投影；核查结办维护 `resolved_at` 且保留备注；告警已读改 overview 快照；处方完成时间首次盖章、回退清空；文稿只翻审核态。`content_generate` 与采集执行仍 demo-only。
 - 判据：关键词 domain 6 + repo 7 + service 11，FAQ domain 5 + repo 7 + service 11，KB domain 6 + repo 7 + service 14，站点 domain 7 + repo 3 + service 5，补丁 domain 5 + repo 6 + service 8，站长数据 domain 10 + repo 5 + service 17，站点 service 9，采集 domain 0 + repo 6 + service 6，M4 domain 0 + repo 3 + service 4，M5/M6 domain 0 + repo 2 + service 5（+本地写路径）；命令面契约 2 条（Rust）/ 5 条（TS）。
 

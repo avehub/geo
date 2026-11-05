@@ -132,7 +132,7 @@
 
 **第二段（补丁台账）已落地**：`site_patch_add/save/transition/history/delete`——domain 5 + repo 6 + service 8 条测试通过；手动补丁 `action_id` 非空拒绝，`round_id` 空串待行动族落地。
 
-**仍前置**：`site_channel_test` 的 `check_detail` 必须先定义稳定码 + params；`site_patch_generate` 依赖行动中心（`action_*`）。
+**2026-11-05**：`site_channel_test` 已落地（结构化 `check_detail`，边缘函数真探测）；`site_patch_generate` 仍依赖行动中心（`action_*`）。
 
 ## 11. 第五个试点族（第一段）：站长数据 read + CRUD（2026-11-04）
 

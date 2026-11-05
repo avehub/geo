@@ -1,6 +1,6 @@
 //! M6.5 站点档案与下发通道命令（Plan C 第四切片）。
 //!
-//! `site_channel_test` 与补丁台账仍留在 demo-only 清单，本文件不提供伪造实现。
+//! 补丁台账的手动命令在 `ipc/site_patch.rs`；`site_patch_generate` 仍 demo-only。
 
 use chrono::Utc;
 use geo_domain::{
@@ -55,5 +55,16 @@ pub async fn site_channel_remove(
 ) -> Result<Vec<SiteChannel>, IpcError> {
     SiteService::from_state(&state)
         .remove_channel(project_id, kind)
+        .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn site_channel_test(
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+    kind: SiteChannelKind,
+) -> Result<SiteChannel, IpcError> {
+    SiteService::from_state(&state)
+        .test_channel(project_id, kind, Utc::now())
         .await
 }

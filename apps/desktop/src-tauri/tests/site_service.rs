@@ -170,3 +170,119 @@ async fn missing_project_is_project_not_found() {
         .expect_err("未知项目必须报 project/not_found");
     assert_eq!(error.code, "project/not_found");
 }
+
+#[tokio::test]
+async fn channel_test_bundle_is_ready_and_creates_missing_row() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SiteService::from_state(&state);
+    let tested = service
+        .test_channel(project_id, SiteChannelKind::Bundle, now())
+        .await
+        .expect("自检");
+    assert_eq!(tested.status, SiteChannelStatus::Ready);
+    assert_eq!(tested.check_detail.unwrap().code, "site_bundle_ready");
+    assert_eq!(service.board(project_id).await.unwrap().channels.len(), 1);
+}
+
+#[tokio::test]
+async fn channel_test_cms_reports_configuration_and_credentials() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SiteService::from_state(&state);
+    let missing = service
+        .test_channel(project_id, SiteChannelKind::Cms, now())
+        .await
+        .expect("自检");
+    assert_eq!(missing.status, SiteChannelStatus::NotConfigured);
+    assert_eq!(
+        missing.check_detail.unwrap().code,
+        "site_cms_not_configured"
+    );
+
+    service
+        .upsert_channel(
+            project_id,
+            SiteChannelKind::Cms,
+            Some("https://wp.example".to_string()),
+            Some("editor".to_string()),
+            None,
+            now(),
+        )
+        .await
+        .expect("配置");
+    let pending = service
+        .test_channel(project_id, SiteChannelKind::Cms, now())
+        .await
+        .expect("自检");
+    assert_eq!(pending.status, SiteChannelStatus::PendingVerify);
+    let detail = pending.check_detail.unwrap();
+    assert_eq!(detail.code, "site_credentials_missing");
+    assert_eq!(detail.params.get("kind").map(String::as_str), Some("cms"));
+}
+
+#[tokio::test]
+async fn channel_test_edge_probes_endpoint_and_maps_failures() {
+    let (state, server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SiteService::from_state(&state);
+    service
+        .upsert_channel(
+            project_id,
+            SiteChannelKind::Edge,
+            Some(server.uri()),
+            None,
+            None,
+            now(),
+        )
+        .await
+        .expect("配置");
+    let ready = service
+        .test_channel(project_id, SiteChannelKind::Edge, now())
+        .await
+        .expect("自检");
+    assert_eq!(ready.status, SiteChannelStatus::Ready);
+    assert_eq!(ready.check_detail.unwrap().code, "site_reachable");
+
+    service
+        .upsert_channel(
+            project_id,
+            SiteChannelKind::Edge,
+            Some(format!("{}/missing", server.uri())),
+            None,
+            None,
+            now(),
+        )
+        .await
+        .expect("配置坏地址");
+    let failed = service
+        .test_channel(project_id, SiteChannelKind::Edge, now())
+        .await
+        .expect("自检");
+    assert_eq!(failed.status, SiteChannelStatus::Failed);
+    assert_eq!(failed.check_detail.unwrap().code, "site_unreachable");
+}
+
+#[tokio::test]
+async fn channel_test_repo_with_endpoint_is_pending_manual_check() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SiteService::from_state(&state);
+    service
+        .upsert_channel(
+            project_id,
+            SiteChannelKind::Repo,
+            Some("https://git.example/x".to_string()),
+            None,
+            None,
+            now(),
+        )
+        .await
+        .expect("配置");
+    let tested = service
+        .test_channel(project_id, SiteChannelKind::Repo, now())
+        .await
+        .expect("自检");
+    assert_eq!(tested.status, SiteChannelStatus::PendingVerify);
+    assert_eq!(tested.check_detail.unwrap().code, "site_repo_manual_check");
+}

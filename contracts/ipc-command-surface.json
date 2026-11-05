@@ -67,6 +67,7 @@
     "site_profile_save",
     "site_channel_upsert",
     "site_channel_remove",
+    "site_channel_test",
     "site_patch_add",
     "site_patch_save",
     "site_patch_transition",
@@ -161,10 +162,6 @@
     {
       "command": "llm_models_list",
       "ledger": "E-46"
-    },
-    {
-      "command": "site_channel_test",
-      "ledger": "E-55"
     },
     {
       "command": "site_patch_generate",

@@ -51,8 +51,8 @@ describe('contracts/ipc-command-surface.json', () => {
     const declared = [...surface.rust_registered, ...surface.pending.map((entry) => entry.command)];
     expect(new Set(IPC_COMMANDS), 'IPC_COMMANDS 与契约清单不一致').toEqual(new Set(declared));
     expect(IPC_COMMANDS).toHaveLength(105);
-    expect(surface.rust_registered).toHaveLength(71);
-    expect(surface.pending).toHaveLength(34);
+    expect(surface.rust_registered).toHaveLength(72);
+    expect(surface.pending).toHaveLength(33);
   });
 
   it('每条待落地命令都带台账编号（形如 E-33），且编号在已知集合内', () => {

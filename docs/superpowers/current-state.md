@@ -12,10 +12,10 @@
 |---|---:|---|
 | `IPC_COMMANDS` | 105 | `apps/desktop/ui/src/api/client.ts` |
 | `demoBackend` 键 | 105 | `apps/desktop/ui/src/demo/backend.ts` |
-| Rust `generate_handler![]` | 71 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
-| demo-only | 34 | `contracts/ipc-command-surface.json` 的 `pending` |
+| Rust `generate_handler![]` | 72 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
+| demo-only | 33 | `contracts/ipc-command-surface.json` 的 `pending` |
 
-**105 = 71 条 Rust + 34 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
+**105 = 72 条 Rust + 33 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
 
 ### demo-only 族
 
@@ -190,11 +190,11 @@
   - FAQ 额外迁移 `20261103000003_faqs.sql`，仓储 `FaqRepo` 与 `FaqService` 同构；
   - `keyword_generate` / `faq_generate` 也已落 Rust：前者调模型生成候选（月搜索量 / 难度暂为 `null`，第三方关键词接口未接入）；后者调模型成文并跑广告法红线扫描，命中整批拒绝。两者产物一律 `generated` + `pending_review`，并按文本等值去重。
   - **知识库切片**：`kb_board` / `kb_entry_add` / `kb_entry_update` / `kb_entry_delete` / `kb_entry_verify` / `kb_generate` 已全部落 Rust；迁移 `20261104000004_kb.sql` 建 `kb_entries` + `kb_entry_revisions`。更新逐字段 diff 留痕（正文截断 120 字符），删除重排 `position` 且不删留痕，核实写 `verified_at` 留痕；生成调模型并按模块产出 `generated` + `pending_review`，命中红线词整批拒绝。
-  - **站点档案 / 通道切片**：`site_board` / `site_profile_save` / `site_channel_upsert` / `site_channel_remove` 已落 Rust；迁移 `20261104000005_site_profile_channels.sql` 建 `site_profiles` + `site_channels`。页面清单暂由项目自有页面资产投影（真后端由爬虫发现）。
+  - **站点档案 / 通道切片**：`site_board` / `site_profile_save` / `site_channel_upsert` / `site_channel_remove` / `site_channel_test` 已落 Rust；迁移 `20261104000005_site_profile_channels.sql` 建 `site_profiles` + `site_channels`。页面清单暂由项目自有页面资产投影（真后端由爬虫发现）。通道自检对边缘函数真发一次 GET，其余通道只报还缺配置 / 凭据；`check_detail` 为结构化 `{ code, params }`。
   - **补丁台账切片**：`site_patch_add` / `site_patch_save` / `site_patch_transition` / `site_patch_history` / `site_patch_delete` 已落 Rust；迁移 `20261104000006_site_patches.sql` 建 `site_patches` + `site_patch_events`。手动补丁三态状态机、发布快照、事件历史、已发布拒删、删除重排 `position` 与事件级联均已落地；`site_patch_generate`（依赖行动中心）与 `site_channel_test`（`check_detail` 需稳定码）仍 demo-only。
   - **站长数据切片（第一段）**：`search_board` / `search_source_upsert` / `search_source_remove` / `search_opportunity_update` / `search_source_test` 已落 Rust；迁移 `20261104000007_search_sources_opportunities.sql` 建 `search_sources` + `search_opportunities`。源目录的 9 个 kind / 分组 / 区域 / 绑定字段 / 凭证引用串全部由 `geo-domain::search` 的目录表推导；自检对可探测源真发一次 HTTP GET，OAuth 源只报缺少授权，人工源不需探测。`check_detail` 已改为结构化 `{ code, params }`（前端 `CheckDetailText` 按词典渲染）。
   - **站长数据切片（第二段）**：`search_metric_import_csv` 已落 Rust，迁移 `20261105000008_search_metrics.sql` 建 `search_metrics` / `search_ai_overviews` / `search_native_extras`。当前**只承诺百度《AI 流量分析》五列**（关键词 / 页面 + 规范列名），支持行级容错、同周期同源覆盖、0 数据行成功、`data_through` 推导与源状态回写；`search_board` 返回真实指标与 AI 汇总。其它源的映射表仍待后续切片。
-- 判据：关键词 domain 6 + repo 7 + service 11，FAQ domain 5 + repo 7 + service 11，KB domain 6 + repo 7 + service 14，站点 domain 7 + repo 3 + service 5，补丁 domain 5 + repo 6 + service 8，站长数据 domain 10 + repo 5 + service 17；命令面契约 2 条（Rust）/ 5 条（TS）。
+- 判据：关键词 domain 6 + repo 7 + service 11，FAQ domain 5 + repo 7 + service 11，KB domain 6 + repo 7 + service 14，站点 domain 7 + repo 3 + service 5，补丁 domain 5 + repo 6 + service 8，站长数据 domain 10 + repo 5 + service 17，站点 service 9；命令面契约 2 条（Rust）/ 5 条（TS）。
 
 ## 4. 维护方式
 

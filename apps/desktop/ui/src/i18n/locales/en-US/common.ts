@@ -85,6 +85,11 @@ const common: ResourceBundle['common'] = {
     site_bundle_verified: 'The hand-over bundle needs no credentials; the export directory is writable, and the latest export was the {{date}} qualification-page bundle.',
     site_edge_not_deployed: 'The edge function is not deployed yet: the patches.json URL returned {{status}}. Deploy it, then run the check again.',
     site_cms_not_configured: 'Not configured: enter the site URL and username, then create an application password in WordPress (the demo does not accept passwords).',
+
+    site_credentials_missing: 'Credentials are not configured: {{kind}} needs a credential stored in the system keychain first.',
+    site_repo_manual_check: 'The repository URL is set; repository delivery is a merge request opened by the user, so the check only confirms the configuration exists.',
+    site_reachable: 'The channel is reachable (HTTP {{status}}).',
+    site_unreachable: 'The channel is unreachable: {{reason}}.',
     site_repo_not_configured: 'Not configured: enter the repository URL to generate a diff and hand-over notes, then open the merge request yourself.',
     search_ai_flow_verified: 'The site is verified and included in the AI Traffic Analysis rollout: all three reports are visible, and only the AI-cited keywords report has a download button (xlsx, no date column).',
     search_traffic_keywords_verified: 'The site is verified and the traffic and keywords export is available; average position and index size stay in platform-specific dimensions because they have no canonical slot.',

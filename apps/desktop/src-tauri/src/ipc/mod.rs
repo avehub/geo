@@ -87,6 +87,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         site::site_profile_save,
         site::site_channel_upsert,
         site::site_channel_remove,
+        site::site_channel_test,
         site_patch::site_patch_add,
         site_patch::site_patch_save,
         site_patch::site_patch_transition,

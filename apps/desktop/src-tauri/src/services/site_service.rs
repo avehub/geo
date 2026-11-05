@@ -6,10 +6,14 @@
 //!
 //! 🔴 规则 3：通道只存 `keyring://site/<kind>/<project_id>` 引用串，绝不收凭据值。
 
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
+use geo_crawler::{CrawlerError, SiteFetcher};
 use geo_domain::{
-    channel_secret_ref, channel_status, page_from_asset, ProjectId, SiteChannel, SiteChannelId,
-    SiteChannelKind, SiteOwnership, SitePage, SitePatch, SitePlatform, SiteProfile, SiteProfileId,
+    channel_secret_ref, channel_status, page_from_asset, CheckDetail, ProjectId, SiteChannel,
+    SiteChannelId, SiteChannelKind, SiteChannelStatus, SiteOwnership, SitePage, SitePatch,
+    SitePlatform, SiteProfile, SiteProfileId,
 };
 use geo_store::{AssetRepo, ProjectRepo, SitePatchRepo, SiteRepo};
 use serde::Serialize;
@@ -31,15 +35,16 @@ pub struct SiteBoard {
 #[derive(Debug, Clone)]
 pub struct SiteService {
     pool: SqlitePool,
+    fetcher: Arc<SiteFetcher>,
 }
 
 impl SiteService {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, fetcher: Arc<SiteFetcher>) -> Self {
+        Self { pool, fetcher }
     }
 
     pub fn from_state(state: &AppState) -> Self {
-        Self::new(state.pool.clone())
+        Self::new(state.pool.clone(), state.fetcher.clone())
     }
 
     fn sites(&self) -> SiteRepo {
@@ -173,5 +178,111 @@ impl SiteService {
     ) -> Result<Vec<SiteChannel>, IpcError> {
         self.require_project(project_id).await?;
         Ok(self.sites().remove_channel(project_id, kind).await?)
+    }
+    /// 跑一次通道自检：不伪造结论。落地包恒可用；边缘函数真发一次 GET；CMS / 仓库只报还缺什么。
+    pub async fn test_channel(
+        &self,
+        project_id: ProjectId,
+        kind: SiteChannelKind,
+        now: DateTime<Utc>,
+    ) -> Result<SiteChannel, IpcError> {
+        self.require_project(project_id).await?;
+        let mut channel = match self.sites().channel(project_id, kind).await? {
+            Some(channel) => channel,
+            None => SiteChannel {
+                id: SiteChannelId::new(),
+                project_id,
+                kind,
+                status: channel_status(kind, None),
+                endpoint: None,
+                username: None,
+                note: None,
+                credentials_state: kind.credentials_state(),
+                secret_ref: channel_secret_ref(kind, project_id),
+                checked_at: None,
+                check_detail: None,
+                updated_at: now,
+            },
+        };
+
+        let (status, detail) = match kind {
+            SiteChannelKind::Bundle => (
+                SiteChannelStatus::Ready,
+                CheckDetail::new("site_bundle_ready"),
+            ),
+            SiteChannelKind::Cms => match channel.endpoint.as_deref() {
+                None => (
+                    SiteChannelStatus::NotConfigured,
+                    CheckDetail::new("site_cms_not_configured"),
+                ),
+                Some(_) => (
+                    SiteChannelStatus::PendingVerify,
+                    CheckDetail::new("site_credentials_missing").with_param("kind", "cms"),
+                ),
+            },
+            SiteChannelKind::Repo => match channel.endpoint.as_deref() {
+                None => (
+                    SiteChannelStatus::NotConfigured,
+                    CheckDetail::new("site_repo_not_configured"),
+                ),
+                Some(_) => (
+                    SiteChannelStatus::PendingVerify,
+                    CheckDetail::new("site_repo_manual_check"),
+                ),
+            },
+            SiteChannelKind::Edge => match channel.endpoint.as_deref() {
+                None => (
+                    SiteChannelStatus::NotConfigured,
+                    CheckDetail::new("site_edge_not_deployed").with_param("status", "404"),
+                ),
+                Some(endpoint) => match url::Url::parse(endpoint) {
+                    Ok(target) => match self.fetcher.fetch(&target).await {
+                        Ok(page) => (
+                            SiteChannelStatus::Ready,
+                            CheckDetail::new("site_reachable")
+                                .with_param("status", page.status.to_string()),
+                        ),
+                        Err(error) => {
+                            let (reason, code) = crawler_reason(&error);
+                            let mut detail =
+                                CheckDetail::new("site_unreachable").with_param("reason", reason);
+                            if let Some(code) = code {
+                                detail = detail.with_param("status", code);
+                            }
+                            (SiteChannelStatus::Failed, detail)
+                        }
+                    },
+                    Err(_) => (
+                        SiteChannelStatus::Failed,
+                        CheckDetail::new("site_unreachable").with_param("reason", "invalid_url"),
+                    ),
+                },
+            },
+        };
+
+        channel.status = status;
+        channel.check_detail = Some(detail);
+        channel.checked_at = Some(now);
+        channel.updated_at = now;
+        self.sites().save_channel(&channel).await?;
+        Ok(channel)
+    }
+}
+
+fn crawler_reason(error: &CrawlerError) -> (&'static str, Option<String>) {
+    match error {
+        CrawlerError::Timeout { .. } => ("timeout", None),
+        CrawlerError::Network { status, .. } => (
+            if status.is_some() {
+                "http_status"
+            } else {
+                "network"
+            },
+            status.map(|value| value.to_string()),
+        ),
+        CrawlerError::InvalidUrl { .. } => ("invalid_url", None),
+        CrawlerError::Blocked { .. } => ("blocked", None),
+        CrawlerError::TooLarge { .. } => ("too_large", None),
+        CrawlerError::Decode(_) => ("decode", None),
     }
 }

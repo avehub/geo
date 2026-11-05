@@ -122,6 +122,11 @@ const common = {
     site_bundle_verified: '落地包不需要任何凭据；已确认导出目录可写，最近一次导出为 {{date}} 的资质页交接单。',
     site_edge_not_deployed: '边缘函数尚未部署：patches.json 拉取地址返回 {{status}}。部署后重新自检即可。',
     site_cms_not_configured: '未配置：需要先填站点 URL 与用户名，并在 WordPress 后台创建应用程序密码（演示模式不收密码）。',
+
+    site_credentials_missing: '尚未配置凭据：{{kind}} 需要先在系统钥匙串里保存凭据。',
+    site_repo_manual_check: '仓库地址已填写；仓库类通道由用户在托管平台提交合并请求，自检只确认配置存在。',
+    site_reachable: '通道可达（HTTP {{status}}）。',
+    site_unreachable: '通道不可达：{{reason}}。',
     site_repo_not_configured: '未配置：填仓库地址后可生成 diff 与交接说明，由用户自己在托管平台上提合并请求。',
     search_ai_flow_verified: '站点已验证，《AI 流量分析》在灰度名单内：三段报表都能看到，其中只有「AI 引用热门关键词」带下载按钮（xlsx，无日期列）。',
     search_traffic_keywords_verified: '站点已验证，「数据统计 → 流量与关键词」可导出；平均排名与索引量两列没有规范落点，按原样留在平台独有维度里。',

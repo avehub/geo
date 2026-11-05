@@ -133,6 +133,8 @@ const fields = {
   opportunity_id: '优化机会 ID',
   opportunity_status: '机会状态',
   binding: '站点绑定',
+  period_start: '开始日期',
+  period_end: '结束日期',
 };
 
 export default fields;

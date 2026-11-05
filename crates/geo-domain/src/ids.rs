@@ -92,6 +92,9 @@ id_type!(SiteChannelId);
 id_type!(SitePatchId);
 id_type!(SitePatchEventId);
 id_type!(SearchSourceId);
+id_type!(SearchMetricId);
+id_type!(SearchAiOverviewId);
+id_type!(SearchNativeExtraId);
 id_type!(SearchOpportunityId);
 
 #[cfg(test)]

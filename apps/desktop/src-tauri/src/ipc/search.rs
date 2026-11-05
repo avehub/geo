@@ -1,6 +1,5 @@
 //! M5.5 站长数据命令（Plan C 第五切片第一段）。
 //!
-//! `search_metric_import_csv` 仍留在 demo-only。
 
 use std::collections::BTreeMap;
 
@@ -12,7 +11,7 @@ use geo_domain::{
 use tauri::State;
 
 use crate::error::IpcError;
-use crate::services::{SearchBoardResult, SearchService};
+use crate::services::{SearchBoardResult, SearchMetricImportResult, SearchService};
 use crate::state::AppState;
 
 #[tauri::command(rename_all = "snake_case")]
@@ -66,5 +65,26 @@ pub async fn search_source_test(
 ) -> Result<SearchSource, IpcError> {
     SearchService::from_state(&state)
         .test_source(project_id, kind, Utc::now())
+        .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn search_metric_import_csv(
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+    kind: SearchSourceKind,
+    payload: String,
+    period_start: String,
+    period_end: String,
+) -> Result<SearchMetricImportResult, IpcError> {
+    SearchService::from_state(&state)
+        .import_metrics(
+            project_id,
+            kind,
+            payload,
+            period_start,
+            period_end,
+            Utc::now(),
+        )
         .await
 }

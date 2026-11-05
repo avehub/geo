@@ -19,7 +19,8 @@ pub use db::{open, open_in_memory};
 pub use error::StoreError;
 pub use repo::{
     AssetRepo, CompetitorRepo, EntityCardRepo, FaqRepo, KbRepo, KeywordRepo, ProjectFilter,
-    ProjectRepo, PromptSetRepo, PromptSetSummary, SearchRepo, SitePatchRepo, SiteRepo,
+    ProjectRepo, PromptSetRepo, PromptSetSummary, SearchMetricRepo, SearchRepo, SitePatchRepo,
+    SiteRepo,
 };
 pub use secret::{
     parse_secret_ref, secret_ref, KeyringSecretStore, MemorySecretStore, SecretStore,

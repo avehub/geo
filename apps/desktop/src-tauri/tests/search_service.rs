@@ -323,3 +323,139 @@ async fn test_source_unreachable_reports_stable_reason() {
     assert_eq!(detail.code, "search_unreachable");
     assert!(detail.params.contains_key("reason"));
 }
+
+const AI_TABLE: &str = "关键词\tAI引用量\tAI曝光量\tAI点击量\tAI点击率\n工业除尘器\t40\t1200\t8\t0.2\n布袋除尘器\t20\t500\t4\t0.2\n";
+const AI_SUMMARY: &str =
+    "citations,impressions,ai_clicks,ai_ctr_check,cited_pages\n40,6106,8,0.2,6\n";
+
+#[tokio::test]
+async fn import_query_table_populates_board_and_marks_source_ready() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SearchService::from_state(&state);
+    let result = service
+        .import_metrics(
+            project_id,
+            SearchSourceKind::BaiduZiyuanAi,
+            AI_TABLE.to_string(),
+            "2026-08-01".to_string(),
+            "2026-09-05".to_string(),
+            now(),
+        )
+        .await
+        .expect("导入");
+    assert_eq!(result.metrics.len(), 2);
+    assert_eq!(result.errors.len(), 0);
+    assert_eq!(result.data_through.as_deref(), Some("2026-09-05"));
+    let board = service.board(project_id).await.unwrap();
+    assert_eq!(board.metrics.len(), 2);
+    let source = board
+        .sources
+        .iter()
+        .find(|source| source.kind == SearchSourceKind::BaiduZiyuanAi)
+        .unwrap();
+    assert_eq!(source.status, SiteChannelStatus::Ready);
+    assert_eq!(source.data_through.as_deref(), Some("2026-09-05"));
+}
+
+#[tokio::test]
+async fn header_only_import_keeps_previous_rows() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SearchService::from_state(&state);
+    service
+        .import_metrics(
+            project_id,
+            SearchSourceKind::BaiduZiyuanAi,
+            AI_TABLE.to_string(),
+            "2026-09-01".to_string(),
+            "2026-09-30".to_string(),
+            now(),
+        )
+        .await
+        .expect("首次导入");
+    let empty = service
+        .import_metrics(
+            project_id,
+            SearchSourceKind::BaiduZiyuanAi,
+            "关键词\tAI引用量\tAI曝光量\tAI点击量\tAI点击率\n".to_string(),
+            "2026-09-01".to_string(),
+            "2026-09-30".to_string(),
+            now(),
+        )
+        .await
+        .expect("空表导入");
+    assert!(empty.metrics.is_empty());
+    assert_eq!(service.board(project_id).await.unwrap().metrics.len(), 2);
+}
+
+#[tokio::test]
+async fn import_ai_summary_populates_overview_and_cited_pages_extra() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SearchService::from_state(&state);
+    let result = service
+        .import_metrics(
+            project_id,
+            SearchSourceKind::BaiduZiyuanAi,
+            AI_SUMMARY.to_string(),
+            "2026-09-01".to_string(),
+            "2026-09-30".to_string(),
+            now(),
+        )
+        .await
+        .expect("导入汇总");
+    assert_eq!(result.ai_overviews.len(), 1);
+    assert_eq!(result.ai_overviews[0].ai_ctr, Some(0.2));
+    let board = service.board(project_id).await.unwrap();
+    assert_eq!(board.ai_overviews.len(), 1);
+    assert!(board
+        .native_extras
+        .iter()
+        .any(|extra| extra.label == "AI引用页面量"));
+}
+
+#[tokio::test]
+async fn all_rows_invalid_is_a_payload_error_with_detail() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let error = SearchService::from_state(&state)
+        .import_metrics(
+            project_id,
+            SearchSourceKind::BaiduZiyuanAi,
+            "关键词\tAI引用量\tAI曝光量\tAI点击量\tAI点击率\n工业除尘器\tabc\t1200\t8\t0.2\n"
+                .to_string(),
+            "2026-09-01".to_string(),
+            "2026-09-30".to_string(),
+            now(),
+        )
+        .await
+        .expect_err("全行失败必须整批拒绝");
+    assert_eq!(error.code, "validation/failed");
+    assert_eq!(error.params["field"], "payload");
+    assert!(error.detail.is_some());
+}
+
+#[tokio::test]
+async fn removing_source_cascades_imported_metrics() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SearchService::from_state(&state);
+    service
+        .import_metrics(
+            project_id,
+            SearchSourceKind::BaiduZiyuanAi,
+            AI_TABLE.to_string(),
+            "2026-09-01".to_string(),
+            "2026-09-30".to_string(),
+            now(),
+        )
+        .await
+        .expect("导入");
+    service
+        .remove_source(project_id, SearchSourceKind::BaiduZiyuanAi)
+        .await
+        .expect("移除");
+    let board = service.board(project_id).await.unwrap();
+    assert!(board.metrics.is_empty());
+}

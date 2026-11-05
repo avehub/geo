@@ -401,6 +401,8 @@ const FIELD_VALUES = [
   'opportunity_id',
   'opportunity_status',
   'binding',
+  'period_start',
+  'period_end',
 ];
 
 describe('B-1 · reason 目录运行时解析（不手抄键集）', () => {

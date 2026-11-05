@@ -17,6 +17,8 @@ pub mod keyword;
 pub mod project;
 pub mod prompt;
 pub mod search;
+pub mod search_import;
+pub mod search_metrics;
 pub mod search_opportunity;
 pub mod site;
 pub mod site_patch;
@@ -37,8 +39,8 @@ pub use error::GeoError;
 pub use faq::{FaqDraft, FaqItem};
 pub use ids::{
     AssetId, CompetitorId, FaqId, KbEntryId, KeywordId, ProjectId, PromptId, PromptSetId,
-    RevisionId, SearchOpportunityId, SearchSourceId, SiteChannelId, SitePatchEventId, SitePatchId,
-    SiteProfileId,
+    RevisionId, SearchAiOverviewId, SearchMetricId, SearchNativeExtraId, SearchOpportunityId,
+    SearchSourceId, SiteChannelId, SitePatchEventId, SitePatchId, SiteProfileId,
 };
 pub use kb::{
     verify_revision, KbEntry, KbEntryDraft, KbEntryKind, KbEntryRevision, KbModule, KbScenario,
@@ -61,6 +63,14 @@ pub use search::{
     clean_binding, credentials_state, secret_ref, source_status, SearchAuthMode,
     SearchBindingField, SearchGroup, SearchIngestMode, SearchRegion, SearchSource,
     SearchSourceCatalog, SearchSourceKind, SEARCH_CATALOG,
+};
+pub use search_import::{
+    parse_search_table, ParseInput, ParsedSearchImport, SearchTableError, SearchTableWarning,
+    MAPPING_VERSION,
+};
+pub use search_metrics::{
+    SearchAiOverview, SearchCompleteness, SearchNativeExtra, SearchQueryMetric, SearchSurface,
+    WindowSource,
 };
 pub use search_opportunity::{
     SearchActionLevel, SearchOpportunity, SearchOpportunityStatus, SearchPrescriptionCategory,

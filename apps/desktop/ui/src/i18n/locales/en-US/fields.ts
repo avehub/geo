@@ -123,6 +123,8 @@ const fields: ResourceBundle['fields'] = {
   opportunity_id: 'Optimization opportunity ID',
   opportunity_status: 'Opportunity state',
   binding: 'Site binding',
+  period_start: 'Start date',
+  period_end: 'End date',
 };
 
 export default fields;

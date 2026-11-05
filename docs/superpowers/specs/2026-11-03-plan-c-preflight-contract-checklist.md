@@ -152,4 +152,6 @@
 
 **状态（2026-11-04）**：✅ 第一段已落地——domain 4 + repo 3 + service 12 条测试通过；`search_source_test` 已转正；`check_detail` 已改为结构化 `{ code, params }`。
 
-**下一段前置**：`search_metric_import_csv` 需要 CSV / xlsx 解析与 TS / Rust fixture 对拍；建议先落 Baidu AI 五列模板，再扩其它源。
+**A2a 状态（2026-11-05）**：✅ `search_metric_import_csv` 已落 Rust，支持百度《AI 流量分析》五列 / 页面表 / AI 汇总表与规范列名；行级容错、同周期同源覆盖、0 数据行成功、`data_through` 推导、源状态回写均已落地；`search_board` 返回真实指标。
+
+**A2b 待办**：其它源（百度传统 / 头条 / GSC / Bing / 百度统计）的映射表、TS / Rust fixture 对拍与平台独有列。

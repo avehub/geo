@@ -104,6 +104,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../src/services/collection_service.rs"),
     ),
     (
+        "services/insight_service.rs",
+        include_str!("../src/services/insight_service.rs"),
+    ),
+    (
         "services/templates/mod.rs",
         include_str!("../src/services/templates/mod.rs"),
     ),
@@ -135,6 +139,7 @@ const FILES: &[(&str, &str)] = &[
         "ipc/collection.rs",
         include_str!("../src/ipc/collection.rs"),
     ),
+    ("ipc/insight.rs", include_str!("../src/ipc/insight.rs")),
     // ---- Task 5b（裁定 A-4b，复审 Minor 4a）：壳的两个入口，期望站点数 0 ----
     ("lib.rs", include_str!("../src/lib.rs")),
     ("main.rs", include_str!("../src/main.rs")),
@@ -323,6 +328,7 @@ fn the_guard_sees_every_production_site() {
         ("services/site_patch_service.rs", 5),
         ("services/search_service.rs", 8),
         ("services/collection_service.rs", 2),
+        ("services/insight_service.rs", 1),
         ("services/templates/mod.rs", 0),
         ("services/templates/catalog.rs", 0),
         // Task 5b 新增（A-4）：`ipc/` 整棵树。只有 `export.rs` 有站点。
@@ -340,6 +346,7 @@ fn the_guard_sees_every_production_site() {
         ("ipc/site_patch.rs", 0),
         ("ipc/search.rs", 0),
         ("ipc/collection.rs", 0),
+        ("ipc/insight.rs", 0),
         // Task 5b 新增（A-4b，复审 Minor 4a）：壳入口，以「期望 0」入表，
         // 将来谁在这里直接拼中文 message 就会红。
         ("lib.rs", 0),
@@ -360,6 +367,6 @@ fn the_guard_sees_every_production_site() {
         assert_eq!(actual, *want, "{name} 的生产站点数变了，守卫清单要同步");
         total += actual;
     }
-    assert_eq!(total, 65, "壳侧生产站点总数");
+    assert_eq!(total, 66, "壳侧生产站点总数");
     assert_eq!(FILES.len(), expected.len(), "FILES 与期望表要一一对应");
 }

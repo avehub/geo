@@ -13,6 +13,7 @@ pub mod entity_card;
 pub mod error;
 pub mod faq;
 pub mod ids;
+pub mod insight;
 pub mod kb;
 pub mod keyword;
 pub mod project;
@@ -47,6 +48,10 @@ pub use ids::{
     AssetId, CompetitorId, FaqId, KbEntryId, KeywordId, ProjectId, PromptId, PromptSetId,
     RevisionId, SearchAiOverviewId, SearchMetricId, SearchNativeExtraId, SearchOpportunityId,
     SearchSourceId, SiteChannelId, SitePatchEventId, SitePatchId, SiteProfileId,
+};
+pub use insight::{
+    AnswerInsight, AnswerShape, BrandMention, BrandRole, CorrectionChannel, FactCheckBoard,
+    FactCheckIssue, FactCheckSummary, FactIssueKind, FactIssueStatus, InsightFilter, RiskFlag,
 };
 pub use kb::{
     verify_revision, KbEntry, KbEntryDraft, KbEntryKind, KbEntryRevision, KbModule, KbScenario,

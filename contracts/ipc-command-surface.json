@@ -42,6 +42,8 @@
     "keyword_update",
     "keyword_delete",
     "keyword_generate",
+    "insight_list",
+    "fact_check_list",
     "kb_board",
     "kb_entry_add",
     "kb_entry_update",
@@ -88,15 +90,7 @@
       "ledger": "E-33"
     },
     {
-      "command": "insight_list",
-      "ledger": "E-33"
-    },
-    {
       "command": "insight_correct",
-      "ledger": "E-33"
-    },
-    {
-      "command": "fact_check_list",
       "ledger": "E-33"
     },
     {

@@ -9,6 +9,7 @@ pub mod collection;
 pub mod entity_card;
 pub mod export;
 pub mod faq;
+pub mod insight;
 pub mod kb;
 pub mod keyword;
 pub mod project;
@@ -63,6 +64,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         keyword::keyword_update,
         keyword::keyword_delete,
         keyword::keyword_generate,
+        insight::insight_list,
+        insight::fact_check_list,
         kb::kb_board,
         kb::kb_entry_add,
         kb::kb_entry_update,

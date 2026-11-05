@@ -170,3 +170,16 @@
 | 命令面 | 注册 4 条，72 → 76；pending 33 → 29 |
 
 **状态（2026-11-05）**：✅ 已落地——repo 6 + service 6 条测试通过。
+
+## 13. M3–M7 读路径第二段：解析 / 核查（2026-11-05）
+
+**范围**：`insight_list` / `fact_check_list`。纠正与结办仍 pending。
+
+| 项 | 冻结值 |
+|---|---|
+| 表 | `answer_insights` / `fact_check_issues` / `fact_check_summaries` |
+| DTO | `AnswerInsight` / `BrandMention` / `AnswerShape` / `FactCheckIssue` / `FactCheckSummary` / `FactCheckBoard` |
+| 筛选 | engine / needs_review / self_mentioned / risk 按 AND |
+| 命令面 | 注册 2 条，76 → 78；pending 29 → 27 |
+
+**状态（2026-11-05）**：✅ 已落地——repo 3 + service 4 条测试通过。

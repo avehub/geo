@@ -12,10 +12,10 @@
 |---|---:|---|
 | `IPC_COMMANDS` | 105 | `apps/desktop/ui/src/api/client.ts` |
 | `demoBackend` 键 | 105 | `apps/desktop/ui/src/demo/backend.ts` |
-| Rust `generate_handler![]` | 72 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
-| demo-only | 33 | `contracts/ipc-command-surface.json` 的 `pending` |
+| Rust `generate_handler![]` | 76 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
+| demo-only | 29 | `contracts/ipc-command-surface.json` 的 `pending` |
 
-**105 = 72 条 Rust + 33 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
+**105 = 76 条 Rust + 29 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
 
 ### demo-only 族
 
@@ -194,7 +194,8 @@
   - **补丁台账切片**：`site_patch_add` / `site_patch_save` / `site_patch_transition` / `site_patch_history` / `site_patch_delete` 已落 Rust；迁移 `20261104000006_site_patches.sql` 建 `site_patches` + `site_patch_events`。手动补丁三态状态机、发布快照、事件历史、已发布拒删、删除重排 `position` 与事件级联均已落地；`site_patch_generate`（依赖行动中心）与 `site_channel_test`（`check_detail` 需稳定码）仍 demo-only。
   - **站长数据切片（第一段）**：`search_board` / `search_source_upsert` / `search_source_remove` / `search_opportunity_update` / `search_source_test` 已落 Rust；迁移 `20261104000007_search_sources_opportunities.sql` 建 `search_sources` + `search_opportunities`。源目录的 9 个 kind / 分组 / 区域 / 绑定字段 / 凭证引用串全部由 `geo-domain::search` 的目录表推导；自检对可探测源真发一次 HTTP GET，OAuth 源只报缺少授权，人工源不需探测。`check_detail` 已改为结构化 `{ code, params }`（前端 `CheckDetailText` 按词典渲染）。
   - **站长数据切片（第二段）**：`search_metric_import_csv` 已落 Rust，迁移 `20261105000008_search_metrics.sql` 建 `search_metrics` / `search_ai_overviews` / `search_native_extras`。当前**只承诺百度《AI 流量分析》五列**（关键词 / 页面 + 规范列名），支持行级容错、同周期同源覆盖、0 数据行成功、`data_through` 推导与源状态回写；`search_board` 返回真实指标与 AI 汇总。其它源的映射表仍待后续切片。
-- 判据：关键词 domain 6 + repo 7 + service 11，FAQ domain 5 + repo 7 + service 11，KB domain 6 + repo 7 + service 14，站点 domain 7 + repo 3 + service 5，补丁 domain 5 + repo 6 + service 8，站长数据 domain 10 + repo 5 + service 17，站点 service 9；命令面契约 2 条（Rust）/ 5 条（TS）。
+  - **M3–M7 读路径（第一段）**：`collection_board` / `collection_round_get` / `collection_record_list` / `collection_record_get` 已落 Rust；迁移 `20261105000009_collection_read.sql` 建轮次 / 引擎汇总 / 任务 / 记录 / 引用五张表。采集页可渲染空态或已有数据；写路径（`collection_start` / `collection_task_retry`）与解析 / 诊断 / 行动 / 报告仍 demo-only。
+- 判据：关键词 domain 6 + repo 7 + service 11，FAQ domain 5 + repo 7 + service 11，KB domain 6 + repo 7 + service 14，站点 domain 7 + repo 3 + service 5，补丁 domain 5 + repo 6 + service 8，站长数据 domain 10 + repo 5 + service 17，站点 service 9，采集 domain 0 + repo 6 + service 6；命令面契约 2 条（Rust）/ 5 条（TS）。
 
 ## 4. 维护方式
 

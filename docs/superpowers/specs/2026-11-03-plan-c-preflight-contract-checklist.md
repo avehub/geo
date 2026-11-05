@@ -155,3 +155,18 @@
 **A2a 状态（2026-11-05）**：✅ `search_metric_import_csv` 已落 Rust，支持百度《AI 流量分析》五列 / 页面表 / AI 汇总表与规范列名；行级容错、同周期同源覆盖、0 数据行成功、`data_through` 推导、源状态回写均已落地；`search_board` 返回真实指标。
 
 **A2b 待办**：其它源（百度传统 / 头条 / GSC / Bing / 百度统计）的映射表、TS / Rust fixture 对拍与平台独有列。
+
+## 12. M3–M7 读路径第一段：采集轮次 / 任务 / 记录 / 证据（2026-11-05）
+
+**范围**：`collection_board` / `collection_round_get` / `collection_record_list` / `collection_record_get`。
+写路径与解析 / 诊断 / 行动 / 报告仍 pending。
+
+| 项 | 冻结值 |
+|---|---|
+| 表 | `collection_rounds` / `collection_engine_runs` / `collection_tasks` / `collection_records` / `collection_citations` |
+| DTO | `CollectionRound` / `EngineRun` / `CollectionTask` / `CollectionRecord` / `CollectionRecordDetail` / `UsageBoard` |
+| 读口径 | 轮次按 `round_index ASC`；任务按 `queued_at ASC`；记录按 `collected_at DESC`；筛选 engine / intent / mentioned / status 按 AND |
+| 用量 | 只从引擎汇总求和查询数与 token；金额不进契约（DR-8） |
+| 命令面 | 注册 4 条，72 → 76；pending 33 → 29 |
+
+**状态（2026-11-05）**：✅ 已落地——repo 6 + service 6 条测试通过。

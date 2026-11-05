@@ -18,6 +18,10 @@
     "asset_add",
     "asset_list",
     "asset_delete",
+    "collection_board",
+    "collection_round_get",
+    "collection_record_list",
+    "collection_record_get",
     "entity_card_autobuild",
     "entity_card_get",
     "entity_card_update_field",
@@ -76,27 +80,11 @@
   ],
   "pending": [
     {
-      "command": "collection_board",
-      "ledger": "E-33"
-    },
-    {
-      "command": "collection_round_get",
-      "ledger": "E-33"
-    },
-    {
       "command": "collection_start",
       "ledger": "E-33"
     },
     {
       "command": "collection_task_retry",
-      "ledger": "E-33"
-    },
-    {
-      "command": "collection_record_list",
-      "ledger": "E-33"
-    },
-    {
-      "command": "collection_record_get",
       "ledger": "E-33"
     },
     {

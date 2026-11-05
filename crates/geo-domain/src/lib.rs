@@ -5,6 +5,7 @@
 
 pub mod asset;
 pub mod check;
+pub mod collection;
 pub mod compliance;
 pub mod csv_io;
 pub mod dedupe;
@@ -25,6 +26,11 @@ pub mod site_patch;
 
 pub use asset::{clean_optional, normalize_url, AssetKind, ProjectAsset};
 pub use check::CheckDetail;
+pub use collection::{
+    Citation, CollectionBoard, CollectionRecord, CollectionRecordDetail, CollectionRound,
+    CollectionRoundDetail, CollectionStatus, CollectionTask, EngineChannel, EngineId, EngineRun,
+    FailureReason, RecordFilter, RoundStatus, Sentiment, SourceType, UsageBoard, UsageRow,
+};
 pub use compliance::{ContentStatus, Violation};
 pub use csv_io::{
     assets_to_csv, competitors_to_csv, prompts_from_csv, prompts_to_csv, CsvImportResult,

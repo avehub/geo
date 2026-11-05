@@ -8,6 +8,7 @@
 //! - 时间戳由调用方注入的领域对象携带，仓储不改写业务时间。
 
 pub mod asset;
+pub mod collection;
 pub mod competitor;
 pub mod entity_card;
 pub mod faq;
@@ -21,6 +22,7 @@ pub mod site;
 pub mod site_patch;
 
 pub use asset::AssetRepo;
+pub use collection::CollectionRepo;
 pub use competitor::CompetitorRepo;
 pub use entity_card::EntityCardRepo;
 pub use faq::FaqRepo;

@@ -22,6 +22,16 @@
     "action_update_status",
     "content_update_status",
     "content_generate",
+    "article_direction_list",
+    "article_direction_add",
+    "article_direction_generate",
+    "article_template_list",
+    "article_template_save",
+    "article_template_delete",
+    "article_schedule_list",
+    "article_schedule_save",
+    "article_schedule_run",
+    "article_list",
     "collection_board",
     "app_environment",
     "diagnosis_overview",
@@ -103,46 +113,6 @@
     {
       "command": "collection_task_retry",
       "ledger": "E-33"
-    },
-    {
-      "command": "article_direction_list",
-      "ledger": "E-64"
-    },
-    {
-      "command": "article_direction_add",
-      "ledger": "E-64"
-    },
-    {
-      "command": "article_direction_generate",
-      "ledger": "E-64"
-    },
-    {
-      "command": "article_template_list",
-      "ledger": "E-64"
-    },
-    {
-      "command": "article_template_save",
-      "ledger": "E-64"
-    },
-    {
-      "command": "article_template_delete",
-      "ledger": "E-64"
-    },
-    {
-      "command": "article_schedule_list",
-      "ledger": "E-64"
-    },
-    {
-      "command": "article_schedule_save",
-      "ledger": "E-64"
-    },
-    {
-      "command": "article_schedule_run",
-      "ledger": "E-64"
-    },
-    {
-      "command": "article_list",
-      "ledger": "E-64"
     }
   ]
 }

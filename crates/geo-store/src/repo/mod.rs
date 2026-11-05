@@ -7,6 +7,7 @@
 //! - `delete` 一律幂等：行不存在也返回 `Ok(())`，便于上层重试与失败回滚清理；
 //! - 时间戳由调用方注入的领域对象携带，仓储不改写业务时间。
 
+pub mod article;
 pub mod asset;
 pub mod collection;
 pub mod competitor;
@@ -23,6 +24,7 @@ pub mod search_metrics;
 pub mod site;
 pub mod site_patch;
 
+pub use article::ArticleRepo;
 pub use asset::AssetRepo;
 pub use collection::CollectionRepo;
 pub use competitor::CompetitorRepo;

@@ -6,6 +6,7 @@
 //! `ipc/internal` 拒绝，加命令时两边一起改。
 
 pub mod action;
+pub mod article;
 pub mod collection;
 pub mod diagnosis;
 pub mod entity_card;
@@ -48,6 +49,16 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         action::action_update_status,
         action::content_update_status,
         action::content_generate,
+        article::article_direction_list,
+        article::article_direction_add,
+        article::article_direction_generate,
+        article::article_template_list,
+        article::article_template_save,
+        article::article_template_delete,
+        article::article_schedule_list,
+        article::article_schedule_save,
+        article::article_schedule_run,
+        article::article_list,
         collection::collection_board,
         environment::app_environment,
         diagnosis::diagnosis_overview,

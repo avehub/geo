@@ -18,8 +18,8 @@ mod testutil;
 pub use db::{open, open_in_memory};
 pub use error::StoreError;
 pub use repo::{
-    AssetRepo, CollectionRepo, CompetitorRepo, DiagnosisRepo, EntityCardRepo, FaqRepo, InsightRepo,
-    KbRepo, KeywordRepo, ProjectFilter, ProjectRepo, PromptSetRepo, PromptSetSummary,
+    ArticleRepo, AssetRepo, CollectionRepo, CompetitorRepo, DiagnosisRepo, EntityCardRepo, FaqRepo,
+    InsightRepo, KbRepo, KeywordRepo, ProjectFilter, ProjectRepo, PromptSetRepo, PromptSetSummary,
     SearchMetricRepo, SearchRepo, SitePatchRepo, SiteRepo,
 };
 pub use secret::{

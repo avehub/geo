@@ -18,8 +18,8 @@ use geo_domain::{
 };
 use geo_llm::{chat_json, ChatMessage, ChatRequest, LlmClient, LlmError};
 use geo_store::{
-    CollectionRepo, CompetitorRepo, EntityCardRepo, InsightRepo, ProjectRepo, SecretStore,
-    SettingsRepo, StoreError,
+    CollectionRepo, CompetitorRepo, DiagnosisRepo, EntityCardRepo, InsightRepo, ProjectRepo,
+    SecretStore, SettingsRepo, StoreError,
 };
 use serde::Deserialize;
 use sqlx::SqlitePool;
@@ -239,6 +239,13 @@ impl InsightService {
             .collect();
         if pending.is_empty() {
             self.recompute_summary(round_id).await?;
+            if let Err(error) = self.rebuild_diagnosis(round_id).await {
+                tracing::warn!(
+                    round_id,
+                    code = error.code.as_str(),
+                    "diagnosis rebuild stopped with an error"
+                );
+            }
             return Ok(0);
         }
         let client = self.client().await?;
@@ -269,7 +276,153 @@ impl InsightService {
             }
         }
         self.recompute_summary(round_id).await?;
+        if let Err(error) = self.rebuild_diagnosis(round_id).await {
+            tracing::warn!(
+                round_id,
+                code = error.code.as_str(),
+                "diagnosis rebuild stopped with an error"
+            );
+        }
         Ok(parsed)
+    }
+
+    /// 从当前解析结果重算 M5 四份快照。告警的已读状态按 `(kind, metric, detail)`
+    /// 从同轮旧快照继承，重建不会把用户点过的「已读」洗掉。
+    async fn rebuild_diagnosis(&self, round_id: &str) -> Result<(), IpcError> {
+        let collection = CollectionRepo::new(self.pool.clone());
+        let round = match collection.round(round_id).await? {
+            Some(round)
+                if matches!(
+                    round.status,
+                    geo_domain::RoundStatus::Succeeded | geo_domain::RoundStatus::Partial
+                ) =>
+            {
+                round
+            }
+            _ => return Ok(()),
+        };
+        let insights = self.insights().insights(round_id).await?;
+        if insights.is_empty() {
+            return Ok(());
+        }
+        let project_id = round
+            .project_id
+            .parse()
+            .map_err(|_| GeoError::validation("project_id", "invalid_id"))?;
+        let project = ProjectRepo::new(self.pool.clone()).get(project_id).await?;
+        let card = EntityCardRepo::new(self.pool.clone())
+            .get(project_id)
+            .await?;
+        let self_brand = card
+            .as_ref()
+            .map(|card| card.fields.standard_name.clone())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| project.brand_name.clone());
+        let competitors = CompetitorRepo::new(self.pool.clone())
+            .list_by_project(project_id)
+            .await?
+            .into_iter()
+            .map(|competitor| competitor.name)
+            .collect::<Vec<_>>();
+        let records = collection.records(round_id).await?;
+        let issues = self.insights().fact_issues(round_id).await?;
+        let citation_domains = collection.citation_domains(round_id).await?;
+        let engine_runs = collection.engine_runs(round_id).await?;
+        let snapshots = DiagnosisRepo::new(self.pool.clone());
+        let previous_round = collection
+            .rounds(&round.project_id)
+            .await?
+            .into_iter()
+            .filter(|candidate| candidate.round_index < round.round_index)
+            .max_by_key(|candidate| candidate.round_index);
+        let previous = match &previous_round {
+            Some(previous) => {
+                decode_optional_overview(snapshots.snapshot(&previous.id, "overview").await?)?
+            }
+            None => None,
+        };
+        let previous_matrix = match &previous_round {
+            Some(previous) => {
+                decode_optional_matrix(snapshots.snapshot(&previous.id, "competitors").await?)?
+            }
+            None => None,
+        };
+        let output = geo_domain::build_diagnosis(geo_domain::DiagnosisInput {
+            round: &round,
+            self_brand: &self_brand,
+            records: &records,
+            insights: &insights,
+            issues: &issues,
+            citation_domains: &citation_domains,
+            competitors: &competitors,
+            engine_runs: &engine_runs,
+            previous: previous.as_ref(),
+            previous_matrix: previous_matrix.as_ref(),
+            now: Utc::now(),
+        });
+        let mut overview = output.overview;
+        if let Some(existing) =
+            decode_optional_overview(snapshots.snapshot(round_id, "overview").await?)?
+        {
+            let known: std::collections::HashMap<(String, String, String), (String, bool)> =
+                existing
+                    .alerts
+                    .into_iter()
+                    .map(|alert| {
+                        (
+                            (
+                                serde_key(alert.kind),
+                                alert.metric.clone(),
+                                alert.detail.clone(),
+                            ),
+                            (alert.id, alert.acknowledged),
+                        )
+                    })
+                    .collect();
+            for alert in &mut overview.alerts {
+                if let Some((id, acknowledged)) = known.get(&(
+                    serde_key(alert.kind),
+                    alert.metric.clone(),
+                    alert.detail.clone(),
+                )) {
+                    alert.id = id.clone();
+                    alert.acknowledged = *acknowledged;
+                }
+            }
+        }
+        snapshots
+            .save_snapshot(
+                round_id,
+                "overview",
+                &serde_json::to_string(&overview)
+                    .map_err(|error| IpcError::from(StoreError::Serde(error)))?,
+            )
+            .await?;
+        snapshots
+            .save_snapshot(
+                round_id,
+                "competitors",
+                &serde_json::to_string(&output.competitors)
+                    .map_err(|error| IpcError::from(StoreError::Serde(error)))?,
+            )
+            .await?;
+        snapshots
+            .save_snapshot(
+                round_id,
+                "funnel",
+                &serde_json::to_string(&output.funnel)
+                    .map_err(|error| IpcError::from(StoreError::Serde(error)))?,
+            )
+            .await?;
+        snapshots
+            .save_snapshot(
+                round_id,
+                "engines",
+                &serde_json::to_string(&output.engines)
+                    .map_err(|error| IpcError::from(StoreError::Serde(error)))?,
+            )
+            .await?;
+        Ok(())
     }
 
     async fn parse_context(&self, round: &CollectionRound) -> Result<ParseContext, IpcError> {
@@ -369,7 +522,11 @@ impl InsightService {
             .into_iter()
             .filter(|mention| !mention.brand.trim().is_empty())
             .map(|mention| BrandMention {
-                brand: mention.brand.trim().to_string(),
+                brand: if mention.role == BrandRole::Self_ {
+                    context.brand.clone()
+                } else {
+                    mention.brand.trim().to_string()
+                },
                 role: mention.role,
                 count: mention.count.unwrap_or(1).max(1),
                 sentiment: mention.sentiment.unwrap_or(Sentiment::Neutral),
@@ -667,4 +824,29 @@ fn channel_for(field_path: &str) -> CorrectionChannel {
         "service_regions" | "contact" => CorrectionChannel::BusinessDirectory,
         _ => CorrectionChannel::ThirdPartyPage,
     }
+}
+
+fn decode_optional_overview(
+    raw: Option<String>,
+) -> Result<Option<geo_domain::DiagnosisOverview>, IpcError> {
+    raw.map(|payload| {
+        serde_json::from_str(&payload).map_err(|error| IpcError::from(StoreError::Serde(error)))
+    })
+    .transpose()
+}
+
+fn decode_optional_matrix(
+    raw: Option<String>,
+) -> Result<Option<geo_domain::CompetitorMatrix>, IpcError> {
+    raw.map(|payload| {
+        serde_json::from_str(&payload).map_err(|error| IpcError::from(StoreError::Serde(error)))
+    })
+    .transpose()
+}
+
+fn serde_key<T: serde::Serialize>(value: T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_default()
 }

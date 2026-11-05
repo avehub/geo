@@ -620,6 +620,18 @@ impl CollectionRepo {
         Ok(())
     }
 
+    /// 一轮里出现过的引用域名（去重由领域层做，这里只回原始集合）。
+    pub async fn citation_domains(&self, round_id: &str) -> Result<Vec<String>, StoreError> {
+        sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT c.domain FROM collection_citations c \
+             JOIN collection_records r ON r.id = c.record_id WHERE r.round_id = ?",
+        )
+        .bind(round_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(StoreError::from)
+    }
+
     /// 证据附录用：一次取回 id → 回答全文，避免逐条 record_get 的 N+1。
     pub async fn answer_texts(&self, round_id: &str) -> Result<Vec<(String, String)>, StoreError> {
         let rows = sqlx::query_as::<_, (String, String)>(

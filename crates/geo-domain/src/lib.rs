@@ -13,6 +13,7 @@ pub mod compliance;
 pub mod csv_io;
 pub mod dedupe;
 pub mod diagnosis;
+pub mod diagnosis_build;
 pub mod entity_card;
 pub mod error;
 pub mod faq;
@@ -60,6 +61,11 @@ pub use diagnosis::{
     AlertItem, AlertKind, AlertSeverity, CompetitorMatrix, CompetitorMatrixRow, DiagnosisDimension,
     DiagnosisOverview, DimensionScore, EngineScore, FunnelRow, FunnelStage, IntentFunnel,
     TrendPoint,
+};
+pub use diagnosis_build::{
+    build_diagnosis, DiagnosisInput, DiagnosisOutput, CITATION_BREADTH_TARGET,
+    COVERAGE_DROP_THRESHOLD, DIMENSION_WEIGHTS, FACT_ACCURACY_FLOOR, NEGATIVE_RATE_CEILING,
+    OVERTAKE_MARGIN,
 };
 pub use entity_card::{
     fields_from_draft, Contact, EntityCard, EntityCardRevision, EntityCardSource, EntityFields,

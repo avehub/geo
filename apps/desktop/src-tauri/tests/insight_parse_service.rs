@@ -266,10 +266,6 @@ async fn collection_triggers_parsing_fact_check_and_citations() {
         )
         .await
         .expect("标记误报");
-    insight_service
-        .parse_round(&round_id)
-        .await
-        .expect("重算汇总");
     let board = insight_service
         .fact_check_list(round_id.clone())
         .await
@@ -307,6 +303,50 @@ async fn collection_triggers_parsing_fact_check_and_citations() {
     assert_eq!(overview.alerts.len(), 0);
     // 旧告警已读状态只对仍存在的告警有意义；这里告警已消失，重建不报错即可。
     let _ = alert_id;
+}
+
+#[tokio::test]
+async fn manual_correction_rebuilds_diagnosis_and_actions() {
+    let (state, _server, _secrets) = state_with_transport(ScriptedTransport::new(vec![
+        openai_response("推荐宏宇泵业（第二），价格 199 元起。南方泵业排第一。"),
+        parse_body(0.9),
+    ]))
+    .await;
+    let (project_id, round_id) = collect_once(&state).await;
+    let insight_service = InsightService::from_state(&state);
+    let insight = insight_service
+        .insight_list(round_id.clone(), geo_domain::InsightFilter::default())
+        .await
+        .expect("解析结果")[0]
+        .clone();
+    insight_service
+        .correct_insight(
+            insight.id,
+            geo_domain::InsightCorrection {
+                self_mentioned: Some(false),
+                ..geo_domain::InsightCorrection::default()
+            },
+            now(),
+        )
+        .await
+        .expect("人工纠正");
+    let overview = DiagnosisService::from_state(&state)
+        .overview(round_id)
+        .await
+        .expect("诊断快照")
+        .expect("存在");
+    assert_eq!(overview.brand_coverage, 0.0, "纠正后覆盖率同步下降");
+    let board = ActionService::from_state(&state)
+        .board(project_id)
+        .await
+        .expect("行动看板");
+    assert!(
+        board
+            .actions
+            .iter()
+            .any(|action| action.category == geo_domain::ActionCategory::SiteStructure),
+        "覆盖率掉到门槛下后应生成官网结构处方"
+    );
 }
 
 #[tokio::test]

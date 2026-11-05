@@ -155,6 +155,8 @@ impl InsightService {
             mention.sentiment = insight.self_sentiment.unwrap_or(Sentiment::Neutral);
         }
         self.insights().save_insight_correction(&insight).await?;
+        self.recompute_summary(&insight.round_id).await?;
+        self.rebuild_diagnosis(&insight.round_id).await?;
         Ok(insight)
     }
 
@@ -193,11 +195,14 @@ impl InsightService {
             }
             Err(error) => return Err(error.into()),
         }
-        Ok(self
+        let issue = self
             .insights()
             .get_issue(&id)
             .await?
-            .expect("刚写入的核查问题必须可读"))
+            .expect("刚写入的核查问题必须可读");
+        self.recompute_summary(&issue.round_id).await?;
+        self.rebuild_diagnosis(&issue.round_id).await?;
+        Ok(issue)
     }
     /// 解析一轮里所有还没解析过的成功记录；返回本次新增的解析条数。
     ///

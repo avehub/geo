@@ -11,7 +11,8 @@ use geo_domain::{
 };
 use geo_llm::{chat_json, ChatMessage, ChatRequest, LlmClient, LlmError};
 use geo_store::{
-    DiagnosisRepo, EntityCardRepo, ProjectRepo, SecretStore, SettingsRepo, StoreError,
+    CollectionRepo, DiagnosisRepo, EntityCardRepo, InsightRepo, ProjectRepo, SecretStore,
+    SettingsRepo, StoreError,
 };
 use serde::Deserialize;
 use sqlx::SqlitePool;
@@ -74,6 +75,68 @@ impl ActionService {
                 templates: Vec::new(),
             }),
         }
+    }
+
+    /// 诊断快照更新后重建处方：确定性映射，保留人工改过的状态。
+    pub async fn rebuild_actions(
+        &self,
+        project_id: ProjectId,
+        round_id: &str,
+    ) -> Result<(), IpcError> {
+        let snapshots = DiagnosisRepo::new(self.pool.clone());
+        let Some(overview) = decode_optional::<geo_domain::DiagnosisOverview>(
+            snapshots.snapshot(round_id, "overview").await?,
+        )?
+        else {
+            return Ok(());
+        };
+        let Some(matrix) = decode_optional::<geo_domain::CompetitorMatrix>(
+            snapshots.snapshot(round_id, "competitors").await?,
+        )?
+        else {
+            return Ok(());
+        };
+        let round = match CollectionRepo::new(self.pool.clone())
+            .round(round_id)
+            .await?
+        {
+            Some(round) => round,
+            None => return Ok(()),
+        };
+        let issues = InsightRepo::new(self.pool.clone())
+            .fact_issues(round_id)
+            .await?;
+        let language = SettingsRepo::new(self.pool.clone()).get().await?.language;
+        let language = match language.as_str() {
+            "en_us" => geo_domain::Language::EnUs,
+            _ => geo_domain::Language::ZhCn,
+        };
+        let mut board = self.load_board(project_id).await?;
+        let now = Utc::now();
+        let mut actions = geo_domain::build_actions(geo_domain::ActionBuildInput {
+            project_id,
+            round: &round,
+            overview: &overview,
+            matrix: &matrix,
+            issues: &issues,
+            language,
+            now,
+        });
+        for action in &mut actions {
+            if let Some(existing) = board
+                .actions
+                .iter()
+                .find(|existing| existing.id == action.id)
+            {
+                action.status = existing.status;
+                action.completed_at = existing.completed_at;
+                action.updated_at = existing.updated_at;
+            }
+        }
+        board.actions = actions;
+        board.templates = geo_domain::content_templates();
+        self.save_board(&project_id.to_string(), &board).await?;
+        Ok(())
     }
 
     /// 按模板生成一份文稿：调模型写 Markdown，跑广告法红线扫描，产物恒 `pending_review`。
@@ -262,4 +325,13 @@ impl ActionService {
 struct ContentDraft {
     title: String,
     body_markdown: String,
+}
+
+fn decode_optional<T: serde::de::DeserializeOwned>(
+    raw: Option<String>,
+) -> Result<Option<T>, IpcError> {
+    raw.map(|payload| {
+        serde_json::from_str(&payload).map_err(|error| IpcError::from(StoreError::Serde(error)))
+    })
+    .transpose()
 }

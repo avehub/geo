@@ -10,7 +10,8 @@ use geo_store::{CollectionRepo, PromptSetRepo};
 use support::{now, openai_response, sample_draft, state_with_transport, ScriptedTransport};
 
 use geo_desktop_lib::services::{
-    CollectionService, CollectionStartOptions, DiagnosisService, InsightService, ProjectService,
+    ActionService, CollectionService, CollectionStartOptions, DiagnosisService, InsightService,
+    ProjectService,
 };
 
 fn parse_body(confidence: f64) -> String {
@@ -68,7 +69,7 @@ async fn seed_set(state: &geo_desktop_lib::state::AppState) -> (ProjectId, Strin
     (project_id, set.id.to_string())
 }
 
-async fn collect_once(state: &geo_desktop_lib::state::AppState) -> String {
+async fn collect_once(state: &geo_desktop_lib::state::AppState) -> (ProjectId, String) {
     let (project_id, set_id) = seed_set(state).await;
     let service = CollectionService::from_state(state);
     let round = service
@@ -84,7 +85,7 @@ async fn collect_once(state: &geo_desktop_lib::state::AppState) -> String {
         .await
         .expect("排一轮");
     service.execute_round(&round.id).await.expect("采集 + 解析");
-    round.id
+    (project_id, round.id)
 }
 
 #[tokio::test]
@@ -94,7 +95,7 @@ async fn collection_triggers_parsing_fact_check_and_citations() {
         parse_body(0.9),
     ]))
     .await;
-    let round_id = collect_once(&state).await;
+    let (project_id, round_id) = collect_once(&state).await;
     let insight_service = InsightService::from_state(&state);
     let insights = insight_service
         .insight_list(round_id.clone(), geo_domain::InsightFilter::default())
@@ -161,6 +162,40 @@ async fn collection_triggers_parsing_fact_check_and_citations() {
     assert_eq!(engines[0].sample_size, 1);
     assert_eq!(engines[0].coverage, 1.0);
     assert_eq!(engines[0].fact_error_rate, 1.0);
+
+    let action_service = ActionService::from_state(&state);
+    let action_board = action_service.board(project_id).await.expect("行动看板");
+    assert_eq!(action_board.templates.len(), 7);
+    let fact_action = action_board
+        .actions
+        .iter()
+        .find(|action| action.id == format!("action-{round_id}-fact-price_range"))
+        .expect("事实纠错处方");
+    assert_eq!(fact_action.status, geo_domain::ActionStatus::Todo);
+    assert_eq!(
+        fact_action.affected_engines,
+        vec![geo_domain::EngineId::Deepseek]
+    );
+    assert!(!fact_action.evidence_issue_ids.is_empty());
+    action_service
+        .update_action_status(fact_action.id.clone(), geo_domain::ActionStatus::Done)
+        .await
+        .expect("完成处方");
+    insight_service
+        .parse_round(&round_id)
+        .await
+        .expect("重建看板");
+    let rebuilt_board = action_service.board(project_id).await.expect("行动看板");
+    assert_eq!(
+        rebuilt_board
+            .actions
+            .iter()
+            .find(|action| action.id == fact_action.id)
+            .expect("处方仍在")
+            .status,
+        geo_domain::ActionStatus::Done,
+        "重建不覆盖人工完成状态"
+    );
 
     let board = insight_service
         .fact_check_list(round_id.clone())
@@ -242,6 +277,21 @@ async fn collection_triggers_parsing_fact_check_and_citations() {
     let summary = board.summary.expect("汇总");
     assert_eq!(summary.false_positive_count, 1);
     assert_eq!(summary.fact_accuracy, 1.0);
+    let rebuilt_board = action_service.board(project_id).await.expect("行动看板");
+    assert!(
+        rebuilt_board
+            .actions
+            .iter()
+            .all(|action| !action.id.contains("-fact-")),
+        "误报排除后事实纠错处方应消失"
+    );
+    assert!(
+        rebuilt_board
+            .actions
+            .iter()
+            .any(|action| action.id == format!("action-{round_id}-maintain")),
+        "没有阻塞问题时留一条复测动作"
+    );
     let overview = diagnosis
         .overview(round_id)
         .await
@@ -266,7 +316,7 @@ async fn low_confidence_insight_enters_review_queue() {
         parse_body(0.5),
     ]))
     .await;
-    let round_id = collect_once(&state).await;
+    let (_project_id, round_id) = collect_once(&state).await;
     let insights = InsightService::from_state(&state)
         .insight_list(round_id, geo_domain::InsightFilter::default())
         .await

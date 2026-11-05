@@ -4,6 +4,7 @@
 //! （不访问网络/数据库/文件系统；当前时间一律由调用方以参数注入）。
 
 pub mod action;
+pub mod action_build;
 pub mod app_env;
 pub mod article;
 pub mod asset;
@@ -36,6 +37,7 @@ pub use action::{
     ActionStatus, AttributionCard, AttributionMetric, AttributionMetricKey, ContentTemplate,
     ContentTemplateKind, ExportFormat, GeneratedContent,
 };
+pub use action_build::{build_actions, ActionBuildInput};
 pub use app_env::{AppEnvironment, AppStorageInfo, PermissionState, Permissions};
 pub use article::{
     clamp_article_length, normalize_schedule_time, render_prompt, Article, ArticleDirection,

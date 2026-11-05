@@ -422,6 +422,18 @@ impl InsightService {
                     .map_err(|error| IpcError::from(StoreError::Serde(error)))?,
             )
             .await?;
+        let actions = crate::services::ActionService::new(
+            self.pool.clone(),
+            self.llm.clone(),
+            self.secrets.clone(),
+        );
+        if let Err(error) = actions.rebuild_actions(project_id, round_id).await {
+            tracing::warn!(
+                round_id,
+                code = error.code.as_str(),
+                "action board rebuild stopped with an error"
+            );
+        }
         Ok(())
     }
 

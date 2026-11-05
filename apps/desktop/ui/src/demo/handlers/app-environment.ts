@@ -34,7 +34,7 @@ export const DEMO_BUILD_NUMBER = 'web-demo';
 const DATA_DIR = '/Users/demo/Library/Application Support/com.gdk.geo';
 
 /** 已应用的迁移数 = `crates/geo-store/migrations/` 下的 `.sql` 文件数（判据在 `.test.ts`）。 */
-const MIGRATIONS_APPLIED = 12;
+const MIGRATIONS_APPLIED = 13;
 
 /** 库里那份 SQLite 的大小。静态值：demo 不碰文件系统，也就没有真实字节数可言。 */
 const DB_SIZE_BYTES = 3_481_600;

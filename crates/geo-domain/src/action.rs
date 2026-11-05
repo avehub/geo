@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::collection::EngineId;
 use crate::compliance::ContentStatus;
+use crate::ProjectId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -142,6 +143,19 @@ pub struct GeneratedContent {
     pub export_formats: Vec<ExportFormat>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// 处方状态变更事件（闭环归因的账本行）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActionEvent {
+    pub id: String,
+    pub project_id: ProjectId,
+    pub action_id: String,
+    pub round_id: String,
+    pub category: ActionCategory,
+    pub title: String,
+    pub status: ActionStatus,
+    pub at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

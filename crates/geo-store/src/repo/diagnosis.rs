@@ -2,8 +2,10 @@
 //!
 //! 快照按轮次 / 项目整份存取；写路径落地时再决定是否拆关系表。
 
+use geo_domain::ActionEvent;
 use sqlx::SqlitePool;
 
+use crate::codec;
 use crate::error::StoreError;
 
 #[derive(Debug, Clone)]
@@ -43,6 +45,63 @@ impl DiagnosisRepo {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    pub async fn append_action_event(&self, event: &ActionEvent) -> Result<(), StoreError> {
+        sqlx::query(concat!(
+            "INSERT INTO action_events (id, project_id, action_id, round_id, category, title, ",
+            "status, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        ))
+        .bind(&event.id)
+        .bind(event.project_id.to_string())
+        .bind(&event.action_id)
+        .bind(&event.round_id)
+        .bind(codec::encode_scalar(&event.category)?)
+        .bind(&event.title)
+        .bind(codec::encode_scalar(&event.status)?)
+        .bind(codec::encode_time(&event.at))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// 取一个时间窗口内的处方事件（含边界），按时间升序。
+    pub async fn action_events_between(
+        &self,
+        project_id: &str,
+        from: &chrono::DateTime<chrono::Utc>,
+        to: &chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<ActionEvent>, StoreError> {
+        let rows = sqlx::query_as::<_, (String, String, String, String, String, String, String, String)>(
+            "SELECT id, project_id, action_id, round_id, category, title, status, at \
+             FROM action_events WHERE project_id = ? AND at >= ? AND at <= ? ORDER BY at ASC, id ASC",
+        )
+        .bind(project_id)
+        .bind(codec::encode_time(from))
+        .bind(codec::encode_time(to))
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(
+                |(id, project_id, action_id, round_id, category, title, status, at)| {
+                    Ok(ActionEvent {
+                        id,
+                        project_id: project_id.parse().map_err(|_| {
+                            StoreError::Serde(serde_json::Error::io(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "invalid_project_id",
+                            )))
+                        })?,
+                        action_id,
+                        round_id,
+                        category: codec::decode_scalar(&category)?,
+                        title,
+                        status: codec::decode_scalar(&status)?,
+                        at: codec::decode_time(&at)?,
+                    })
+                },
+            )
+            .collect()
     }
 
     pub async fn action_board(&self, project_id: &str) -> Result<Option<String>, StoreError> {

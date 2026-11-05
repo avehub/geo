@@ -149,14 +149,16 @@ async fn collection_triggers_parsing_fact_check_and_citations() {
         .await
         .expect("漏斗")
         .expect("存在");
-    assert_eq!(funnel.rows.len(), 1);
+    assert_eq!(funnel.rows.len(), 3, "三层漏斗始终给全");
+    assert_eq!(funnel.rows[0].stage, geo_domain::FunnelStage::Awareness);
+    assert_eq!(funnel.rows[0].prompt_count, 0);
     assert_eq!(
-        funnel.rows[0].stage,
+        funnel.rows[1].stage,
         geo_domain::FunnelStage::Recommendation
     );
-    assert_eq!(funnel.rows[0].prompt_count, 1);
-    assert_eq!(funnel.rows[0].mention_rate, 1.0);
-    assert_eq!(funnel.rows[0].top3_rate, 1.0);
+    assert_eq!(funnel.rows[1].prompt_count, 1);
+    assert_eq!(funnel.rows[1].mention_rate, 1.0);
+    assert_eq!(funnel.rows[1].top3_rate, 1.0);
     let engines = diagnosis.engines(round_id.clone()).await.expect("引擎差异");
     assert_eq!(engines.len(), 1);
     assert_eq!(engines[0].sample_size, 1);
@@ -347,6 +349,98 @@ async fn manual_correction_rebuilds_diagnosis_and_actions() {
             .any(|action| action.category == geo_domain::ActionCategory::SiteStructure),
         "覆盖率掉到门槛下后应生成官网结构处方"
     );
+}
+
+#[tokio::test]
+async fn completed_actions_between_rounds_create_attribution_card() {
+    let (state, _server, _secrets) = state_with_transport(ScriptedTransport::new(vec![
+        openai_response("第一轮：推荐宏宇泵业（第二），价格 199 元起。南方泵业排第一。"),
+        parse_body(0.9),
+        openai_response("第二轮：推荐宏宇泵业（第一），价格 299 元起。"),
+        parse_body(0.9),
+    ]))
+    .await;
+    let (project_id, set_id) = seed_set(&state).await;
+    let collection = CollectionService::from_state(&state);
+    let first = collection
+        .start(
+            project_id,
+            CollectionStartOptions {
+                prompt_set_id: set_id,
+                engine_scope: vec![geo_domain::EngineId::Deepseek],
+                repeat_count: 1,
+                label: None,
+            },
+        )
+        .await
+        .expect("第一轮");
+    collection
+        .execute_round(&first.id)
+        .await
+        .expect("执行第一轮");
+
+    let action_service = ActionService::from_state(&state);
+    let board = action_service.board(project_id).await.expect("看板");
+    let fact_action = board
+        .actions
+        .iter()
+        .find(|action| action.category == geo_domain::ActionCategory::FactCorrection)
+        .expect("事实处方")
+        .clone();
+    action_service
+        .update_action_status(fact_action.id.clone(), geo_domain::ActionStatus::Done)
+        .await
+        .expect("完成处方");
+
+    let set_id = geo_domain::PromptSetId::new();
+    let set = PromptSet::new(
+        project_id,
+        2,
+        "题库 v2",
+        vec![PromptItem::new(
+            set_id,
+            "工业除尘器怎么选（复测）",
+            IntentCategory::PurchaseRecommendation,
+        )],
+        now(),
+        None,
+    );
+    PromptSetRepo::new(state.pool.clone())
+        .create(&set)
+        .await
+        .expect("建第二轮题库");
+    let second = collection
+        .start(
+            project_id,
+            CollectionStartOptions {
+                prompt_set_id: set.id.to_string(),
+                engine_scope: vec![geo_domain::EngineId::Deepseek],
+                repeat_count: 1,
+                label: None,
+            },
+        )
+        .await
+        .expect("第二轮");
+    collection
+        .execute_round(&second.id)
+        .await
+        .expect("执行第二轮");
+
+    let board = action_service.board(project_id).await.expect("看板");
+    let card = board
+        .attribution
+        .iter()
+        .find(|card| card.baseline_round_id == first.id)
+        .expect("归因卡片");
+    assert_eq!(card.retest_round_id, second.id);
+    assert_eq!(card.action_ids, vec![fact_action.id]);
+    assert_eq!(card.metrics.len(), 3);
+    assert_eq!(
+        card.metrics[0].metric,
+        geo_domain::AttributionMetricKey::BrandCoverage
+    );
+    assert_eq!(card.metrics[0].before, 1.0);
+    assert_eq!(card.metrics[0].after, 1.0);
 }
 
 #[tokio::test]

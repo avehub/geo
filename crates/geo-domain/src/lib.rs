@@ -33,9 +33,9 @@ pub mod site;
 pub mod site_patch;
 
 pub use action::{
-    content_template, content_templates, ActionBoard, ActionCategory, ActionItem, ActionLevel,
-    ActionStatus, AttributionCard, AttributionMetric, AttributionMetricKey, ContentTemplate,
-    ContentTemplateKind, ExportFormat, GeneratedContent,
+    content_template, content_templates, ActionBoard, ActionCategory, ActionEvent, ActionItem,
+    ActionLevel, ActionStatus, AttributionCard, AttributionMetric, AttributionMetricKey,
+    ContentTemplate, ContentTemplateKind, ExportFormat, GeneratedContent,
 };
 pub use action_build::{build_actions, ActionBuildInput};
 pub use app_env::{AppEnvironment, AppStorageInfo, PermissionState, Permissions};

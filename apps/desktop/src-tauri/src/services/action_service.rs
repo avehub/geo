@@ -4,9 +4,10 @@
 
 use std::sync::Arc;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use geo_domain::{
-    compliance, content_template, content_templates, ActionBoard, ActionItem, ActionStatus,
+    compliance, content_template, content_templates, ActionBoard, ActionEvent, ActionItem,
+    ActionStatus, AttributionCard, AttributionMetric, AttributionMetricKey, CollectionRound,
     ContentStatus, GeneratedContent, GeoError, ProjectId,
 };
 use geo_llm::{chat_json, ChatMessage, ChatRequest, LlmClient, LlmError};
@@ -135,7 +136,100 @@ impl ActionService {
         }
         board.actions = actions;
         board.templates = geo_domain::content_templates();
+        self.rebuild_attribution(project_id, round_id, &overview, &mut board)
+            .await?;
         self.save_board(&project_id.to_string(), &board).await?;
+        Ok(())
+    }
+
+    /// 闭环归因：基线轮结束 → 复测轮结束之间被标记为 `done` 的动作 + 两轮指标对照。
+    ///
+    /// 🔴 没有事件（用户没点完成）就不生成卡片，不编「完成了 0 项」。
+    async fn rebuild_attribution(
+        &self,
+        project_id: ProjectId,
+        round_id: &str,
+        overview: &geo_domain::DiagnosisOverview,
+        board: &mut ActionBoard,
+    ) -> Result<(), IpcError> {
+        let collection = CollectionRepo::new(self.pool.clone());
+        let Some(current) = collection.round(round_id).await? else {
+            return Ok(());
+        };
+        let previous = collection
+            .rounds(&current.project_id)
+            .await?
+            .into_iter()
+            .filter(|candidate| candidate.round_index < current.round_index)
+            .max_by_key(|candidate| candidate.round_index);
+        let Some(previous) = previous else {
+            return Ok(());
+        };
+        let Some(previous_overview) = decode_optional::<geo_domain::DiagnosisOverview>(
+            DiagnosisRepo::new(self.pool.clone())
+                .snapshot(&previous.id, "overview")
+                .await?,
+        )?
+        else {
+            return Ok(());
+        };
+        let events = DiagnosisRepo::new(self.pool.clone())
+            .action_events_between(
+                &current.project_id,
+                &round_end(&previous),
+                &round_end(&current),
+            )
+            .await?;
+        let mut action_ids: Vec<String> = Vec::new();
+        for event in events
+            .iter()
+            .filter(|event| event.status == ActionStatus::Done)
+        {
+            if !action_ids.contains(&event.action_id) {
+                action_ids.push(event.action_id.clone());
+            }
+        }
+        let card_id = format!("attribution-{}-{}", previous.id, current.id);
+        board.attribution.retain(|card| card.id != card_id);
+        if action_ids.is_empty() {
+            return Ok(());
+        }
+        let language = SettingsRepo::new(self.pool.clone()).get().await?.language;
+        let summary = if language == "en_us" {
+            format!("Completed {} actions", action_ids.len())
+        } else {
+            format!("完成 {} 项动作", action_ids.len())
+        };
+        board.attribution.push(AttributionCard {
+            id: card_id,
+            project_id: project_id.to_string(),
+            baseline_round_id: previous.id.clone(),
+            baseline_label: previous.label.clone(),
+            retest_round_id: current.id.clone(),
+            retest_label: current.label.clone(),
+            action_ids,
+            summary,
+            metrics: vec![
+                AttributionMetric {
+                    metric: AttributionMetricKey::BrandCoverage,
+                    before: previous_overview.brand_coverage,
+                    after: overview.brand_coverage,
+                    unit: "percent".to_string(),
+                },
+                AttributionMetric {
+                    metric: AttributionMetricKey::Top3Rate,
+                    before: recommendation_rate(&previous_overview),
+                    after: recommendation_rate(overview),
+                    unit: "percent".to_string(),
+                },
+                AttributionMetric {
+                    metric: AttributionMetricKey::FactErrorCount,
+                    before: estimated_errors(&previous_overview),
+                    after: estimated_errors(overview),
+                    unit: "count".to_string(),
+                },
+            ],
+        });
         Ok(())
     }
 
@@ -260,6 +354,7 @@ impl ActionService {
                 .position(|action| action.id == action_id)
             {
                 let action = &mut board.actions[index];
+                let previous_status = action.status;
                 action.status = status;
                 if status == ActionStatus::Done {
                     if action.completed_at.is_none() {
@@ -270,7 +365,11 @@ impl ActionService {
                 }
                 action.updated_at = now;
                 let updated = action.clone();
+                let changed = previous_status != status;
                 self.save_board(&project_id, &board).await?;
+                if changed {
+                    self.record_action_event(&updated, now).await?;
+                }
                 return Ok(updated);
             }
         }
@@ -307,6 +406,30 @@ impl ActionService {
             .into())
     }
 
+    async fn record_action_event(
+        &self,
+        action: &ActionItem,
+        now: DateTime<Utc>,
+    ) -> Result<(), IpcError> {
+        let project_id = action
+            .project_id
+            .parse()
+            .map_err(|_| GeoError::validation("project_id", "invalid_id"))?;
+        self.boards()
+            .append_action_event(&ActionEvent {
+                id: uuid::Uuid::new_v4().to_string(),
+                project_id,
+                action_id: action.id.clone(),
+                round_id: action.round_id.clone(),
+                category: action.category,
+                title: action.title.clone(),
+                status: action.status,
+                at: now,
+            })
+            .await?;
+        Ok(())
+    }
+
     fn boards(&self) -> DiagnosisRepo {
         DiagnosisRepo::new(self.pool.clone())
     }
@@ -334,4 +457,24 @@ fn decode_optional<T: serde::de::DeserializeOwned>(
         serde_json::from_str(&payload).map_err(|error| IpcError::from(StoreError::Serde(error)))
     })
     .transpose()
+}
+
+fn recommendation_rate(overview: &geo_domain::DiagnosisOverview) -> f64 {
+    overview
+        .dimensions
+        .iter()
+        .find(|dimension| dimension.dimension == geo_domain::DiagnosisDimension::Recommendation)
+        .map(|dimension| dimension.score / 100.0)
+        .unwrap_or(0.0)
+}
+
+fn estimated_errors(overview: &geo_domain::DiagnosisOverview) -> f64 {
+    ((1.0 - overview.fact_accuracy) * overview.sample_size as f64).max(0.0)
+}
+
+fn round_end(round: &CollectionRound) -> DateTime<Utc> {
+    round
+        .finished_at
+        .or(round.started_at)
+        .unwrap_or_else(Utc::now)
 }

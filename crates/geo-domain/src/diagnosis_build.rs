@@ -536,7 +536,13 @@ fn build_funnel(input: &DiagnosisInput<'_>, total_prompts: &BTreeSet<String>) ->
     }
     let mut rows = Vec::new();
     let mut notes = Vec::new();
-    for (stage, (prompts, covered)) in &by_stage {
+    let empty = (BTreeSet::new(), BTreeSet::new());
+    for stage in [
+        FunnelStage::Awareness,
+        FunnelStage::Recommendation,
+        FunnelStage::Decision,
+    ] {
+        let (prompts, covered) = by_stage.get(&stage).unwrap_or(&empty);
         let top3_prompts: BTreeSet<&str> = input
             .insights
             .iter()
@@ -549,7 +555,7 @@ fn build_funnel(input: &DiagnosisInput<'_>, total_prompts: &BTreeSet<String>) ->
                         .get(insight.prompt_id.as_str())
                         .copied()
                         .unwrap_or(IntentCategory::CategoryAwareness),
-                ) == *stage
+                ) == stage
             })
             .map(|insight| insight.prompt_id.as_str())
             .collect();
@@ -562,7 +568,7 @@ fn build_funnel(input: &DiagnosisInput<'_>, total_prompts: &BTreeSet<String>) ->
             top3_rate
         ));
         rows.push(FunnelRow {
-            stage: *stage,
+            stage,
             prompt_count: i64::try_from(prompts.len()).unwrap_or(i64::MAX),
             mention_rate,
             top3_rate,

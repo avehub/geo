@@ -5,7 +5,9 @@
 //! 命令清单以 `client.ts` 的 `IPC_COMMANDS` 为准：漏注册会在前端表现为
 //! `ipc/internal` 拒绝，加命令时两边一起改。
 
+pub mod action;
 pub mod collection;
+pub mod diagnosis;
 pub mod entity_card;
 pub mod export;
 pub mod faq;
@@ -40,7 +42,12 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         project::asset_add,
         project::asset_list,
         project::asset_delete,
+        action::action_board,
         collection::collection_board,
+        diagnosis::diagnosis_overview,
+        diagnosis::diagnosis_competitors,
+        diagnosis::diagnosis_funnel,
+        diagnosis::diagnosis_engines,
         collection::collection_round_get,
         collection::collection_record_list,
         collection::collection_record_get,

@@ -18,7 +18,12 @@
     "asset_add",
     "asset_list",
     "asset_delete",
+    "action_board",
     "collection_board",
+    "diagnosis_overview",
+    "diagnosis_competitors",
+    "diagnosis_funnel",
+    "diagnosis_engines",
     "collection_round_get",
     "collection_record_list",
     "collection_record_get",
@@ -98,27 +103,7 @@
       "ledger": "E-33"
     },
     {
-      "command": "diagnosis_overview",
-      "ledger": "E-33"
-    },
-    {
-      "command": "diagnosis_competitors",
-      "ledger": "E-33"
-    },
-    {
-      "command": "diagnosis_funnel",
-      "ledger": "E-33"
-    },
-    {
-      "command": "diagnosis_engines",
-      "ledger": "E-33"
-    },
-    {
       "command": "diagnosis_alert_acknowledge",
-      "ledger": "E-33"
-    },
-    {
-      "command": "action_board",
       "ledger": "E-33"
     },
     {

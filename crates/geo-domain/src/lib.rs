@@ -3,12 +3,14 @@
 //! 约束（见 `AGENTS.md`）：本 crate 不依赖仓库内其他 crate，也不做 IO
 //! （不访问网络/数据库/文件系统；当前时间一律由调用方以参数注入）。
 
+pub mod action;
 pub mod asset;
 pub mod check;
 pub mod collection;
 pub mod compliance;
 pub mod csv_io;
 pub mod dedupe;
+pub mod diagnosis;
 pub mod entity_card;
 pub mod error;
 pub mod faq;
@@ -25,6 +27,11 @@ pub mod search_opportunity;
 pub mod site;
 pub mod site_patch;
 
+pub use action::{
+    ActionBoard, ActionCategory, ActionItem, ActionLevel, ActionStatus, AttributionCard,
+    AttributionMetric, AttributionMetricKey, ContentTemplate, ContentTemplateKind, ExportFormat,
+    GeneratedContent,
+};
 pub use asset::{clean_optional, normalize_url, AssetKind, ProjectAsset};
 pub use check::CheckDetail;
 pub use collection::{
@@ -38,6 +45,11 @@ pub use csv_io::{
     CsvRowError, ASSET_CSV_HEADER, COMPETITOR_CSV_HEADER, PROMPT_CSV_HEADER,
 };
 pub use dedupe::{dedupe, similarity, DedupeReport, RemovedItem, DUPLICATE_THRESHOLD, NGRAM_SIZE};
+pub use diagnosis::{
+    AlertItem, AlertKind, AlertSeverity, CompetitorMatrix, CompetitorMatrixRow, DiagnosisDimension,
+    DiagnosisOverview, DimensionScore, EngineScore, FunnelRow, FunnelStage, IntentFunnel,
+    TrendPoint,
+};
 pub use entity_card::{
     fields_from_draft, Contact, EntityCard, EntityCardRevision, EntityCardSource, EntityFields,
     FieldStatus, ProductSpec, ALL_FIELDS, REQUIRED_FIELDS,

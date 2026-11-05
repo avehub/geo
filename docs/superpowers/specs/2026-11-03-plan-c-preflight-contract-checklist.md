@@ -183,3 +183,16 @@
 | 命令面 | 注册 2 条，76 → 78；pending 29 → 27 |
 
 **状态（2026-11-05）**：✅ 已落地——repo 3 + service 4 条测试通过。
+
+## 14. M3–M7 读路径第三段：诊断四视图 + 行动看板（2026-11-05）
+
+**范围**：`diagnosis_overview` / `diagnosis_competitors` / `diagnosis_funnel` / `diagnosis_engines` / `action_board`。
+
+| 项 | 冻结值 |
+|---|---|
+| 表 | `diagnosis_snapshots`（round_id, kind, payload）+ `action_boards`（project_id, payload） |
+| 存储 | 诊断按轮次不可变快照；行动看板按项目快照。写路径落地时再决定拆关系表 |
+| 缺失 | overview / competitors / funnel → `null`；engines → `[]`；action board → 四个空数组 |
+| 命令面 | 注册 5 条，78 → 83；pending 27 → 22 |
+
+**状态（2026-11-05）**：✅ 已落地——repo 2 + service 5 条测试通过。M3–M7 读面已全部铺平。

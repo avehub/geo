@@ -1,6 +1,8 @@
 //! 业务编排层。**不依赖 `tauri::*`**，因此集成测试可以直接构造调用，无需启动 WebView。
 
+pub mod action_service;
 pub mod collection_service;
+pub mod diagnosis_service;
 pub mod entity_card_service;
 pub mod faq_service;
 pub mod insight_service;
@@ -15,7 +17,9 @@ pub mod site_patch_service;
 pub mod site_service;
 pub mod templates;
 
+pub use action_service::ActionService;
 pub use collection_service::CollectionService;
+pub use diagnosis_service::DiagnosisService;
 pub use entity_card_service::{EntityCardService, MAX_SITE_TEXT_CHARS};
 pub use faq_service::{FaqGenerateOptions, FaqService};
 pub use insight_service::InsightService;

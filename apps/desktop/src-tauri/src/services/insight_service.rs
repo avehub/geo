@@ -334,24 +334,25 @@ impl InsightService {
         let citation_domains = collection.citation_domains(round_id).await?;
         let engine_runs = collection.engine_runs(round_id).await?;
         let snapshots = DiagnosisRepo::new(self.pool.clone());
-        let previous_round = collection
-            .rounds(&round.project_id)
-            .await?
+        // 找**最近一个有 overview 快照**的上一轮（中间可能有未采集 / 未诊断的轮次）。
+        let mut previous = None;
+        let mut previous_matrix = None;
+        let mut candidates = collection.rounds(&round.project_id).await?;
+        candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.round_index));
+        for candidate in candidates
             .into_iter()
             .filter(|candidate| candidate.round_index < round.round_index)
-            .max_by_key(|candidate| candidate.round_index);
-        let previous = match &previous_round {
-            Some(previous) => {
-                decode_optional_overview(snapshots.snapshot(&previous.id, "overview").await?)?
-            }
-            None => None,
-        };
-        let previous_matrix = match &previous_round {
-            Some(previous) => {
-                decode_optional_matrix(snapshots.snapshot(&previous.id, "competitors").await?)?
-            }
-            None => None,
-        };
+        {
+            let Some(overview) =
+                decode_optional_overview(snapshots.snapshot(&candidate.id, "overview").await?)?
+            else {
+                continue;
+            };
+            previous_matrix =
+                decode_optional_matrix(snapshots.snapshot(&candidate.id, "competitors").await?)?;
+            previous = Some(overview);
+            break;
+        }
         let output = geo_domain::build_diagnosis(geo_domain::DiagnosisInput {
             round: &round,
             self_brand: &self_brand,

@@ -156,21 +156,25 @@ impl ActionService {
         let Some(current) = collection.round(round_id).await? else {
             return Ok(());
         };
-        let previous = collection
-            .rounds(&current.project_id)
-            .await?
+        let mut rounds = collection.rounds(&current.project_id).await?;
+        rounds.sort_by_key(|candidate| std::cmp::Reverse(candidate.round_index));
+        let mut previous = None;
+        let mut previous_overview = None;
+        for candidate in rounds
             .into_iter()
             .filter(|candidate| candidate.round_index < current.round_index)
-            .max_by_key(|candidate| candidate.round_index);
-        let Some(previous) = previous else {
-            return Ok(());
-        };
-        let Some(previous_overview) = decode_optional::<geo_domain::DiagnosisOverview>(
-            DiagnosisRepo::new(self.pool.clone())
-                .snapshot(&previous.id, "overview")
-                .await?,
-        )?
-        else {
+        {
+            if let Some(overview) = decode_optional::<geo_domain::DiagnosisOverview>(
+                DiagnosisRepo::new(self.pool.clone())
+                    .snapshot(&candidate.id, "overview")
+                    .await?,
+            )? {
+                previous = Some(candidate);
+                previous_overview = Some(overview);
+                break;
+            }
+        }
+        let (Some(previous), Some(previous_overview)) = (previous, previous_overview) else {
             return Ok(());
         };
         let events = DiagnosisRepo::new(self.pool.clone())

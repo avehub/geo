@@ -33,6 +33,8 @@
     "article_schedule_run",
     "article_list",
     "collection_board",
+    "collection_start",
+    "collection_task_retry",
     "app_environment",
     "diagnosis_overview",
     "diagnosis_competitors",
@@ -105,14 +107,5 @@
     "site_patch_delete",
     "site_patch_generate"
   ],
-  "pending": [
-    {
-      "command": "collection_start",
-      "ledger": "E-33"
-    },
-    {
-      "command": "collection_task_retry",
-      "ledger": "E-33"
-    }
-  ]
+  "pending": []
 }

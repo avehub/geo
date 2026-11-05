@@ -7,8 +7,8 @@
  *   `generate_handler![]` 相等（Rust 侧另有 `tests/contract_surface.rs` 逐条比对源码）；
  * - Rust 侧：`generate_handler![]` == `rust_registered`。
  *
- * 🔴 为什么不是直接全等：今天仍有 2 条 demo-only 命令，直接做全等会红。
- * allowlist 的意义是**只减不增**——每转正一条就从 `pending` 删除一条，差集永远等于台账里的待办。
+ * 🔴 2026-11-05 起 `pending` 已清空（105 条全部落 Rust）。allowlist 仍保留：
+ * 将来 demo 先行的新命令继续按「只减不增」登记，转正一条删一条。
  */
 import { describe, expect, it } from 'vitest';
 
@@ -33,7 +33,7 @@ describe('contracts/ipc-command-surface.json', () => {
     expect(Array.isArray(surface.rust_registered)).toBe(true);
     expect(surface.rust_registered.length).toBeGreaterThan(0);
     expect(Array.isArray(surface.pending)).toBe(true);
-    expect(surface.pending.length).toBeGreaterThan(0);
+    expect(Array.isArray(surface.pending)).toBe(true);
     expect(surface.note.trim()).not.toBe('');
   });
 
@@ -51,8 +51,8 @@ describe('contracts/ipc-command-surface.json', () => {
     const declared = [...surface.rust_registered, ...surface.pending.map((entry) => entry.command)];
     expect(new Set(IPC_COMMANDS), 'IPC_COMMANDS 与契约清单不一致').toEqual(new Set(declared));
     expect(IPC_COMMANDS).toHaveLength(105);
-    expect(surface.rust_registered).toHaveLength(103);
-    expect(surface.pending).toHaveLength(2);
+    expect(surface.rust_registered).toHaveLength(105);
+    expect(surface.pending).toHaveLength(0);
   });
 
   it('每条待落地命令都带台账编号（形如 E-33），且编号在已知集合内', () => {

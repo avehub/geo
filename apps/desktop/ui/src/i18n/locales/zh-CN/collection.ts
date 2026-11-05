@@ -210,6 +210,8 @@ const collection = {
     queued: '已排队：{{label}}',
     engineRequired: '至少选择一家引擎',
     demoNotice: '演示模式不发请求：新轮次会停在「排队中」，任务队列为空。',
+    liveNotice:
+      '将使用已配置的官方 API Key 真实调用：豆包 / DeepSeek / Kimi / 千问 / 百度；元宝与秘塔暂无官方对话接口，会标记为跳过。',
   },
 
   matrix: {

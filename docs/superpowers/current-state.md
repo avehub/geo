@@ -12,16 +12,16 @@
 |---|---:|---|
 | `IPC_COMMANDS` | 105 | `apps/desktop/ui/src/api/client.ts` |
 | `demoBackend` 键 | 105 | `apps/desktop/ui/src/demo/backend.ts` |
-| Rust `generate_handler![]` | 103 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
-| demo-only | 2 | `contracts/ipc-command-surface.json` 的 `pending` |
+| Rust `generate_handler![]` | 105 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
+| demo-only | 0 | `contracts/ipc-command-surface.json` 的 `pending` |
 
-**105 = 103 条 Rust + 2 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
+**105 = 105 条 Rust + 0 条 demo-only。** `demoBackend` 必须 105 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
 
 ### demo-only 族
 
 | 轮次 | 命令族 | 条数 | 差异 |
 |---|---|---:|---|
-| M3–M7 | `collection_start` / `collection_task_retry` | 2 | §4b E-33 |
+| M3–M7 | `collection_start` / `collection_task_retry` | 0 | §4b E-33（已全部转正） |
 | Plan B | `app_environment` / `llm_models_list` | 0 | §4c E-46…E-51（已全部转正） |
 | M1.5 | `keyword_*` / `faq_*` | 0 | §4d E-52…E-54（已全部转正） |
 | M6.5 | `site_patch_generate` | 0 | §4e E-55…E-57（已全部转正） |
@@ -197,6 +197,7 @@
   - **M3–M7 读路径（第一段）**：`collection_board` / `collection_round_get` / `collection_record_list` / `collection_record_get` 已落 Rust；迁移 `20261105000009_collection_read.sql` 建轮次 / 引擎汇总 / 任务 / 记录 / 引用五张表。采集页可渲染空态或已有数据；写路径（`collection_start` / `collection_task_retry`）与解析 / 诊断 / 行动 / 报告仍 demo-only。
   - **M4 读路径**：`insight_list` / `fact_check_list` 已落 Rust；迁移 `20261105000010_insight_fact.sql` 建 `answer_insights` / `fact_check_issues` / `fact_check_summaries`。解析页可按引擎 / 复核队列 / 提及 / 风险筛选，核查页返回问题清单与汇总。纠正与结办仍 demo-only。
   - **M5 / M6 读路径**：`diagnosis_overview` / `diagnosis_competitors` / `diagnosis_funnel` / `diagnosis_engines` / `action_board` 已落 Rust；迁移 `20261105000011_diagnosis_action_read.sql` 建 `diagnosis_snapshots` + `action_boards`。诊断四视图按轮次读整份类型化快照（缺失回 `null` / `[]`），行动看板按项目读快照（缺失回空数组）；写路径与告警已读 / 处方状态仍 demo-only。
+  - **采集执行（A 方案）**：`collection_start` / `collection_task_retry` 已落 Rust。只走官方 API，复用「模型服务商」Key 覆盖豆包 / DeepSeek / Kimi / 千问 / 百度五家；元宝 / 秘塔标 `Skipped`。`collection_start` 建轮次 + `题目数 × 引擎数 × 重复次数` 条任务后立即返回，后台顺序执行；`collection_task_retry` 只重跑 `failed` 任务并 +1 尝试次数。采集只落原始回答，提及 / 位次 / 情感仍待 M4 解析。
   - **文章管理（Article Studio）**：10 条 `article_*` 已落 Rust；迁移 `20261105000012_articles.sql` 建方向 / 模板 / 排期 / 文章四张表。方向与文章生成调模型，产物恒 `pending_review`；槽位替换统一走 `geo-domain::article::render_prompt`。没有后台 cron，`next_run_at` 只是显示值；`article_list` 的 review 与 `article_direction_add` 的 id 仍按 demo 契约承担写副作用（E-64 契约债）。
   - **内容生成与站点补丁生成**：`content_generate` / `site_patch_generate` 已落 Rust。两者都调模型并跑红线词扫描，产物恒待审（文稿 `pending_review`、补丁 `draft` + `pending_review`）；模板目录内置在 `geo-domain::action`，补丁通道按类型映射。
   - **本机环境与模型清单**：`app_environment` / `llm_models_list` 已落 Rust。环境事实读真实数据目录、库文件大小与已应用迁移数；三项系统权限没有原生探针，如实回 `not_determined`，`export_dir` 恒 `null`。模型清单按界面草稿地址真发 `GET {base_url}/models`，Key 只读钥匙串。

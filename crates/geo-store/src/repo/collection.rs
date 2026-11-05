@@ -348,6 +348,130 @@ impl CollectionRepo {
         Ok(())
     }
 
+    pub async fn task(&self, task_id: &str) -> Result<Option<CollectionTask>, StoreError> {
+        let row = sqlx::query_as::<_, TaskRow>(
+            "SELECT id, round_id, prompt_id, prompt_text, intent, engine, channel, status, \
+             attempt, failure_reason, record_id, queued_at, finished_at, latency_ms \
+             FROM collection_tasks WHERE id = ?",
+        )
+        .bind(task_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|row| {
+            Ok(CollectionTask {
+                id: row.id,
+                round_id: row.round_id,
+                prompt_id: row.prompt_id,
+                prompt_text: row.prompt_text,
+                intent: codec::decode_scalar(&row.intent)?,
+                engine: codec::decode_scalar(&row.engine)?,
+                channel: codec::decode_scalar(&row.channel)?,
+                status: codec::decode_scalar(&row.status)?,
+                attempt: row.attempt,
+                failure_reason: match row.failure_reason {
+                    Some(raw) => Some(codec::decode_scalar(&raw)?),
+                    None => None,
+                },
+                record_id: row.record_id,
+                queued_at: codec::decode_time(&row.queued_at)?,
+                finished_at: match row.finished_at {
+                    Some(raw) => Some(codec::decode_time(&raw)?),
+                    None => None,
+                },
+                latency_ms: row.latency_ms,
+            })
+        })
+        .transpose()
+    }
+
+    pub async fn count_records_for(
+        &self,
+        round_id: &str,
+        prompt_id: &str,
+        engine: EngineId,
+    ) -> Result<i64, StoreError> {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM collection_records WHERE round_id = ? AND prompt_id = ? \
+             AND engine = ?",
+        )
+        .bind(round_id)
+        .bind(prompt_id)
+        .bind(codec::encode_scalar(&engine)?)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(StoreError::from)
+    }
+
+    pub async fn update_round(&self, round: &CollectionRound) -> Result<(), StoreError> {
+        let result = sqlx::query(concat!(
+            "UPDATE collection_rounds SET status = ?, completed_queries = ?, failed_queries = ?, ",
+            "success_rate = ?, started_at = ?, finished_at = ?, sample_size_grade = ?, ",
+            "notes = ? WHERE id = ?"
+        ))
+        .bind(codec::encode_scalar(&round.status)?)
+        .bind(round.completed_queries)
+        .bind(round.failed_queries)
+        .bind(round.success_rate)
+        .bind(round.started_at.map(|value| codec::encode_time(&value)))
+        .bind(round.finished_at.map(|value| codec::encode_time(&value)))
+        .bind(codec::encode_scalar(&round.sample_size_grade)?)
+        .bind(&round.notes)
+        .bind(&round.id)
+        .execute(&self.pool)
+        .await?;
+        crate::repo::require_found(result.rows_affected(), "collection_round", &round.id)
+    }
+
+    pub async fn update_task(&self, task: &CollectionTask) -> Result<(), StoreError> {
+        let result = sqlx::query(concat!(
+            "UPDATE collection_tasks SET status = ?, attempt = ?, failure_reason = ?, ",
+            "record_id = ?, finished_at = ?, latency_ms = ? WHERE id = ?"
+        ))
+        .bind(codec::encode_scalar(&task.status)?)
+        .bind(task.attempt)
+        .bind(
+            task.failure_reason
+                .map(|value| codec::encode_scalar(&value))
+                .transpose()?,
+        )
+        .bind(&task.record_id)
+        .bind(task.finished_at.map(|value| codec::encode_time(&value)))
+        .bind(task.latency_ms)
+        .bind(&task.id)
+        .execute(&self.pool)
+        .await?;
+        crate::repo::require_found(result.rows_affected(), "collection_task", &task.id)
+    }
+
+    pub async fn upsert_engine_run(
+        &self,
+        round_id: &str,
+        run: &EngineRun,
+    ) -> Result<(), StoreError> {
+        sqlx::query(concat!(
+            "INSERT INTO collection_engine_runs (round_id, engine, channel, model, planned, ",
+            "succeeded, failed, avg_latency_ms, prompt_tokens, completion_tokens) ",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(round_id, engine) DO UPDATE SET ",
+            "channel = excluded.channel, model = excluded.model, planned = excluded.planned, ",
+            "succeeded = excluded.succeeded, failed = excluded.failed, ",
+            "avg_latency_ms = excluded.avg_latency_ms, prompt_tokens = excluded.prompt_tokens, ",
+            "completion_tokens = excluded.completion_tokens"
+        ))
+        .bind(round_id)
+        .bind(codec::encode_scalar(&run.engine)?)
+        .bind(codec::encode_scalar(&run.channel)?)
+        .bind(&run.model)
+        .bind(run.planned)
+        .bind(run.succeeded)
+        .bind(run.failed)
+        .bind(run.avg_latency_ms)
+        .bind(run.prompt_tokens)
+        .bind(run.completion_tokens)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn insert_engine_run(
         &self,
         round_id: &str,

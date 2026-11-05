@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import * as client from '../api/client';
 import * as collection from '../api/collection';
+import { runtime } from '../api/runtime';
 import { describeIpcError } from '../api/errors';
 import type { CollectionRound, EngineId } from '../api/types';
 import { ENGINE_VALUES } from '../api/types';
@@ -16,9 +17,9 @@ const REPEAT_OPTIONS = [1, 2, 3] as const;
 /**
  * 「排一轮采集」弹窗（M3）。
  *
- * 🔴 演示模式**不发请求**：提交之后新轮次停在「排队中」、任务队列为空（`collection.start.demoNotice`
- * 就是这句话）。真后端此刻会 enqueue 出 `题目数 × 引擎数 × 重复次数` 条任务并逐条跑引擎。
- * 弹窗因此把这条差异写在明面上，而不是让产品负责人点完之后盯着一个不会动的进度条。
+ * 演示模式**不发请求**：提交之后新轮次停在「排队中」、任务队列为空（`collection.start.demoNotice`）。
+ * 桌面端会 enqueue 出 `题目数 × 引擎数 × 重复次数` 条任务并在后台逐条跑官方 API
+ * （`collection.start.liveNotice` 写明范围与元宝 / 秘塔的跳过口径）。
  *
  * 轮次名称留空时由假后端回落到题库名（数据级中文）：组件里不许拼中文字面量（门禁 7）。
  */
@@ -111,7 +112,14 @@ export default function StartRoundModal({
       onCancel={onClose}
       destroyOnHidden
     >
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t('collection.start.demoNotice')} />
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message={t(
+          runtime === 'demo' ? 'collection.start.demoNotice' : 'collection.start.liveNotice',
+        )}
+      />
       <Form
         form={form}
         layout="vertical"

@@ -53,13 +53,9 @@ fn command_surface_matches_generate_handler() {
         "generate_handler![] 与 contracts/ipc-command-surface.json 的 rust_registered 不一致：\
          新增 / 删除命令时必须同一次提交更新清单"
     );
-    assert_eq!(declared.len(), 103, "Rust 已注册命令数应与当前基线一致");
+    assert_eq!(declared.len(), 105, "Rust 已注册命令数应与当前基线一致");
 
     let pending = surface["pending"].as_array().expect("pending 必须是数组");
-    assert!(
-        !pending.is_empty(),
-        "pending 不应为空（demo-only 命令仍存在）"
-    );
 
     let mut pending_names = Vec::new();
     for entry in pending {

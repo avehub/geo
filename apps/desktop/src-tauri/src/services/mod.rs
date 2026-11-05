@@ -22,7 +22,7 @@ pub mod templates;
 
 pub use action_service::ActionService;
 pub use article_service::ArticleService;
-pub use collection_service::CollectionService;
+pub use collection_service::{CollectionService, CollectionStartOptions};
 pub use diagnosis_service::DiagnosisService;
 pub use entity_card_service::{EntityCardService, MAX_SITE_TEXT_CHARS};
 pub use environment_service::{EnvironmentPaths, EnvironmentService};

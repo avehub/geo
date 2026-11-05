@@ -21,6 +21,7 @@ import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import * as collection from '../api/collection';
+import { runtime } from '../api/runtime';
 import { describeIpcError } from '../api/errors';
 import type {
   CollectionStatus,
@@ -282,9 +283,11 @@ export default function CollectionPage() {
                 },
               ]}
             />
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
-              {t('collection.engineRuns.browserNote')}
-            </Typography.Paragraph>
+            {runtime === 'demo' && (
+              <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+                {t('collection.engineRuns.browserNote')}
+              </Typography.Paragraph>
+            )}
           </Card>
         </Col>
         <Col span={12}>

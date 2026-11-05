@@ -71,6 +71,20 @@ pub fn run() {
             init_logging(&app.path().app_log_dir()?);
             let state = AppState::initialize(app.handle())?;
             app.manage(state);
+            // 断点续跑：上次退出时停在 queued / running 的轮次，启动后接着跑。
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let service = {
+                    let state = handle.state::<AppState>();
+                    services::CollectionService::from_state(&state)
+                };
+                if let Err(error) = service.resume_pending().await {
+                    tracing::warn!(
+                        code = error.code.as_str(),
+                        "resume pending collections failed"
+                    );
+                }
+            });
             Ok(())
         })
         .invoke_handler(ipc::handler())

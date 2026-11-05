@@ -203,6 +203,8 @@ const collection: ResourceBundle['collection'] = {
     engineRequired: 'Select at least one engine',
     demoNotice:
       'Demo mode sends no requests: the new round stays queued and its task list is empty.',
+    liveNotice:
+      'This will call the configured official APIs for real: Doubao / DeepSeek / Kimi / Qwen / Baidu. Yuanbao and Metaso have no official chat API and will be marked as skipped.',
   },
 
   matrix: {

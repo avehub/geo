@@ -67,6 +67,35 @@ run = [
   "cargo check --workspace --all-targets",
 ]
 
+# ── 发布工程 ─────────────────────────────────────────────────────────────
+# 裁定与完整步骤见 docs/superpowers/specs/2026-11-10-release-signing-distribution-design.md
+# ⚠ 这些任务都只在宿主机跑（要访问钥匙串 / gh / codesign），不进 docker 一致性镜像。
+
+[tasks."version:get"]
+description = "打印当前版本（真值源：apps/desktop/src-tauri/tauri.conf.json）"
+run = "scripts/version.sh get"
+
+[tasks."version:check"]
+description = "校验三处版本号一致（tauri.conf.json / Cargo.toml / ui/package.json）"
+run = "scripts/version.sh check"
+
+[tasks."version:set"]
+description = "同步写入新版本号并刷新 Cargo.lock；用法：mise run version:set -- 0.1.1"
+run = "scripts/version.sh set"
+
+[tasks."release:check"]
+description = "发布前门禁：文件齐备 / 版本一致 / 密钥不落仓 / 合规用语 / 法务占位符"
+run = "scripts/release-check.sh"
+
+[tasks."release:verify"]
+description = "核验已构建产物的签名身份 / 公证 / staple 票据 / SHA-256"
+run = "scripts/verify-bundle.sh"
+
+[tasks."signing:wizard"]
+description = "交互式配置发布签名凭据（Apple Developer ID / 公证 / Azure Artifact Signing）"
+# ENV_FILE 必须指向仓库外：证书 base64 与 .p8 私钥内容都落在这个文件里（DR-R9）
+run = 'env ENV_FILE="$HOME/.config/gdk-geo/signing.env" scripts/setup-signing.sh'
+
 [tasks.check]
 description = "提交前门禁：fmt + clippy + cargo test + vitest + build"
 run = [

@@ -26,6 +26,12 @@
   （改导入 / 归一 / 机会 / 凭据前必读；先看 §3.4c 的禁止模拟登录裁定）。
 - 项目概览：`docs/superpowers/specs/2026-10-29-project-overview-home-design.md`
   （改首页轮次锚定、待办、M9 组合口径前必读）。
+- **发布工程（许可证 / 签名公证 / CI 发布 / 版本号）**：
+  `docs/superpowers/specs/2026-11-10-release-signing-distribution-design.md`
+  （改 `.github/workflows/release.yml`、`scripts/version.sh` / `release-check.sh` /
+  `verify-bundle.sh` / `setup-signing.sh`、`tauri.conf.json` 的 `bundle` 段、
+  `LICENSE` / `SECURITY.md` / `docs/legal/` 前必读；§7 是 Secrets / Variables 的**唯一权威清单**）。
+- **文档分级索引**：`docs/README.md`（不知道改哪块前该读哪份 spec 时先看这里）。
 
 ### 当前关键不变量
 
@@ -37,6 +43,15 @@
 - **站长数据**：A 类可加、B 类只重算不平均、C 类单独展示并标平台；百度统计会话数不进曝光合计；合计行必须给汇总区间、参与源、完整性旗标；搜狗 / 360 为二期。
 - **项目概览**：结果区按「最近一个有结论轮次」锚定；待办按项目累计；M9 组合只给计数 + min/median/max，不对比率取平均、不求和、不做跨项目环比，默认排除归档。
 - **外部数据**：只走官方 OAuth / API、客户导出、`paste_parse`、手工填报；不模拟登录（规则 11）。外部研究数据必须标机构 + 年份 + 链接，默认不参与判定。
+- **版本号单一真值源**：`apps/desktop/src-tauri/tauri.conf.json` 的 `version`。
+  改版本只用 `mise run version:set -- X.Y.Z`（会同步 `Cargo.toml` workspace、
+  `ui/package.json` 并刷新 `Cargo.lock`），**不要手改三处**。tag 名必须等于 `v<version>`。
+- **bundle 产物目录是 workspace 根的 `target/`**：即 `<repo>/target/release/bundle/`，
+  **不是** `apps/desktop/src-tauri/target/`（cargo 的 target 目录由 workspace 根决定）。
+  2026-11-10 实测确认；写错路径 + `if-no-files-found: error` 会让上传步骤永远失败。
+- **签名凭据永不入仓**：证书 / `.p12` / `.p8` / 更新器私钥只进系统钥匙串与 GitHub Secrets；
+  `mise run signing:wizard` 把它们写到**仓库外**的 `~/.config/gdk-geo/signing.env`。
+  打 tag 前必须 `mise run release:check` 全绿。
 
 - M9 组合总览（2026-10-29，`/portfolio`，左侧栏「项目」下的「组合总览」）：
   `docs/superpowers/specs/2026-10-29-portfolio-overview-design.md`

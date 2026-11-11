@@ -71,6 +71,47 @@ jobs:
               mise exec -- cargo test --workspace
               mise exec -- cargo check -p geo-desktop'
 
+
+  bundle:
+    name: 桌面安装包（macOS + Windows）
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+          cache: pnpm
+          cache-dependency-path: apps/desktop/ui/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend dependencies
+        run: pnpm --dir apps/desktop/ui install --frozen-lockfile
+      - name: Build Tauri bundle (unsigned)
+        working-directory: apps/desktop
+        run: pnpm dlx @tauri-apps/cli@2.11.4 build
+      # ⚠ 产物路径是 **workspace 根**的 target/，不是 apps/desktop/src-tauri/target/。
+      # cargo 的 target 目录由 workspace 根（本仓库根 Cargo.toml 的 [workspace]）决定，
+      # 实测 2026-11-10：bundle 落在 <repo>/target/release/bundle/。
+      # 写错这个路径 + if-no-files-found: error 会让这个 job 永远失败。
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gdk-geo-${{ matrix.os }}
+          path: |
+            target/release/bundle/**/*.dmg
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.AppImage
+            target/release/bundle/**/*.deb
+          if-no-files-found: error
+
   ui:
     name: 前端门禁（lint / vitest / build）
     runs-on: ubuntu-24.04

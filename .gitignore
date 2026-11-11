@@ -24,6 +24,21 @@ apps/desktop/src-tauri/gen/
 *.pem
 secrets.*
 
+# 发布签名与公证凭据（DR-R9）：只进系统钥匙串与 GitHub Secrets，永不入仓
+# 见 docs/superpowers/specs/2026-11-10-release-signing-distribution-design.md §7
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+AuthKey_*.p8
+certificate-base64.txt
+# tauri signer generate 的更新器密钥对目录（必须在 $HOME/.tauri/，不是仓库里）
+.tauri/
+
+# 内部 SDD 过程产物：子任务简报 / review / diff（DR-R10）
+# 未跟踪不等于安全——没有这条，一次 `git add -A` 就把几百个内部文件提交进去
+.superpowers/
+
 # OS / editor
 .DS_Store
 Thumbs.db

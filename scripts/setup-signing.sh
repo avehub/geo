@@ -206,6 +206,22 @@ fi
 mkdir -p "$(dirname "$ENV_FILE")"
 touch "$ENV_FILE" && chmod 600 "$ENV_FILE"
 
+# 库里的 write_env 按 `KEY=VALUE` 原样写。值里带空格（APPLE_SIGNING_IDENTITY 必然是
+# "Developer ID Application: 公司名 (TEAMID)"）会让 `source signing.env` 直接报
+# "unknown file attribute"。2026-11-11 实测踩过。这里补一个单引号转义版，
+# 只在本向导的 stage 里用，不动上面的库（库的跨向导一致性仍然保持）。
+write_env_q() {
+  local key="$1" value="$2" tmp
+  touch "$ENV_FILE"
+  tmp=$(mktemp)
+  grep -vE "^${key}=" "$ENV_FILE" > "$tmp" || true
+  printf "%s='%s'\n" "$key" "${value//\'/\'\\\'\'}" >> "$tmp"
+  mv "$tmp" "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+  WRITTEN_ENV+=("$key")
+  printf '  %s✓ wrote%s %s → %s\n' "$GREEN" "$RESET" "$key" "$ENV_FILE"
+}
+
 banner "稿得快 GEO：发布签名凭据配置"
 
 # ── Stage 1 ──────────────────────────────────────────────────────────────
@@ -240,7 +256,7 @@ if [[ "$APPLE_SIGNING_IDENTITY" != *"Developer ID Application"* ]]; then
   warn "这个身份不含 'Developer ID Application'，用它签名的包**过不了 Gatekeeper**。"
   confirm "仍要保留这个值？" || ask APPLE_SIGNING_IDENTITY "重新粘贴："
 fi
-write_env APPLE_SIGNING_IDENTITY "$APPLE_SIGNING_IDENTITY"
+write_env_q APPLE_SIGNING_IDENTITY "$APPLE_SIGNING_IDENTITY"
 # Team ID 就是身份末尾括号里那串
 TEAM_FROM_ID="$(printf '%s' "$APPLE_SIGNING_IDENTITY" | sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p')"
 if [[ -n "$TEAM_FROM_ID" ]]; then

@@ -220,6 +220,47 @@ security find-identity -v -p codesigning            # 本地已有签名身份�
    「钥匙串访问 → 我的证书」标签页，也不会出现在 `security find-identity -v -p codesigning` 输出里
    ——这是判断证书是否可用的权威方法
 
+### 4.2b 实测补充：openssl-CSR 路线（2026-11-11 已跑通，推荐）与三个坑
+
+§4.2 的「钥匙串访问 → 证书助理」是 Apple 文档路线，但**证书助理在菜单栏**
+（`钥匙串访问` 菜单 → `证书助理`），不在左侧边栏，很容易找不到。
+更稳的是 openssl 路线——私钥直接是文件，正好是 CI 需要的形态，全程可脚本化：
+
+```bash
+D="$HOME/.config/gdk-geo"; mkdir -p "$D"; chmod 700 "$D"; cd "$D"
+openssl req -new -newkey rsa:2048 -nodes \
+  -keyout developer-id.key -out developer-id.csr \
+  -subj "/emailAddress=<Apple ID 邮箱>/CN=<姓名拼音>/OU=<TeamID>/C=CN"
+chmod 600 developer-id.key
+# 把 developer-id.csr 上传到 developer.apple.com/account/resources/certificates/add
+# （类型选 Developer ID Application），下载 .cer 后：
+openssl x509 -inform der -in <下载的>.cer -out developer-id.pem
+```
+
+CSR 的 CN 会被 Apple 覆盖（签发后 CN = `Developer ID Application: <实体名> (<TeamID>)`），
+所以 CN 填什么都行；RSA 必须是 2048。
+
+**三个实测坑**（都已在 `~/.config/gdk-geo/finish-cert.sh` 里处理）：
+
+1. **OpenSSL 3 的 PKCS#12 默认算法 macOS 钥匙串读不了**。`openssl pkcs12 -export` 默认用
+   AES-256/PBES2，`security import` 报 `MAC verification failed (wrong password?)`——密码没错，
+   是算法不兼容。必须加 `-keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1`。
+2. **新签发的 Developer ID 走 G2 中间证书**，而 macOS 系统钥匙串里通常只有 G1
+   （`OU=Apple Certification Authority`，2027-02 到期）。缺 G2 时
+   `security find-identity -v -p codesigning` **不会**把它列成有效身份。
+   G2 的权威下载地址在**叶子证书的 AIA 扩展**里：
+   `openssl x509 -in developer-id.pem -noout -text | grep -A1 "CA Issuers"`
+   → `http://certs.apple.com/devidg2.der`。
+   ⚠ `www.apple.com/certificateauthority/DeveloperIDG2CA.cer` 这个老 URL 现在返回 **403**。
+   把 G2 作为 `-certfile` 打进 `.p12` 一起导入即可补齐链。
+3. **`security import` 进来的私钥，codesign 不能免提示使用**：非 GUI 上下文直接报
+   `errSecInternalComponent`。两条出路：
+   - 本地日常构建：`security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "<登录密码>" ~/Library/Keychains/login.keychain-db`（要登录密码，**只能本人跑**）；
+   - CI / 一次性验证：自建临时钥匙串（密码自己定），`set-key-partition-list` 用那个密码，
+     再 `security list-keychains -d user -s <临时> <原列表>` 把它放搜索列表最前，用完删掉。
+     2026-11-11 用这条验证通过：`Authority=Developer ID Application: …` +
+     `flags=0x10000(runtime)` + `--verify --deep --strict` 全过。
+
 ### 4.3 本地跑通签名 + 公证
 
 ```bash

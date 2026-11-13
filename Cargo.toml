@@ -49,7 +49,7 @@ url = { version = "2.5", features = ["serde"] }
 uuid = { version = "1.26", features = ["v4", "serde"] }
 wiremock = "0.6"
 
-tauri = { version = "2.11", features = [] }
+tauri = { version = "2.11", features = ["protocol-asset"] }
 tauri-build = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

@@ -24,12 +24,20 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$TEMP/gdk-geo/**",
+          "$APPDATA/**",
+          "$APPLOCALDATA/**"
+        ]
+      }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": "all",
     "category": "Productivity",
     "shortDescription": "面向国内中小企业的生成式引擎优化（GEO）桌面工具",
     "icon": [

@@ -93,6 +93,16 @@ export function requireSourceKind(value: unknown): SearchSourceKind {
 }
 
 /**
+ * `search_oauth_begin`：演示模式**不联网、不伪造 OAuth**（规则 2 / 规则 8 / DR-99）。
+ *
+ * 真后端只支持 GSC；demo 连"假装打开授权页"都不做，直接回一个稳定的拒绝，
+ * 让界面在 `runtime === 'demo'` 时根本不渲染授权按钮。
+ */
+export const searchOauthBegin: DemoHandler = () => {
+  throw demoError('validation/failed', { field: 'oauth', reason: 'not_allowed' });
+};
+
+/**
  * 站点绑定（**非敏感**，DR-96）：只收目录表 `binding_fields` 点名的那几个键，其余一律丢掉。
  *
  * 🔴 这就是"不收凭据"的落点：入参里塞 `password` / `token` / `apiKey` 都进不了 `binding`，
@@ -413,4 +423,30 @@ export const searchOpportunityUpdate: DemoHandler = (args) => {
   opportunity.status = raw as SearchOpportunity['status'];
   opportunity.updated_at = nowIso();
   return structuredClone(opportunity);
+};
+
+// ---------------------------------------------------------------------------
+// search_browser_open / search_browser_capture（路径 C，2026-11-06）
+// ---------------------------------------------------------------------------
+
+/**
+ * `search_browser_open`：演示模式**不启动任何浏览器**。
+ *
+ * 浏览器助手是"用户在场、由用户在真实窗口里登录"的桌面能力（规则 11），
+ * demo 既没有真实 Chrome 会话，也不该伪造一个 `ws_url`。界面在 demo 下根本不渲染
+ * 这两个入口（`runtime === 'tauri'` 门禁），这里只是把命令面补齐。
+ */
+export const searchBrowserOpen: DemoHandler = () => {
+  throw demoError('validation/failed', {
+    field: 'browser',
+    reason: 'not_allowed',
+  });
+};
+
+/** `search_browser_capture`：同 `search_browser_open`，demo 不读任何页面 DOM。 */
+export const searchBrowserCapture: DemoHandler = () => {
+  throw demoError('validation/failed', {
+    field: 'browser',
+    reason: 'not_allowed',
+  });
 };

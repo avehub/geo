@@ -223,11 +223,12 @@ export type SelfIndexEngine = EngineId | SearchSourceKind;
  * `keyring://search/<kind>`；项目级只存这里的绑定值。键名 == 词典
  * `webmasterData.sourceCards.siteUrl` / `.siteId`。
  */
-export type SearchBindingField = 'siteUrl' | 'siteId';
+export type SearchBindingField = 'siteUrl' | 'siteId' | 'client_id';
 
 export const SEARCH_BINDING_FIELD_VALUES = [
   'siteUrl',
   'siteId',
+  'client_id',
 ] as const satisfies readonly SearchBindingField[];
 
 /**
@@ -291,6 +292,32 @@ export interface SearchSource {
   note: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * `search_oauth_begin` 的返回值：前端把 `auth_url` 交给系统浏览器，
+ * `redirect_uri` 是后端已绑定的 127.0.0.1 回环地址（仅用于排障 / 测试）。
+ */
+export interface SearchOAuthStart {
+  auth_url: string;
+  state: string;
+  redirect_uri: string;
+}
+
+/**
+ * `search_browser_open` 的返回体：系统 Chrome/Edge 的 CDP 会话。
+ *
+ * 🔴 只支持百度站长的两个面（传统 / AI 流量）。登录态留在 `profile_dir`
+ * 这个**本机独立 profile** 里，不进数据库、不经 IPC 回传（AGENTS 规则 3 / 规则 11）。
+ * `ws_url` 由前端保存后原样交给 `search_browser_capture`；Chrome 不随命令关闭。
+ */
+export interface SearchBrowserSession {
+  /** CDP 浏览器级 WebSocket 地址（`/json/version` 的 `webSocketDebuggerUrl`）。 */
+  ws_url: string;
+  /** 本机独立 profile 目录（仅用于诊断显示，不是可上传的凭据）。 */
+  profile_dir: string;
+  /** 启动时打开的页面。 */
+  target_url: string;
 }
 
 /**

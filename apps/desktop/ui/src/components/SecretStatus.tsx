@@ -12,6 +12,8 @@ import type { LlmTestResult } from '../api/types';
 export interface SecretStatusPanelProps {
   /** `llm_providers` 返回的 provider 取值（与后端 `as_str()` 同源）。 */
   provider: string;
+  /** 搜索类 Key 没有统一的模型连通性测试，隐藏“测试连接”。 */
+  allowTest?: boolean;
 }
 
 /**
@@ -36,7 +38,7 @@ export default function SecretStatusPanel(props: SecretStatusPanelProps) {
   return <SecretStatusPanelInner key={props.provider} {...props} />;
 }
 
-function SecretStatusPanelInner({ provider }: SecretStatusPanelProps) {
+function SecretStatusPanelInner({ provider, allowTest = true }: SecretStatusPanelProps) {
   const { message } = App.useApp();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -48,6 +50,9 @@ function SecretStatusPanelInner({ provider }: SecretStatusPanelProps) {
     queryKey: ['secret-status', provider],
     queryFn: () => client.secretStatus(provider),
     enabled: provider !== '',
+    // 🔴 不自动重试：这条查询背后是系统钥匙串。旧实现的每次重读都可能再弹一次
+    // 「允许访问钥匙串」授权框；失败时交给用户显式点「刷新」。
+    retry: false,
   });
 
   const saveMutation = useMutation({
@@ -88,7 +93,9 @@ function SecretStatusPanelInner({ provider }: SecretStatusPanelProps) {
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Space size={8} wrap>
-        {status === null ? (
+        {statusQuery.isError ? (
+          <Tag color="error">{t('common.status.error')}</Tag>
+        ) : status === null ? (
           <Tag>{t('settings.secret.reading')}</Tag>
         ) : (
           <Tag color={configured ? 'success' : 'warning'}>
@@ -99,6 +106,24 @@ function SecretStatusPanelInner({ provider }: SecretStatusPanelProps) {
           {status?.secret_ref ?? '—'}
         </Typography.Text>
       </Space>
+
+      {statusQuery.isError && (
+        <Alert
+          type="error"
+          showIcon
+          message={t('settings.secret.readFailed')}
+          description={describeIpcError(statusQuery.error, t)}
+          action={
+            <Button
+              size="small"
+              loading={statusQuery.isFetching}
+              onClick={() => void statusQuery.refetch()}
+            >
+              {t('common.refresh')}
+            </Button>
+          }
+        />
+      )}
 
       {/*
         计划正文对 demo `secret_*` 的 Produces 逐字要求这句提示：demo 的 `secret_set`
@@ -137,9 +162,11 @@ function SecretStatusPanelInner({ provider }: SecretStatusPanelProps) {
       </Space.Compact>
 
       <Space>
-        <Button loading={testMutation.isPending} onClick={() => testMutation.mutate()}>
-          {t('settings.secret.test')}
-        </Button>
+        {allowTest && (
+          <Button loading={testMutation.isPending} onClick={() => testMutation.mutate()}>
+            {t('settings.secret.test')}
+          </Button>
+        )}
         <Button
           danger
           disabled={!configured}

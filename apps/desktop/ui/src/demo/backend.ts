@@ -1,8 +1,8 @@
 /**
- * demo 假后端：`IPC_COMMANDS` 那 105 条命令在浏览器里的替身（AGENTS 规则 8）。
+ * demo 假后端：`IPC_COMMANDS` 那 108 条命令在浏览器里的替身（AGENTS 规则 8）。
  *
  * # 全覆盖网（编译期）+ 键集相等（运行期）
- * `demoBackend` 标注成 `Record<IpcCommand, DemoHandler>`：`IpcCommand` 是 105 个字面量的联合，
+ * `demoBackend` 标注成 `Record<IpcCommand, DemoHandler>`：`IpcCommand` 是 108 个字面量的联合，
  * 所以**漏一条命令 `tsc -b` 就红**——这正是 AGENTS 规则 8「命令增减两侧同时改」的编译期保证。
  * 运行期还有一道：下面的未知命令守卫是拿**这张表的键**收窄的，所以 `backend.test.ts` 里有一条
  * 「键集合与 `IPC_COMMANDS` 完全相等」的断言，防止将来有人把这张表放宽成 `Partial<…>`
@@ -23,10 +23,10 @@
  * 配合上面那张全覆盖网，键集合与 `IPC_COMMANDS` 由构造保证相等（并有一条断言钉住），
  * 于是本文件只需 `import type`（编译后擦除）⇒ 依赖图保持单向：`api/client` → `demo/backend`。
  *
- * # 105 条全部接线（占位与探针已一起退休）
+ * # 108 条全部接线（占位与探针已一起退休）
  * 命令面已经全部落地 ⇒ 这里不再有「未实现」占位。曾经那套 `notImplemented(cmd)` 抛的是
  * **普通 `Error` + 英文开发者信息**（`not implemented: <cmd>`），不是 `IpcErrorPayload`：
- * 它给开发者看、不进词典、**不占错误码**（`contracts/error-codes.json` 冻结在 43 条），
+ * 它给开发者看、不进词典、**不占错误码**（`contracts/error-codes.json` 冻结在 44 条），
  * 经 `callVia` 的 catch 归一化成 `ipc/invoke_failed`，与任何 invoker 失败同一条路径。
  * 它退休的对价是断言面**只增不减**（简报 §C）：`backend.test.ts` 的反向断言从 32 条扩到 40 条，
  * 而「分派真的到了 `demoBackend`」改由**已实现半边**（resolve 出内存库里的种子数据）证明——
@@ -85,6 +85,9 @@ import {
 import { reportRender } from './handlers/report';
 import {
   searchBoard,
+  searchBrowserCapture,
+  searchBrowserOpen,
+  searchOauthBegin,
   searchOpportunityUpdate,
   searchSourceRemove,
   searchSourceTest,
@@ -248,13 +251,16 @@ export const demoBackend: Record<IpcCommand, DemoHandler> = {
   article_schedule_run: articleScheduleRun,
   article_list: articleList,
 
-  // ---- M5.5 站长数据（6 条，🔴 同样 demo 独有；差异台账 §4h E-67 起，待本轮落地后写入）----
+  // ---- M5.5 站长数据（9 条；`search_oauth_begin` 与浏览器两条 Rust 已注册，demo 明确拒绝）----
   search_board: searchBoard,
+  search_oauth_begin: searchOauthBegin,
   search_source_upsert: searchSourceUpsert,
   search_source_remove: searchSourceRemove,
   search_source_test: searchSourceTest,
   search_metric_import_csv: searchMetricImportCsv,
   search_opportunity_update: searchOpportunityUpdate,
+  search_browser_open: searchBrowserOpen,
+  search_browser_capture: searchBrowserCapture,
 };
 
 /**

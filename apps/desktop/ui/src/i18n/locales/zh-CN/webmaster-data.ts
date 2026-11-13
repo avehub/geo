@@ -42,6 +42,9 @@ const webmasterData = {
   /** 常驻说明①（DR-99）：演示模式不联网、没有 OAuth 流程。 */
   demoBody:
     '演示模式不联网：数据源的自检结论与优化机会清单都是预置静态值，官方接口授权流程一条都没有实现，只能走查导入、粘贴、填报、汇总与机会处置。',
+  /** 常驻说明①（桌面端）：OAuth 尚未接入，当前仍以导入 / 粘贴 / 填报为主。 */
+  liveBody:
+    'OAuth 尚未接入：当前以导入、粘贴与手工填报为主，汇总、机会与对账仍按已接入的数据计算。',
   /** 常驻说明②（DR-99 / E-68 ④）：机会清单不随导入变化，而汇总数字会。 */
   staticNote:
     '演示数据：机会清单不是算出来的，导入或粘贴数据不会让它长出新条目；但汇总合计、点击率与汇总区间是真算的，导入之后会跟着变。这个不对称是演示模式的能力边界，不是分析出错。',
@@ -226,6 +229,14 @@ const webmasterData = {
     binding: '绑定',
     siteUrl: '站点地址',
     siteId: '站点 ID',
+    client_id: 'OAuth 客户端 ID（client_id）',
+    oauthStart: '开始 Google 授权',
+    bingApiKey: 'Bing API Key',
+    bingApiKeyHint:
+      '在 Bing Webmaster Tools → 设置 → API access 生成 API Key 后填入。一次生成、长期有效，不需要登记回调地址（Bing 的 OAuth 控制台不接受本机回调）。Key 只存系统钥匙串，不落数据库。',
+    oauthStarted: '已打开授权页，授权完成后数据会自动刷新。',
+    googleClientSecret: 'Google OAuth 客户端密钥（可选）',
+    googleClientSecretHint: '使用桌面客户端 + PKCE 时可以留空；填了会存进系统钥匙串，不落数据库。',
     bindingHint: '这里填的是站点在平台后台的标识，不是账号密码。',
     authModeLabel: '凭据形态',
     ingestModesLabel: '数据怎么进来',
@@ -238,7 +249,15 @@ const webmasterData = {
     credentials: '凭据',
     secretRef: '钥匙串引用',
     demoCredentials: '演示模式不收任何密码与令牌：真后端才会把它写进系统钥匙串，库里只留引用串。',
+    liveCredentials: '凭据保存在系统钥匙串，数据库只留引用串。',
     empty: '还没有接入任何数据源。',
+    browserOpen: '打开系统 Chrome',
+    browserOpened: '已打开。请在该窗口完成登录并停在数据页。',
+    browserCapture: '读取当前页',
+    browserHint: '只读取你自己浏览器里当前可见的表格：不代登录、不抓私有接口、不读 Cookie。',
+    browserWindow: '取数区间：{{start}} ~ {{end}}',
+    browserConnectFirst: '先点「打开系统 Chrome」，登录并停在数据页后再读取。',
+    browserImported: '已导入 {{metrics}} 行指标、{{overviews}} 条 AI 汇总',
   },
 
   // -------------------------------------------------------------------------
@@ -444,6 +463,7 @@ const webmasterData = {
     adopt: '采纳',
     ignore: '忽略',
     adopted: '已采纳：会进入下一轮处方排序（演示模式不会真的长出处方）。',
+    adoptedLive: '已采纳：会进入下一轮处方排序。',
     ignored: '已忽略',
     updated: '已更新机会状态',
     toArticle: '转为文章方向',

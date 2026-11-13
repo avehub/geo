@@ -40,6 +40,8 @@ import type {
   SearchBindingField,
   SearchBoardResult,
   SearchMetricImportResult,
+  SearchBrowserSession,
+  SearchOAuthStart,
   SearchOpportunity,
   SearchOpportunityStatus,
   SearchSource,
@@ -49,14 +51,13 @@ import type {
 import { isIpcErrorPayload } from './types';
 
 /**
- * 全部 IPC 命令名（**105** 条）。前后端漂移时这里先炸，便于排查。
+ * 全部 IPC 命令名（**108** 条）。前后端漂移时这里先炸，便于排查。
  *
- * 🔴 最后那 6 条（M5.5 站长数据）与 M6 文章管理那 10 条、M1.2 知识库那 6 条、M6.5 站点接入那 11 条、
- * M1.5 素材层那 10 条、M3–M7 的 20 条、Plan B 的 2 条**同族**：只有 demo 侧实现
- * （65 条 demo 独有 + 40 条 Rust 侧），桌面端 `runtime === 'tauri'` 时点进去会报
- * `ipc/unknown_command`（差异台账 `2026-09-23-demo-vs-backend-known-divergences.md`
- * §4b E-33 / §4c E-46 / §4d E-52 / §4e E-55 / §4g E-63；站长数据那一段是 §4h E-67，
- * 规格已预备登记、台账待 demo 落地后写入）。
+ * 🔴 2026-11-06 核对为 **108 = 108 条 Rust + 0 条 demo-only**。M5.5 站长数据现在 9 条：
+ * 原有 6 条 + `search_oauth_begin`（GSC OAuth 起点）+ 系统 Chrome 取数两条
+ * （`search_browser_open` / `search_browser_capture`，只支持百度站长两个面）。demo 后端对
+ * OAuth 与浏览器三条命令明确回 `validation/failed`——演示模式不联网、不伪造授权与浏览器会话
+ * （规则 2 / 规则 8 / 规则 11 / DR-99）。
  */
 export const IPC_COMMANDS = [
   'project_create',
@@ -181,11 +182,14 @@ export const IPC_COMMANDS = [
   // 🔴 demo 独有（Rust 侧本轮零改动，差异 E-67 起）：
   // spec 2026-10-12-webmaster-data-integration-design.md（DR-90 … DR-118，命令面见 DR-97）
   'search_board',
+  'search_oauth_begin',
   'search_source_upsert',
   'search_source_remove',
   'search_source_test',
   'search_metric_import_csv',
   'search_opportunity_update',
+  'search_browser_open',
+  'search_browser_capture',
 ] as const;
 
 export type IpcCommand = (typeof IPC_COMMANDS)[number];
@@ -475,11 +479,18 @@ export const appEnvironment = () => call<AppEnvironment>('app_environment');
  * blob 下载，点击后静默失败（spec FR-B2 因此要求走 dialog 插件）。
  * CSV 传 `withBom = true`，Excel 打开中文才不乱码。
  */
-export const exportWriteFile = (defaultName: string, content: string, withBom: boolean) =>
+export const exportWriteFile = (
+  defaultName: string,
+  content: string,
+  withBom: boolean,
+  // P2-10：原生「另存为」对话框标题。Rust 侧不再硬编码中文，缺省时回落 ASCII 的 Export。
+  title?: string,
+) =>
   call<string | null>('export_write_file', {
     default_name: defaultName,
     content,
     with_bom: withBom,
+    title,
   });
 
 // ---------------------------------------------------------------------------
@@ -500,6 +511,16 @@ export const exportWriteFile = (defaultName: string, content: string, withBom: b
  */
 export const searchBoard = (projectId: string) =>
   call<SearchBoardResult>('search_board', { project_id: projectId });
+
+/**
+ * 启动 GSC 的 OAuth 授权（PKCE + 127.0.0.1 回环）。
+ *
+ * 🔴 只支持 `gsc`：Bing 仍是 API key / 手工通道，百度站长没有读 API；后端对其余 kind
+ * 回 `validation/failed { field: "kind", reason: "not_allowed" }`，不伪造授权。
+ * 返回的 `auth_url` 由调用方交给系统浏览器；token 永不经此前端命令流转。
+ */
+export const searchOauthBegin = (projectId: string, kind: SearchSourceKind) =>
+  call<SearchOAuthStart>('search_oauth_begin', { project_id: projectId, kind });
 
 /**
  * 增改一个数据源（同 `kind` 覆盖，照 `siteChannelUpsert`：一个项目就是一个站点 ⇒ 每 kind 至多一条）。
@@ -576,4 +597,38 @@ export const searchOpportunityUpdate = (opportunityId: string, status: SearchOpp
   call<SearchOpportunity>('search_opportunity_update', {
     opportunity_id: opportunityId,
     status,
+  });
+
+/**
+ * 打开系统 Chrome / Edge（独立 profile，路径 C），返回 CDP 地址。
+ *
+ * 🔴 只支持 `baidu_ziyuan` / `baidu_ziyuan_ai`：其它 kind 由后端回
+ * `validation/failed { field: "kind", reason: "not_allowed" }`，不伪造授权。
+ * 🔴 不代登录：命令只启动浏览器并打开后台首页，扫码 / 登录由用户自己在窗口里完成；
+ * Chrome 不随命令关闭，用户要继续操作。
+ */
+export const searchBrowserOpen = (projectId: string, kind: SearchSourceKind) =>
+  call<SearchBrowserSession>('search_browser_open', { project_id: projectId, kind });
+
+/**
+ * 连接已打开的系统 Chrome，读取**当前可见页面**的表格并交给既有导入管线。
+ *
+ * 🔴 列映射不在这里重写：抽出 TSV 后由后端复用 `search_metric_import_csv` 的解析器。
+ * 不读 cookie / localStorage，不调用私有 XHR，不绕验证码（AGENTS 规则 11）。
+ * 第一张能识别的表导入成功就返回；全部失败回
+ * `validation/failed { field: "payload", reason: "parse_failed" }`，`detail` 带每张表的行级摘要。
+ */
+export const searchBrowserCapture = (
+  projectId: string,
+  kind: SearchSourceKind,
+  wsUrl: string,
+  periodStart: string,
+  periodEnd: string,
+) =>
+  call<SearchMetricImportResult>('search_browser_capture', {
+    project_id: projectId,
+    kind,
+    ws_url: wsUrl,
+    period_start: periodStart,
+    period_end: periodEnd,
   });

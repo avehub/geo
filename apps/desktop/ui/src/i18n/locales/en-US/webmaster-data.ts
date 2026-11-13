@@ -45,6 +45,9 @@ const webmasterData: ResourceBundle['webmasterData'] = {
 
   demoBody:
     'Demo mode makes no network calls: the source probe results and the opportunity list are preset static values, and no OAuth flow is implemented. What you can walk through here is importing, pasting, manual entry, aggregation and opportunity handling.',
+  /** Always-on note (desktop): OAuth is not connected yet; import / paste / manual entry remain the paths. */
+  liveBody:
+    'OAuth is not connected yet: import, paste and manual entry are the available paths. Aggregation, opportunities and reconciliation still run on the data you have brought in.',
   staticNote:
     'Demo data: the opportunity list is not computed, so importing or pasting never adds to it. The aggregate totals, click-through rate and aggregation window are computed for real and do change after an import. That asymmetry is a demo limit, not a broken analysis.',
   metricNote:
@@ -229,6 +232,14 @@ const webmasterData: ResourceBundle['webmasterData'] = {
     binding: 'Binding',
     siteUrl: 'Site URL',
     siteId: 'Site ID',
+    client_id: 'OAuth client ID (client_id)',
+    oauthStart: 'Start Google authorization',
+    bingApiKey: 'Bing API key',
+    bingApiKeyHint:
+      'Generate an API key under Bing Webmaster Tools → Settings → API access. It is long-lived and needs no redirect URI (Bing\'s OAuth console rejects loopback addresses). The key is stored in the system keychain, never in the database.',
+    oauthStarted: 'Authorization page opened. Data refreshes automatically when you finish.',
+    googleClientSecret: 'Google OAuth client secret (optional)',
+    googleClientSecretHint: 'Leave empty for a desktop client using PKCE; if provided, it is stored in the system keychain, never in the database.',
     bindingHint: 'This is how the site is identified in the platform console — not a username or password.',
     authModeLabel: 'Credential mode',
     ingestModesLabel: 'How data arrives',
@@ -241,7 +252,15 @@ const webmasterData: ResourceBundle['webmasterData'] = {
     credentials: 'Credentials',
     secretRef: 'Keychain reference',
     demoCredentials: 'Demo mode collects no password or token: only a real backend writes to the system keychain, and the database keeps just the reference string.',
+    liveCredentials: 'Credentials are stored in the system keychain; the database keeps only a reference string.',
     empty: 'No data source connected yet.',
+    browserOpen: 'Open system Chrome',
+    browserOpened: 'Chrome is open. Sign in there and stay on the data page.',
+    browserCapture: 'Read current page',
+    browserHint: 'Reads only the tables visible in your own browser window: no sign-in on your behalf, no private APIs, no cookies.',
+    browserWindow: 'Data period: {{start}} ~ {{end}}',
+    browserConnectFirst: 'Open system Chrome first, then sign in and stay on the data page before reading.',
+    browserImported: 'Imported {{metrics}} metric rows and {{overviews}} AI summaries',
   },
 
   // -------------------------------------------------------------------------
@@ -438,6 +457,7 @@ const webmasterData: ResourceBundle['webmasterData'] = {
     adopt: 'Adopt',
     ignore: 'Ignore',
     adopted: 'Adopted: it joins the next prescription ranking pass (demo mode does not actually grow a prescription).',
+    adoptedLive: 'Adopted: it joins the next prescription ranking pass.',
     ignored: 'Ignored',
     updated: 'Opportunity status updated',
     toArticle: 'Turn into an article direction',

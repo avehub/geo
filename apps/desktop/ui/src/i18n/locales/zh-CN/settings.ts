@@ -66,6 +66,7 @@ const settings = {
   },
 
   providerForm: {
+    provider: '模型服务商',
     baseUrl: '接口地址',
     /**
      * 选「自定义」时那个输入框的占位提示。原先硬编码在 `components/ProviderSelect.tsx` 上：
@@ -73,12 +74,23 @@ const settings = {
      * 同性质）。值**逐字搬进词典、不改文案**（加「例如：」前缀属改文案，AGENTS 规则 8 要产品负责人先点头）。
      */
     baseUrlPlaceholder: 'https://api.example.com/v1',
-    baseUrlHint: 'OpenAI 兼容服务，需以 http:// 或 https:// 开头；必填',
-    baseUrlReadonly: '接口地址：',
-    defaultModel: '默认模型',
-    defaultModelHint: '想换模型在下方「模型名」里填，留空即用默认模型',
+    baseUrlHint: '已带入官方默认地址，可按需修改；企业网关或代理也可填这里。',
+    baseUrlCustomHint: '自定义服务商必填，需以 http:// 或 https:// 开头。',
+    defaultModelHintWithModel: '留空时使用默认模型 {{model}}',
+    defaultModelHintCustom: '自定义服务商没有默认模型，请填写模型名',
     protocol: '模型协议',
     protocolHint: '自定义服务商按哪种协议发请求；预设厂商与中转站的协议由后端固定。',
+  },
+
+  /**
+   * 「服务商与连接」+「模型配置」两张卡的说明（2026-11-06 飞书式重排）。
+   * API Key 紧跟在接口地址之后，避免用户先在下方点「拉取模型列表」才被告知没配 Key。
+   */
+  modelForm: {
+    connectionDesc: '选择服务商，填写接口地址与 API Key。',
+    apiKey: 'API Key',
+    apiKeyHint: '拉取模型列表与测试连接都使用这里保存的 Key。',
+    modelDesc: '填写模型名，或从服务商拉取可用模型列表。',
   },
 
   /**
@@ -96,6 +108,8 @@ const settings = {
     resultPreset: '已取回 {{total}} 个预置模型名',
     resultUpstream: '已从接口取回 {{total}} 个模型名',
     empty: '没有取回模型名。演示模式不访问外部接口，自定义服务商请直接手输模型名。',
+    hintLive: '按当前的厂商、协议与接口地址取回可用模型名。',
+    emptyLive: '没有取回模型名；请检查服务商配置，或直接手输模型名。',
     keepTyped: '拉取失败不会清掉你已经填的模型名。',
   },
 
@@ -120,6 +134,7 @@ const settings = {
    */
   secret: {
     reading: '读取中',
+    readFailed: '读取钥匙串状态失败',
     configured: '已配置',
     notConfigured: '未配置',
     placeholder: '请输入 API Key',
@@ -212,12 +227,7 @@ const settings = {
     systemTitle: '系统权限',
     openSystemSettings: '去系统设置',
     desktopOnly: '系统权限由桌面端申请，演示模式下不可用。',
-    privacyTitle: '数据外发',
-    privacyHint: '控制哪些数据在上报诊断时允许离开本机；关掉某一项，它就只留在本地。',
-    share_entity_card: '上报品牌实体卡',
-    share_prompts: '上报 Prompt 题库',
-    share_crawled_text: '上报抓取的网页正文',
-    share_diagnostics: '上报诊断结果',
+    liveHint: '系统权限由操作系统管理；一键跳转将在后续版本提供。',
   },
 
   /** 系统权限名（`Permissions` 的三个键）。不是 enumLabel 命名空间：键名来自契约，逐条显式 `t()`。 */
@@ -246,9 +256,12 @@ const settings = {
     exportDirNone: '还没有导出过',
     migrations: '已应用的迁移',
     openDir: '打开目录',
+    openFailed: '打开目录失败',
+    changeDirLater: '更改数据目录将在后续版本提供。',
     changeDir: '更改目录',
     desktopOnly: '目录操作由桌面端提供，演示模式下不可用。',
     hint: '演示模式不读写磁盘，下面是桌面端将使用的位置与一份示例占用。',
+    liveHint: '下面是你这台机器上的真实数据目录、数据库与日志位置。',
   },
 
   /**
@@ -283,13 +296,18 @@ const settings = {
     loadFailed: '读取设置失败',
     environmentFailed: '读取本机环境失败',
     saved: '设置已保存；代理与超时改动将在重启后生效',
-    modelCard: '模型服务商',
+    modelCard: '服务商与连接',
+    modelConfigCard: '模型配置',
     modelName: '模型名',
     modelNamePlaceholder: '留空则使用默认模型',
+    modelNameRequired: '自定义服务商必须填写模型名，否则自动建档等 AI 功能会降级。',
     temperature: '温度',
     timeoutSeconds: '超时（秒）',
     proxyCard: '网络代理',
     crawlerCard: '采集并发与频控',
+    searchKeyCard: '秘塔搜索 API Key',
+    searchKeyHint:
+      '秘塔搜索按次计费。Key 只写入系统钥匙串；Kimi / 豆包 / 千问 / 百度复用上方模型服务商 Key。',
     crawlerHint: '这些取值给 P0-B 的采集队列用。默认刻意保守：目标是别被引擎封，不是跑得快。',
     maxParallel: '最大并发',
     queueSize: '队列长度',

@@ -27,5 +27,5 @@ pub use secret::{
 };
 pub use settings::{
     AppSettings, ConcurrencyConfig, ModelConfig, NotifyConfig, ProxyConfig, RateLimitConfig,
-    SettingsRepo,
+    SettingsRepo, StorageConfig,
 };

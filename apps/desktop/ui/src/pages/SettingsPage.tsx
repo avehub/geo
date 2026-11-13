@@ -17,7 +17,7 @@ import { useParams } from 'react-router-dom';
 
 import * as client from '../api/client';
 import { describeIpcError } from '../api/errors';
-import type { AppSettings, PrivacyConfig, StorageConfig } from '../api/types';
+import type { AppSettings, StorageConfig } from '../api/types';
 import SettingsLayout from './settings/SettingsLayout';
 import {
   AUTO_SAVE_DEBOUNCE_MS,
@@ -29,12 +29,6 @@ import {
 } from './settings/sections';
 
 /** Rust 侧 E-48 之前只有六段设置；缺的两段用界面默认值补齐，绝不让渲染期崩。 */
-const DEFAULT_PRIVACY: PrivacyConfig = {
-  share_entity_card: true,
-  share_prompts: true,
-  share_crawled_text: true,
-  share_diagnostics: false,
-};
 const DEFAULT_STORAGE: StorageConfig = { last_export_dir: null };
 
 function normalizeSettings(raw: AppSettings): AppSettings {
@@ -44,12 +38,6 @@ function normalizeSettings(raw: AppSettings): AppSettings {
       ...raw.model,
       // `protocol` 也是 Plan B 新增字段；Rust 旧版缺省时回落到中立档。
       protocol: raw.model?.protocol ?? 'openai_compat',
-    },
-    privacy: {
-      share_entity_card: raw.privacy?.share_entity_card ?? DEFAULT_PRIVACY.share_entity_card,
-      share_prompts: raw.privacy?.share_prompts ?? DEFAULT_PRIVACY.share_prompts,
-      share_crawled_text: raw.privacy?.share_crawled_text ?? DEFAULT_PRIVACY.share_crawled_text,
-      share_diagnostics: raw.privacy?.share_diagnostics ?? DEFAULT_PRIVACY.share_diagnostics,
     },
     storage: {
       last_export_dir: raw.storage?.last_export_dir ?? DEFAULT_STORAGE.last_export_dir,

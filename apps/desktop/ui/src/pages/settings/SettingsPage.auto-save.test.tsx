@@ -14,6 +14,7 @@ import SettingsPage from '../SettingsPage';
 import { mockInvoke } from '../../test/invoke-mock';
 import { renderAtRoute, renderWithProviders } from '../../test/render';
 import { PROVIDERS, makeAppSettings } from '../../test/fixtures';
+import zhCN from '../../i18n/locales/zh-CN';
 
 const SETTINGS = makeAppSettings();
 
@@ -84,7 +85,7 @@ describe('设置页自动保存 · 跨段归属（DR-28）', () => {
 
     await user.click(menuItem('通用'));
     await screen.findByRole('heading', { name: '通用' });
-    await user.click(screen.getByLabelText('上报 Prompt 题库'));
+    await user.click(screen.getByLabelText(zhCN.settings.proxy.enable));
     await new Promise((resolve) => setTimeout(resolve, 700));
 
     expect(mockInvoke.callsOf('settings_update')).toHaveLength(0);
@@ -114,13 +115,14 @@ describe('设置页自动保存 · 跨段归属（DR-28）', () => {
     renderWithProviders(<Harness />, { route: '/settings/general' });
     await screen.findByRole('heading', { name: '通用' });
 
-    await user.click(screen.getByLabelText('上报 Prompt 题库'));
+    await user.click(screen.getByLabelText(zhCN.settings.proxy.enable));
     await user.click(screen.getByRole('link', { name: 'leave settings' }));
 
     await waitFor(() => expect(mockInvoke.callsOf('settings_update')).toHaveLength(1));
     const saved = mockInvoke.lastArgsOf('settings_update')!.settings as {
-      privacy: { share_prompts: boolean };
+      proxy: { enabled: boolean };
     };
-    expect(saved.privacy.share_prompts).toBe(false);
+    expect(saved.proxy.enabled).toBe(true);
+    expect(saved).not.toHaveProperty('privacy');
   });
 });

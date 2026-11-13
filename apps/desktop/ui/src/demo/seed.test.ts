@@ -256,29 +256,24 @@ describe('demo/seed · provider 表的漂移守卫（§B-6）', () => {
   });
 
   /**
-   * 🔴 `privacy` / `storage` 两段是 **demo 独有**（Plan B Task 3 · 差异 E-48）。
-   *
-   * 上一条用例钉的是"逐字镜像 Rust 的 `impl Default`"，这两段恰恰**不在**那份真值源里：
-   * 隐私开关与导出目录是先在 demo 里定的形状，落库要等 Plan C。所以这里钉两件事——
-   * ① 默认值本身（`share_diagnostics` 默认关，其余三项默认开）；
-   * ② **真值源里确实没有同名字段**：这条反向断言让"哪天 Rust 侧补上了这两段"变成一次
-   *    必须回来处理的红，而不是让 demo 与后端各说各话。
+   * `privacy` / `storage` / `model.protocol` 原先只有 demo 有（E-48）；2026-11-05 Plan C
+   * 已落 Rust 真值源。这里钉住默认值，并正向断言 Rust 侧确实有同名字段，防止两端再次漂移。
    */
-  it('privacy / storage 是 demo 独有的两段：默认值钉死，且 Rust 真值源里没有同名字段', () => {
-    expect(SEED_SETTINGS.app.privacy).toEqual({
-      share_entity_card: true,
-      share_prompts: true,
-      share_crawled_text: true,
-      share_diagnostics: false,
-    });
+  it('privacy 开关组已按 2026-11-13 裁定从 demo 与 Rust 两侧摘除', () => {
+    expect(SEED_SETTINGS.app).not.toHaveProperty('privacy');
     expect(SEED_SETTINGS.app.storage).toEqual({ last_export_dir: null });
 
     const rustSettings = readRepoFile('crates', 'geo-store', 'src', 'settings.rs');
-    // 🔴 `protocol`（Task 4 / DR-34）与上面 5 个字段同族：`ModelConfig.protocol` 在 Rust 侧
-    // 还不存在，默认值 `openai_compat` 是 demo 先冻结的契约。一并挂在这条反向断言上，
-    // "哪天 Rust 补齐了"就变成一次必须回来核对 E-48 的红，而不是两侧各说各话。
-    for (const field of ['share_entity_card', 'share_prompts', 'share_crawled_text', 'share_diagnostics', 'last_export_dir', 'protocol']) {
-      expect(rustSettings.includes(field), `${field} 已经出现在 Rust 侧了 ⇒ 差异 E-48 要重新核对`).toBe(false);
+    for (const field of [
+      'pub struct PrivacyConfig',
+      'pub privacy:',
+      'share_entity_card: bool',
+    ]) {
+      expect(rustSettings.includes(field), `${field} 不应再存在于 Rust 真值源`).toBe(false);
+    }
+    // 同族字段不许被顺带删掉
+    for (const field of ['last_export_dir', 'protocol']) {
+      expect(rustSettings.includes(field), `${field} 必须仍存在于 Rust 真值源`).toBe(true);
     }
   });
 

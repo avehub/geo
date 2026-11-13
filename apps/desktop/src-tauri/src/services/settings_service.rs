@@ -35,6 +35,26 @@ pub const RETRY_MAX_RANGE: std::ops::RangeInclusive<u8> = 0..=10;
 pub const TEMPERATURE_RANGE: std::ops::RangeInclusive<f32> = 0.0..=2.0;
 pub const TIMEOUT_RANGE: std::ops::RangeInclusive<u64> = 5..=600;
 
+/// `model.protocol` 允许保存的取值。`anthropic` 可以存进设置，
+/// 但桌面端发请求前由 `LlmFactory::config_from_settings` 以 `unsupported_protocol`
+/// 拒绝（Rust 目前只实现了 OpenAI 兼容那一支）。
+pub const MODEL_PROTOCOLS: [&str; 2] = ["openai_compat", "anthropic"];
+
+/// 搜索专用 provider：只用于 `keyring://llm/metaso` 的搜索 API Key。
+/// 🔴 它不是 `LlmProvider`：不进 `llm_providers`，也不能作为 `model.provider`。
+const METASO_PROVIDER: &str = "metaso";
+
+/// Google OAuth 的客户端密钥位（可空；desktop client + PKCE 不需要）。
+/// 与 GSC token（`gsc`）一样只占钥匙串位，**不是** `LlmProvider`。
+const GOOGLE_OAUTH_PROVIDER: &str = "google_oauth";
+/// GSC token 的钥匙串位（OAuth 成功后由 `search_oauth` 写入）。
+const GSC_TOKEN_PROVIDER: &str = "gsc";
+/// Bing Webmaster OAuth 的客户端密钥位（只进钥匙串，不是 `LlmProvider`）。
+const BING_OAUTH_PROVIDER: &str = "bing_oauth";
+/// Bing Webmaster 的 API Key 位。Bing 官方推荐用 API Key 取数：一次生成、
+/// 长期有效、不需要登记回调地址（OAuth 控制台不接受 loopback 重定向）。
+const BING_WMT_PROVIDER: &str = "bing_wmt";
+
 /// 模型名长度上限（**字符数**，配 `too_long` 的 `limit`）。
 /// 提成常量：这个值现在会作为 `params["limit"]` 出到前端，
 /// 判定与参数必须同源，否则词典模板会渲出一个与判定不符的上限。
@@ -175,7 +195,7 @@ impl SettingsService {
 
     /// 写入 API Key。只进钥匙串；库里不存、日志不打。
     pub async fn set_secret(&self, provider: &str, value: &str) -> Result<(), IpcError> {
-        let provider = parse_provider(provider)?;
+        let provider = parse_secret_provider(provider)?;
         let value = value.trim();
         if value.is_empty() {
             // 裁定 R-F 的唯一例外：`field` 从含糊的 `value` 改成 `api_key`
@@ -183,23 +203,24 @@ impl SettingsService {
             return Err(GeoError::validation("api_key", "required").into());
         }
         self.secrets
-            .set(&secret_ref(SECRET_KIND, provider.as_str()), value)
+            .set(&secret_ref(SECRET_KIND, &provider), value)
             .await?;
-        tracing::info!(provider = provider.as_str(), "API Key 已写入钥匙串");
+        tracing::info!(provider = %provider, "API Key 已写入钥匙串");
         Ok(())
     }
 
     /// 密钥状态：只回答「配没配」与「引用串是什么」。
+    ///
+    /// 🔴 用 `exists` 而不是 `get`：设置页一打开就会查这一条，而 `get` 在 macOS 上
+    /// 走 legacy Keychain 的解密路径——开发构建的 ad-hoc 签名每次重编 cdhash 都会变，
+    /// 条目 ACL 不认当前二进制，于是弹「允许访问 com.gaodekuai.geo」的授权框，
+    /// 用户输完密码还可能在 securityd 的 decrypt 上卡住。状态查询根本不需要明文。
     pub async fn secret_status(&self, provider: &str) -> Result<SecretStatus, IpcError> {
-        let provider = parse_provider(provider)?;
-        let reference = secret_ref(SECRET_KIND, provider.as_str());
-        let configured = self
-            .secrets
-            .get(&reference)
-            .await?
-            .is_some_and(|value| !value.trim().is_empty());
+        let provider = parse_secret_provider(provider)?;
+        let reference = secret_ref(SECRET_KIND, &provider);
+        let configured = self.secrets.exists(&reference).await?;
         Ok(SecretStatus {
-            provider: provider.as_str().to_string(),
+            provider,
             configured,
             secret_ref: reference,
         })
@@ -207,11 +228,11 @@ impl SettingsService {
 
     /// 删除 API Key（幂等）。
     pub async fn delete_secret(&self, provider: &str) -> Result<(), IpcError> {
-        let provider = parse_provider(provider)?;
+        let provider = parse_secret_provider(provider)?;
         self.secrets
-            .delete(&secret_ref(SECRET_KIND, provider.as_str()))
+            .delete(&secret_ref(SECRET_KIND, &provider))
             .await?;
-        tracing::info!(provider = provider.as_str(), "API Key 已从钥匙串删除");
+        tracing::info!(provider = %provider, "API Key 已从钥匙串删除");
         Ok(())
     }
 
@@ -220,7 +241,7 @@ impl SettingsService {
     /// 没配 Key / 配置不全属于**用户要修的问题**，返回错误让前端引导；
     /// 网络不通、限流、5xx 属于**测试结果**，用 `ok=false` + 中文原因回给界面。
     pub async fn provider_test(&self, provider: &str) -> Result<LlmTestResult, IpcError> {
-        let provider = parse_provider(provider)?;
+        let provider = parse_llm_provider(provider)?;
         let client = self.client_for(provider).await?;
         let model = client.config().model.clone();
         let request = ChatRequest::new(vec![ChatMessage::user(CONNECTIVITY_PROMPT)]);
@@ -277,7 +298,7 @@ impl SettingsService {
     /// - `anthropic` 协议只影响鉴权头（`x-api-key` + `anthropic-version`），
     ///   路径仍是 `{base_url}/models`；其余按 OpenAI 兼容的 Bearer。
     pub async fn list_models(&self, query: LlmModelsQuery) -> Result<ModelsListResult, IpcError> {
-        let provider = parse_provider(&query.provider)?;
+        let provider = parse_llm_provider(&query.provider)?;
         let draft_base = query
             .base_url
             .as_deref()
@@ -387,11 +408,11 @@ impl SettingsService {
     }
 }
 
-/// 宽松解析 provider：认不出就报 `llm/config` + `reason=unknown_provider`。
+/// 宽松解析 **模型厂商**：认不出就报 `llm/config` + `reason=unknown_provider`。
 ///
 /// 裁定 R-E / §G-7：`value` 一律装**出错的值**（用户填的那个非法串），
 /// 不再把合法取值列表拼进错误——列表前端本来就能从 `llm_providers` 拿到，属文案不属参数。
-fn parse_provider(raw: &str) -> Result<LlmProvider, IpcError> {
+fn parse_llm_provider(raw: &str) -> Result<LlmProvider, IpcError> {
     LlmProvider::parse(raw).ok_or_else(|| {
         IpcError::with_params(
             err_codes::LLM_CONFIG,
@@ -400,7 +421,33 @@ fn parse_provider(raw: &str) -> Result<LlmProvider, IpcError> {
     })
 }
 
-/// `validation/failed` 形态的「服务商认不出」：与 [`parse_provider`] 同一份数据，
+/// 密钥命令的 provider 解析：`LlmProvider` 预设 **加** 五个非模型钥匙串位
+/// （`metaso` 搜索 Key、`google_oauth` 客户端密钥、`gsc` OAuth token、
+/// `bing_wmt` Bing API Key、`bing_oauth` 历史 OAuth 客户端密钥）。
+///
+/// 🔴 `bing_oauth` 保留只为让旧钥匙串条目仍可读 / 可删：Bing 已改走 API Key，
+/// 不再有 OAuth 流程（见 `services/search_oauth.rs` 文件头）。
+///
+/// 三段密钥命令（`secret_set` / `secret_status` / `secret_delete`）用这个；
+/// 模型设置、连通性测试与模型清单仍用 [`parse_llm_provider`]，所以 `metaso`
+/// 永远不会被当成 `model.provider`。返回值是归一化后的 wire id（`deep_seek` / `metaso` …）。
+fn parse_secret_provider(raw: &str) -> Result<String, IpcError> {
+    let normalized = raw.trim().to_ascii_lowercase();
+    if [
+        METASO_PROVIDER,
+        GOOGLE_OAUTH_PROVIDER,
+        GSC_TOKEN_PROVIDER,
+        BING_OAUTH_PROVIDER,
+        BING_WMT_PROVIDER,
+    ]
+    .contains(&normalized.as_str())
+    {
+        return Ok(normalized);
+    }
+    parse_llm_provider(raw).map(|provider| provider.as_str().to_string())
+}
+
+/// `validation/failed` 形态的「服务商认不出」：与 [`parse_llm_provider`] 同一份数据，
 /// 只是 code 不同（前者走表单字段校验，后者走命令入参）。
 fn unknown_provider_validation(raw: &str) -> GeoError {
     GeoError::validation("model.provider", "unknown_provider").with_param("value", raw)
@@ -421,6 +468,7 @@ fn validate_settings(settings: &AppSettings) -> Result<(), IpcError> {
         model,
         language,
         notify: _,
+        storage,
     } = settings;
 
     in_range(
@@ -450,6 +498,21 @@ fn validate_settings(settings: &AppSettings) -> Result<(), IpcError> {
     )?;
     in_range("model.temperature", model.temperature, &TEMPERATURE_RANGE)?;
     in_range("model.timeout_secs", model.timeout_secs, &TIMEOUT_RANGE)?;
+
+    if !MODEL_PROTOCOLS.contains(&model.protocol.as_str()) {
+        return Err(GeoError::validation("model.protocol", "not_allowed")
+            .with_param("value", &model.protocol)
+            .into());
+    }
+    if let Some(dir) = storage.last_export_dir.as_deref() {
+        if !std::path::Path::new(dir).is_absolute() {
+            return Err(
+                GeoError::validation("storage.last_export_dir", "invalid_format")
+                    .with_param("value", dir)
+                    .into(),
+            );
+        }
+    }
 
     if canonical_provider(&model.provider).is_none() {
         return Err(unknown_provider_validation(&model.provider).into());
@@ -498,13 +561,36 @@ fn validate_settings(settings: &AppSettings) -> Result<(), IpcError> {
                 || url.starts_with("https://")
                 || url.starts_with("socks5://"))
             {
-                return Err(GeoError::validation("proxy.url", "invalid_format")
-                    .with_param("value", url)
-                    .into());
+                // P2-08：回显**抹掉 userinfo 的形态**，不把用户填的原串整段送进 params
+                // （params 会原样进前端、日志与导出）；解析不出来就不发 `value`。
+                let mut error = GeoError::validation("proxy.url", "invalid_format");
+                if let Some(redacted) = redacted_proxy_url(url) {
+                    error = error.with_param("value", redacted);
+                }
+                return Err(error.into());
             }
         }
+        // P2-08：代理地址内嵌 `user:pass@` 一律拒绝。判据住在
+        // `geo_store::ProxyConfig::validate`——写库前是同一道闸，两层不会漂移。
+        // 🔴 刻意放在协议判据之后：先告诉用户「协议不对」，再说「不许带账号密码」；
+        // 也刻意不看 `enabled`：关着的代理照样明文落库。
+        proxy.validate()?;
     }
     Ok(())
+}
+
+/// 回显用的代理地址：`scheme://host[:port]`——抹掉 userinfo 与路径/查询。
+///
+/// 解析不出来的串返回 `None`，调用方就不发 `value`：宁可少给信息，也不能把可能
+/// 夹带凭据的原串送进 params（AGENTS 规则 3）。端口按用户写出来的样子保留
+/// （`port()` 而不是 `port_or_known_default()`，免得给 `ftp://h` 凭空补上 `:21`）。
+fn redacted_proxy_url(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    let host = parsed.host_str()?;
+    Some(match parsed.port() {
+        Some(port) => format!("{}://{}:{}", parsed.scheme(), host, port),
+        None => format!("{}://{}", parsed.scheme(), host),
+    })
 }
 
 /// 数值区间体检：`out_of_range` + `expected`（语言中立的 `a~b` 闭区间表达式，
@@ -645,6 +731,134 @@ mod tests {
         );
     }
 
+    /// P2-08：`ProxyConfig` 整段明文进 settings 表，所以 `user:pass@` 形态的凭据
+    /// 一律拒绝——不论代理开关是否打开（关着也照样落库、照样随备份与导出扩散）。
+    /// 错误里**不得**出现原始串：`params` 与兜底 `message` 都要过这一关（AGENTS 规则 3）。
+    #[test]
+    fn validate_settings_rejects_credentials_embedded_in_the_proxy_url() {
+        let mut settings = AppSettings::default();
+        settings.model.provider = "deep_seek".to_string();
+
+        for url in [
+            "http://u:p@proxy.example:8080",
+            "https://u:p@proxy.example",
+            "socks5://u:p@127.0.0.1:1080",
+            "http://editor@proxy.example:8080",
+        ] {
+            settings.proxy = Some(ProxyConfig {
+                enabled: true,
+                url: Some(url.to_string()),
+            });
+            let error = match validate_settings(&settings) {
+                Ok(()) => panic!("{url} 内嵌凭据必须被拒绝"),
+                Err(error) => error,
+            };
+            assert_eq!(error.code, "validation/failed", "{url}");
+            assert_eq!(
+                error.params["field"], "proxy.url",
+                "{url}：{:?}",
+                error.params
+            );
+            assert_eq!(
+                error.params["reason"], "not_allowed",
+                "{url}：{:?}",
+                error.params
+            );
+            assert!(
+                error.params.values().all(|value| !value.contains('@')),
+                "{url}：params 不得回显凭据：{:?}",
+                error.params
+            );
+            assert!(!error.to_string().contains('@'), "{url}：{error}");
+        }
+
+        // 关着的代理同样不许把凭据存进库。
+        settings.proxy = Some(ProxyConfig {
+            enabled: false,
+            url: Some("http://u:p@proxy.example:8080".to_string()),
+        });
+        let error = validate_settings(&settings).expect_err("关着的代理也要拒绝凭据");
+        assert_eq!(error.params["field"], "proxy.url");
+        assert_eq!(error.params["reason"], "not_allowed");
+
+        // 没有 userinfo 的地址照常通过。
+        for url in [
+            "http://proxy.example:8080",
+            "https://proxy.example",
+            "socks5://127.0.0.1:1080",
+        ] {
+            settings.proxy = Some(ProxyConfig {
+                enabled: true,
+                url: Some(url.to_string()),
+            });
+            validate_settings(&settings).unwrap_or_else(|error| panic!("{url} 应被接受：{error}"));
+        }
+
+        // 协议非法仍然拒绝（既有用例）；回显的是抹掉 userinfo 的形态，不是原串。
+        settings.proxy = Some(ProxyConfig {
+            enabled: true,
+            url: Some("ftp://proxy.example".to_string()),
+        });
+        let error = validate_settings(&settings).expect_err("ftp 仍拒绝");
+        assert_eq!(error.params["reason"], "invalid_format");
+        assert_eq!(error.params["value"], "ftp://proxy.example");
+    }
+
+    /// 回显形态：`scheme://host[:port]`，userinfo 与路径/查询一律抹掉；
+    /// 解析不出来的串**不回显**（少给信息 ≠ 泄漏信息）。
+    #[test]
+    fn redacted_proxy_url_drops_userinfo_and_everything_after_the_authority() {
+        // `2121` 不是 ftp 的默认端口，所以按用户写出来的样子保留。
+        assert_eq!(
+            redacted_proxy_url("ftp://u:p@proxy.example:2121/path?x=1").as_deref(),
+            Some("ftp://proxy.example:2121")
+        );
+        assert_eq!(
+            redacted_proxy_url("ftp://proxy.example").as_deref(),
+            Some("ftp://proxy.example")
+        );
+        assert_eq!(redacted_proxy_url("u:p@proxy.example:8080"), None);
+        assert_eq!(redacted_proxy_url(""), None);
+    }
+
+    /// 判据不能只依赖 `url::Url`：解析不出来的串（端口写错）同样是凭据可能藏身之处，
+    /// 必须有文本兜底；反过来，`@` 只出现在路径/查询里不算内嵌凭据。
+    #[test]
+    fn credential_rejection_also_covers_unparsable_proxy_urls() {
+        let mut settings = AppSettings::default();
+        settings.model.provider = "deep_seek".to_string();
+
+        for url in [
+            "http://u:p@proxy.example:notaport",
+            "socks5://u:p@proxy.example:notaport",
+        ] {
+            settings.proxy = Some(ProxyConfig {
+                enabled: true,
+                url: Some(url.to_string()),
+            });
+            let error = match validate_settings(&settings) {
+                Ok(()) => panic!("{url} 解析不出来也必须拒绝凭据"),
+                Err(error) => error,
+            };
+            assert_eq!(
+                error.params["field"], "proxy.url",
+                "{url}：{:?}",
+                error.params
+            );
+            assert_eq!(
+                error.params["reason"], "not_allowed",
+                "{url}：{:?}",
+                error.params
+            );
+        }
+
+        settings.proxy = Some(ProxyConfig {
+            enabled: true,
+            url: Some("http://proxy.example:8080/path?redirect=a@b".to_string()),
+        });
+        validate_settings(&settings).expect("路径里的 @ 不是凭据");
+    }
+
     #[test]
     fn secret_status_has_no_field_that_could_carry_the_value() {
         let status = SecretStatus {
@@ -663,12 +877,61 @@ mod tests {
         assert_eq!(keys, ["configured", "provider", "secret_ref"]);
     }
 
+    /// 搜索专用 provider 只走密钥命令；模型设置 / 连通性测试仍只认 `LlmProvider`。
+    #[test]
+    fn metaso_is_a_secret_provider_but_not_a_model_provider() {
+        assert_eq!(parse_secret_provider("metaso").unwrap(), "metaso");
+        assert_eq!(parse_secret_provider("  Metaso  ").unwrap(), "metaso");
+        assert_eq!(parse_secret_provider("deepseek").unwrap(), "deep_seek");
+
+        // GSC OAuth 的两个钥匙串位：可读可写 secret_*，但绝不是模型厂商。
+        assert_eq!(
+            parse_secret_provider("google_oauth").unwrap(),
+            "google_oauth"
+        );
+        assert_eq!(parse_secret_provider(" gsc ").unwrap(), "gsc");
+        assert_eq!(
+            parse_secret_provider(" Bing_OAuth ").unwrap(),
+            "bing_oauth",
+            "Bing 客户端密钥只占钥匙串位，不是模型厂商"
+        );
+        assert_eq!(
+            parse_secret_provider(" Bing_WMT ").unwrap(),
+            "bing_wmt",
+            "Bing API Key 只占钥匙串位，不是模型厂商"
+        );
+        for provider in ["google_oauth", "gsc", "bing_oauth", "bing_wmt"] {
+            let error = parse_llm_provider(provider).expect_err("OAuth 钥匙串位不是模型厂商");
+            assert_eq!(error.code, "llm/config");
+            assert_eq!(error.params["reason"], "unknown_provider");
+        }
+
+        let error = parse_llm_provider("metaso").expect_err("metaso 不是模型厂商");
+        assert_eq!(error.code, "llm/config");
+        assert_eq!(error.params["reason"], "unknown_provider");
+        assert_eq!(error.params["value"], "metaso");
+
+        let error = parse_secret_provider("nope").expect_err("认不出的密钥 provider");
+        assert_eq!(error.code, "llm/config");
+        assert_eq!(error.params["reason"], "unknown_provider");
+    }
+
+    /// 两个新校验的正向边界：`anthropic` 可存、绝对路径可存。
+    #[test]
+    fn protocol_and_export_dir_accept_the_documented_values() {
+        let mut settings = AppSettings::default();
+        settings.model.provider = "deep_seek".to_string();
+        settings.model.protocol = "anthropic".to_string();
+        settings.storage.last_export_dir = Some("/Users/me/Desktop/exports".to_string());
+        validate_settings(&settings).expect("anthropic + 绝对路径合法");
+    }
+
     /// 裁定 §G-7：`unknown_provider` 的 `value` 是**用户填的那个非法串**，
     /// 合法取值列表不再进错误（前端能从 `llm_providers` 拿到，属文案不属参数）。
     /// 原用例 `unknown_provider_error_lists_the_valid_values` 钉的正是被驳回的旧口径。
     #[test]
     fn unknown_provider_error_carries_the_offending_value() {
-        let error = parse_provider("openai").expect_err("不在预设里");
+        let error = parse_llm_provider("openai").expect_err("不在预设里");
         assert_eq!(error.code, "llm/config");
         assert_eq!(error.params["reason"], "unknown_provider");
         assert_eq!(error.params["value"], "openai");
@@ -781,6 +1044,22 @@ mod tests {
                 extra: &[],
             },
             Case {
+                name: "模型协议不支持",
+                break_it: |settings| settings.model.protocol = "gemini".to_string(),
+                field: "model.protocol",
+                reason: "not_allowed",
+                extra: &[("value", "gemini")],
+            },
+            Case {
+                name: "导出目录不是绝对路径",
+                break_it: |settings| {
+                    settings.storage.last_export_dir = Some("relative/exports".to_string())
+                },
+                field: "storage.last_export_dir",
+                reason: "invalid_format",
+                extra: &[("value", "relative/exports")],
+            },
+            Case {
                 name: "接口地址不是 http(s)",
                 break_it: |settings| {
                     settings.model.base_url = Some("ftp://api.example.com".to_string())
@@ -814,6 +1093,32 @@ mod tests {
                     settings.proxy = Some(ProxyConfig {
                         enabled: true,
                         url: Some("ftp://proxy.example".to_string()),
+                    })
+                },
+                field: "proxy.url",
+                reason: "invalid_format",
+                extra: &[("value", "ftp://proxy.example")],
+            },
+            Case {
+                // P2-08：凭据既不许落库，也不许经 params 回显——`extra` 为空即钉死
+                // 「只发 field + reason，不发 value」。
+                name: "代理地址内嵌账号密码",
+                break_it: |settings| {
+                    settings.proxy = Some(ProxyConfig {
+                        enabled: true,
+                        url: Some("http://u:p@proxy.example:8080".to_string()),
+                    })
+                },
+                field: "proxy.url",
+                reason: "not_allowed",
+                extra: &[],
+            },
+            Case {
+                name: "代理协议不支持且内嵌账号密码",
+                break_it: |settings| {
+                    settings.proxy = Some(ProxyConfig {
+                        enabled: true,
+                        url: Some("ftp://u:p@proxy.example".to_string()),
                     })
                 },
                 field: "proxy.url",

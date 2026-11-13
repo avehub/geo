@@ -14,13 +14,14 @@
  * 文件与文件夹 / 屏幕录制授权，所以「去系统设置」置灰并说明由桌面端提供——
  * 与 M7 对 docx/pdf/png 的既有形态同一口径，不演一个点了没反应的按钮。
  */
-import { Alert, Button, Card, Descriptions, Divider, Select, Space, Switch, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Descriptions, Select, Space, Switch, Tag, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
 import * as client from '../../api/client';
+import { runtime } from '../../api/runtime';
 import { describeIpcError } from '../../api/errors';
-import type { Permissions, PrivacyConfig } from '../../api/types';
+import type { Permissions } from '../../api/types';
 import ProxyForm from '../../components/ProxyForm';
 import { LOCALES, type Locale } from '../../i18n';
 import { enumLabel } from '../../i18n/enum-label';
@@ -41,14 +42,6 @@ const PERMISSION_ITEM_KEYS: Record<keyof Permissions, TranslationKey> = {
   screen_recording: 'settings.permissionItems.screen_recording',
 };
 
-/** 四项数据外发开关 → 词典键（`PrivacyConfig` 的键集，同上）。 */
-const PRIVACY_ITEM_KEYS: Record<keyof PrivacyConfig, TranslationKey> = {
-  share_entity_card: 'settings.permissionsCard.share_entity_card',
-  share_prompts: 'settings.permissionsCard.share_prompts',
-  share_crawled_text: 'settings.permissionsCard.share_crawled_text',
-  share_diagnostics: 'settings.permissionsCard.share_diagnostics',
-};
-
 /**
  * 生成内容语言的可选值。
  *
@@ -62,13 +55,6 @@ const CONTENT_LANGUAGE_KEYS: Record<(typeof CONTENT_LANGUAGES)[number], Translat
   zh_cn: 'settings.languageGroup.contentZhCn',
   en_us: 'settings.languageGroup.contentEnUs',
 };
-
-function patchPrivacy(settings: PrivacyConfigSource, patch: Partial<PrivacyConfig>): PrivacyConfigSource {
-  return { ...settings, privacy: { ...settings.privacy, ...patch } };
-}
-
-/** 只为让 `patchPrivacy` 的入参类型短一点：本段拿到的整包设置。 */
-type PrivacyConfigSource = SectionProps['settings'];
 
 export default function GeneralSection({ settings, patch }: SectionProps) {
   const { t } = useTranslation();
@@ -202,30 +188,14 @@ export default function GeneralSection({ settings, patch }: SectionProps) {
             {t('settings.permissionsCard.openSystemSettings')}
           </Button>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t('settings.permissionsCard.desktopOnly')}
+            {t(
+              runtime === 'demo'
+                ? 'settings.permissionsCard.desktopOnly'
+                : 'settings.permissionsCard.liveHint',
+            )}
           </Typography.Text>
         </Space>
 
-        <Divider style={{ margin: '16px 0' }} />
-
-        <Typography.Text strong>{t('settings.permissionsCard.privacyTitle')}</Typography.Text>
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
-          {t('settings.permissionsCard.privacyHint')}
-        </Typography.Paragraph>
-        <Space direction="vertical" size={8}>
-          {(Object.keys(PRIVACY_ITEM_KEYS) as (keyof PrivacyConfig)[]).map((item) => (
-            <Space size={8} key={item}>
-              <Switch
-                id={`settings-privacy-${item}`}
-                checked={settings.privacy[item]}
-                onChange={(checked) => patch(patchPrivacy(settings, { [item]: checked }))}
-              />
-              <label htmlFor={`settings-privacy-${item}`}>
-                {t(PRIVACY_ITEM_KEYS[item])}
-              </label>
-            </Space>
-          ))}
-        </Space>
       </Card>
 
       <Card size="small" style={{ flex: '1 1 420px', minWidth: 320 }} title={t('settings.page.proxyCard')}>

@@ -17,7 +17,7 @@
  * - **写严格**：`update()` 先体检后落库，任何一项越界就**整批拒绝**。
  *
  * # 🔴 只镜像两条体检（简报 A-4；其余每条都进了报告的异常表）
- * `validate_settings()`(:292-384) 一共 12 项判据，demo 只镜像两项：
+ * `validate_settings()`(:292-384) 一共 13 项判据（2026-11-07 起含 proxy.url 内嵌凭据判据），demo 只镜像两项：
  * ① `model.provider` 认不出（成员清单**直接读 `db.settings.providers`**，不新造任何常量）；
  * ② `language` 空白。
  * 不镜像的：7 个数值区间(:30-36) + `MAX_MODEL_NAME_CHARS`(:41)（要在前端另造镜像常量，必漂）、
@@ -140,7 +140,6 @@ function settingsFromUnknown(raw: Record<string, unknown>): AppSettings {
   const rateLimit = asRecord(raw.rate_limit);
   const model = asRecord(raw.model);
   const notify = asRecord(raw.notify);
-  const privacy = asRecord(raw.privacy);
   const storage = asRecord(raw.storage);
   const proxyRaw = raw.proxy;
   const proxy = typeof proxyRaw === 'object' && proxyRaw !== null ? asRecord(proxyRaw) : null;
@@ -178,25 +177,8 @@ function settingsFromUnknown(raw: Record<string, unknown>): AppSettings {
       on_risk: asBoolean(notify.on_risk),
       sound: asBoolean(notify.sound),
     },
-    // 🔴 这两段是 Plan B 先在 demo 里定的形状（Rust 侧尚无，差异 E-48）。
-    // 缺字段时回落**各自的默认值**而不是 false：`share_diagnostics` 默认关、其余三项默认开，
-    // 一律 `asBoolean` 会把"半包提交"静默变成"全部关掉上报"。
-    privacy: {
-      share_entity_card: asBooleanOr(privacy.share_entity_card, true),
-      share_prompts: asBooleanOr(privacy.share_prompts, true),
-      share_crawled_text: asBooleanOr(privacy.share_crawled_text, true),
-      share_diagnostics: asBooleanOr(privacy.share_diagnostics, false),
-    },
     storage: { last_export_dir: cleanOptional(storage.last_export_dir) },
   };
-}
-
-/**
- * 布尔字段带默认值的读取：**只有**"字段缺失/类型不对"才回落默认，`false` 是合法值。
- * 与 `asBoolean`（一律回落 false）的区别就是它存在的理由，见上面 `privacy` 那段的注释。
- */
-function asBooleanOr(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
 }
 
 /**

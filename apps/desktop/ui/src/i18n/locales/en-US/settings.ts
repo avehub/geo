@@ -38,17 +38,30 @@ const settings: ResourceBundle['settings'] = {
   },
 
   providerForm: {
+    provider: 'Model provider',
     baseUrl: 'Base URL',
     // 与 zh-CN 同批新增（#25）：值逐字相同——示例地址语言无关，搬进词典是为了不留硬编码界面文案。
     baseUrlPlaceholder: 'https://api.example.com/v1',
-    baseUrlHint: 'OpenAI-compatible service; must start with http:// or https://. Required.',
-    baseUrlReadonly: 'Base URL:',
-    defaultModel: 'Default model',
-    defaultModelHint:
-      'To use another model, fill in “Model name” below; leave blank to use the default model',
+    baseUrlHint:
+      'Prefilled with the official default. You can change it, for example to an enterprise gateway or proxy.',
+    baseUrlCustomHint: 'Required for a custom provider; must start with http:// or https://.',
+    defaultModelHintWithModel: 'Leave blank to use the default model {{model}}',
+    defaultModelHintCustom: 'A custom provider has no default model; enter a model name',
     protocol: 'Model protocol',
     protocolHint:
       'How a custom provider receives requests. The protocol of presets and relays is fixed by the backend.',
+  },
+
+  /**
+   * Copy for the “provider and connection” + “model settings” cards (2026-11-06 Feishu-style
+   * re-layout). The API key sits directly below the base URL so users do not have to click
+   * “Fetch model list” before learning that no key is configured.
+   */
+  modelForm: {
+    connectionDesc: 'Choose a provider, then fill in the base URL and API key.',
+    apiKey: 'API Key',
+    apiKeyHint: 'Fetching the model list and testing the connection both use the key saved here.',
+    modelDesc: 'Enter a model name, or fetch the available models from the provider.',
   },
 
   /**
@@ -63,6 +76,8 @@ const settings: ResourceBundle['settings'] = {
     resultPreset: 'Fetched {{total}} preset model names',
     resultUpstream: 'Fetched {{total}} model names from the endpoint',
     empty: 'No model names were returned. The demo never calls external endpoints; for a custom provider, type the model name yourself.',
+    hintLive: 'Fetches the model names available for the current provider, protocol and base URL.',
+    emptyLive: 'No model names were returned. Check the provider configuration, or type the model name yourself.',
     keepTyped: 'A failed fetch keeps the model name you already typed.',
   },
 
@@ -76,6 +91,7 @@ const settings: ResourceBundle['settings'] = {
 
   secret: {
     reading: 'Loading',
+    readFailed: 'Could not read the keychain status',
     configured: 'Configured',
     notConfigured: 'Not configured',
     placeholder: 'Enter the API key',
@@ -164,13 +180,7 @@ const settings: ResourceBundle['settings'] = {
     systemTitle: 'System permissions',
     openSystemSettings: 'Open System Settings',
     desktopOnly: 'System permissions are requested by the desktop app; they are not available in the demo.',
-    privacyTitle: 'Data sharing',
-    privacyHint:
-      'Controls what may leave this machine when diagnostics are shared. Turning an item off keeps it local.',
-    share_entity_card: 'Share the brand entity card',
-    share_prompts: 'Share prompt libraries',
-    share_crawled_text: 'Share crawled page text',
-    share_diagnostics: 'Share diagnosis results',
+    liveHint: 'System permissions are managed by the operating system; one-click navigation ships in a later release.',
   },
 
   /** 系统权限名（`Permissions` 的三个键）。不是 enumLabel 命名空间：键名来自契约，逐条显式 `t()`。 */
@@ -195,9 +205,12 @@ const settings: ResourceBundle['settings'] = {
     exportDirNone: 'Nothing has been exported yet',
     migrations: 'Migrations applied',
     openDir: 'Open folder',
+    openFailed: 'Could not open the folder',
+    changeDirLater: 'Changing the data folder will be available in a later version.',
     changeDir: 'Change folder',
     desktopOnly: 'Folder actions are provided by the desktop app and are unavailable in the demo.',
     hint: 'The demo neither reads nor writes the disk. These are the locations the desktop app will use, with a sample size.',
+    liveHint: 'These are the real data, database and log locations on this machine.',
   },
 
   /**
@@ -218,13 +231,19 @@ const settings: ResourceBundle['settings'] = {
     loadFailed: 'Failed to read the settings',
     environmentFailed: 'Failed to read the local environment',
     saved: 'Settings saved. Proxy and timeout changes take effect after the app restarts.',
-    modelCard: 'Model provider',
+    modelCard: 'Provider and connection',
+    modelConfigCard: 'Model settings',
     modelName: 'Model name',
     modelNamePlaceholder: 'Leave blank to use the default model',
+    modelNameRequired:
+      'A custom provider requires a model name; otherwise AI features such as auto-build will fall back.',
     temperature: 'Temperature',
     timeoutSeconds: 'Timeout (seconds)',
     proxyCard: 'Network proxy',
     crawlerCard: 'Crawler concurrency and rate limits',
+    searchKeyCard: 'Metaso search API key',
+    searchKeyHint:
+      'Metaso charges per query. The key is stored in the system keychain only; Kimi, Doubao, Qwen and Baidu reuse the model provider key above.',
     crawlerHint:
       'These values feed the P0-B crawl queue. The defaults are deliberately conservative: the goal is to avoid being blocked by the engines, not to run fast.',
     maxParallel: 'Max parallelism',

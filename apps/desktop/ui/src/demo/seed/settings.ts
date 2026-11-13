@@ -50,17 +50,6 @@ export const SEED_SETTINGS: DemoSettings = {
     },
     language: 'zh_cn',
     notify: { on_finish: true, on_risk: true, sound: false },
-    /**
-     * 🔴 这两段**不是** Rust 默认值的镜像（`crates/geo-store/src/settings.rs` 里根本没有它们）：
-     * 隐私开关与导出目录是 Plan B 先在 demo 里定的形状，落库要等 Plan C（差异 E-48）。
-     * 默认值刻意保守：只有"诊断结果上报"默认关（它含竞品与归因语料，四项里最敏感）。
-     */
-    privacy: {
-      share_entity_card: true,
-      share_prompts: true,
-      share_crawled_text: true,
-      share_diagnostics: false,
-    },
     storage: { last_export_dir: null },
   },
   providers: [

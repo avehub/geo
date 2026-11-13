@@ -18,6 +18,8 @@ import { renderAtRoute } from '../../test/render';
 import { PROVIDERS, makeAppSettings } from '../../test/fixtures';
 import { resetPreferencesStore, usePreferences } from '../../store/preferences';
 import type { AppEnvironment, AppSettings } from '../../api/types';
+import zhCN from '../../i18n/locales/zh-CN';
+import enUS from '../../i18n/locales/en-US';
 
 const SETTINGS = makeAppSettings();
 
@@ -153,37 +155,51 @@ describe('设置 · 通用段', () => {
     expect(screen.getByRole('heading', { name: '通用' })).toBeInTheDocument();
   });
 
-  it('隐私开关默认 true / true / true / false，关掉一项就随整包写库', async () => {
+  it('数据外发预留开关组已按 2026-11-13 裁定摘除（无执行点，避免误导）', async () => {
     stub();
     const user = userEvent.setup();
     renderGeneral();
     await screen.findByRole('heading', { name: '通用' });
 
-    expect(screen.getByLabelText('上报品牌实体卡')).toBeChecked();
-    expect(screen.getByLabelText('上报 Prompt 题库')).toBeChecked();
-    expect(screen.getByLabelText('上报抓取的网页正文')).toBeChecked();
-    expect(screen.getByLabelText('上报诊断结果')).not.toBeChecked();
+    for (const item of [
+      'share_entity_card',
+      'share_prompts',
+      'share_crawled_text',
+      'share_diagnostics',
+    ]) {
+      expect(document.getElementById(`settings-privacy-${item}`)).toBeNull();
+    }
 
-    await user.click(screen.getByLabelText('上报 Prompt 题库'));
+    // 写库 payload 里也不应再出现 privacy 段
+    await user.click(screen.getByLabelText(zhCN.settings.proxy.enable));
     const saved = await lastSaved();
-    expect(saved.privacy).toEqual({
-      share_entity_card: true,
-      share_prompts: false,
-      share_crawled_text: true,
-      share_diagnostics: false,
-    });
+    expect(saved).not.toHaveProperty('privacy');
   });
 
-  it('🔴 旧版 settings_get 缺 privacy / storage 时按默认值归一化，不白屏', async () => {
+  it('🔴 旧版 settings_get 缺 storage 时按默认值归一化，不白屏', async () => {
     stub();
-    const { privacy: _privacy, storage: _storage, ...legacy } = SETTINGS;
+    const { storage: _storage, ...legacy } = SETTINGS;
     mockInvoke.stubAlways('settings_get', () => legacy as unknown as AppSettings);
     renderGeneral();
     await screen.findByRole('heading', { name: '通用' });
+  });
 
-    expect(screen.getByLabelText('上报品牌实体卡')).toBeChecked();
-    expect(screen.getByLabelText('上报 Prompt 题库')).toBeChecked();
-    expect(screen.getByLabelText('上报诊断结果')).not.toBeChecked();
+  it('🔴 更旧库里的 settings JSON 仍带 privacy 段时也能正常渲染（前向兼容）', async () => {
+    stub();
+    mockInvoke.stubAlways('settings_get', () =>
+      ({
+        ...SETTINGS,
+        privacy: {
+          share_entity_card: true,
+          share_prompts: true,
+          share_crawled_text: true,
+          share_diagnostics: false,
+        },
+      }) as unknown as AppSettings,
+    );
+    renderGeneral();
+    await screen.findByRole('heading', { name: '通用' });
+    expect(document.getElementById('settings-privacy-share_prompts')).toBeNull();
   });
 
   it('🔴 app_environment 失败时权限卡显示错误，而不是永远停在加载中', async () => {
@@ -195,7 +211,7 @@ describe('设置 · 通用段', () => {
     expect(screen.queryByText('当前环境不支持')).not.toBeInTheDocument();
   });
 
-  it('🔴 权限三项显示「当前环境不支持」，「去系统设置」置灰并说明由桌面端提供', async () => {
+  it('🔴 权限三项显示「当前环境不支持」，「去系统设置」置灰并说明由操作系统管理', async () => {
     stub();
     renderGeneral();
     // 权限三项来自 `app_environment`（另一个 query）：不等它落地就会扫到"加载中"那一支。
@@ -214,7 +230,7 @@ describe('设置 · 通用段', () => {
     });
     expect(button).toBeDisabled();
     expect(
-      within(card).getByText('系统权限由桌面端申请，演示模式下不可用。'),
+      within(card).getByText('系统权限由操作系统管理；一键跳转将在后续版本提供。'),
     ).toBeInTheDocument();
   });
 
@@ -253,5 +269,33 @@ describe('设置 · 通用段', () => {
     expect(screen.getByLabelText('界面语言')).toBeInTheDocument();
     expect(screen.getByLabelText('生成内容语言')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '去系统设置' })).toBeDisabled();
+  });
+
+  /**
+   * 🔴 防回归（2026-11-11）：这组开关**没有任何执行点**。
+   *
+   * `PrivacyConfig` 的四个 `share_*` 字段只在 `geo-store/src/settings.rs`（定义/读写）、
+   * `api/types.ts`、`test/fixtures.ts` 与本组件的渲染里出现，**没有任何业务代码读取它们**；
+   * 而全仓不存在遥测 / 埋点 / 崩溃上报（连 `tauri-plugin-log` 都有测试钉住不许重新引入）。
+   * 原文案「控制哪些数据在**上报诊断**时允许离开本机」因此描述了一条不存在的通道，
+裁定（2026-11-13 产品决定）：选 ① 摘除——开关组与词典键两侧全删，
+   * 老库 JSON 仍带 privacy 段时按 serde 忽略（前向兼容测试守护）。
+   * 详见 docs/superpowers/specs/2026-11-10-release-signing-distribution-design.md §9 第 13 项。
+   */
+  it('🔴 数据外发开关组按 2026-11-13 裁定①摘除：zh-CN / en-US 词典键同步删除', () => {
+    const zhCard = zhCN.settings.permissionsCard as Record<string, unknown>;
+    const enCard = enUS.settings.permissionsCard as Record<string, unknown>;
+    for (const key of [
+      'privacyTitle',
+      'privacyReservedTag',
+      'privacyHint',
+      'share_entity_card',
+      'share_prompts',
+      'share_crawled_text',
+      'share_diagnostics',
+    ]) {
+      expect(zhCard[key], `zh-CN 不应再含 ${key}`).toBeUndefined();
+      expect(enCard[key], `en-US 不应再含 ${key}`).toBeUndefined();
+    }
   });
 });

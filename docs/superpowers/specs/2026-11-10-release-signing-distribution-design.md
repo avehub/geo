@@ -446,6 +446,9 @@ MSIX（`release.yml` 的 `msix` job），**不需要任何 secret / variable**�
     （全仓无遥测）。对外发布时这构成误导。
     **发布前二选一**：① 摘掉这组开关与文案；② 保留但把文案改成「预留设置，当前版本不生效」。
     走 i18n 词典、zh-CN 与 en-US 同步、demo 先定稿（规则 7 / 8）。
+   **✅ 2026-11-13 产品裁定选 ①（摘除）**：开关组、`PrivacyConfig` DTO、demo seed、词典键
+   （zh-CN / en-US）两侧全删；老库 JSON 仍带 `privacy` 段时 serde 忽略（前向兼容测试守护）；
+   UI 测试改为断言不存在；隐私政策 §7.4 同步改写为「没有全局数据外发开关」。
 14. **`repo` 通道文案过度承诺**：`i18n/locales/zh-CN/common.ts:133` 写「填仓库地址后可生成 diff
     与交接说明」，但 `api/site-compose.ts` 只实现 bundle / llms_txt / robots_txt / patches_json /
     edge_worker 五种产物，**没有 repo diff 生成器**。法务文档已按现状写（未把「可生成 diff」写进协议），

@@ -39,12 +39,6 @@ export function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettin
     },
     language: 'zh_cn',
     notify: { on_finish: true, on_risk: true, sound: false },
-    privacy: {
-      share_entity_card: true,
-      share_prompts: true,
-      share_crawled_text: true,
-      share_diagnostics: false,
-    },
     storage: { last_export_dir: null },
     ...overrides,
   };

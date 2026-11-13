@@ -503,13 +503,6 @@ export interface NotifyConfig {
  * 因为它含竞品与归因语料，是四项里最敏感的。
  * 🔴 Rust 侧今天没有这一段（demo 先行），差异登记进 E-48。
  */
-export interface PrivacyConfig {
-  share_entity_card: boolean;
-  share_prompts: boolean;
-  share_crawled_text: boolean;
-  share_diagnostics: boolean;
-}
-
 /** 与存储相关的**可写**偏好（只读事实走 `app_environment`，见 `types-app.ts`）。 */
 export interface StorageConfig {
   /** 上次导出用的目录；从没导出过是 `null`。 */
@@ -523,8 +516,6 @@ export interface AppSettings {
   model: ModelConfig;
   language: string;
   notify: NotifyConfig;
-  /** Plan B 新增两段（🔴 Rust 侧尚无，差异 E-48）。 */
-  privacy: PrivacyConfig;
   storage: StorageConfig;
 }
 

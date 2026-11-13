@@ -36,6 +36,31 @@ else
   G=""; Y=""; R=""; B=""; D=""; N=""
 fi
 FAILS=0; CHECKED=0
+
+# stapler validate 会向 api.apple-cloudkit.com 做票据在线核验；
+# 大陆网络到 CloudKit 间歇超时（实测 NSURLErrorDomain -1001），单次调用会误报
+# 「票据未装订」。重试 + 退避，避免把网络抖动判成发布缺陷。
+# ⚠ 只有 Command Line Tools（无完整 Xcode）的机器上，/usr/bin/stapler 是要求 Xcode 的
+# 桩（stub），直接调用必报 "tool 'stapler' requires Xcode"；真工具要经 xcrun 解析到
+# CLT 里。2026-11-13 实测：裸 stapler 让本机票据核验**必败**，xcrun stapler 正常。
+if command -v xcrun >/dev/null 2>&1; then
+  STAPLER=(xcrun stapler)
+elif command -v stapler >/dev/null 2>&1; then
+  STAPLER=(stapler)
+else
+  STAPLER=()
+fi
+
+stapler_validate() {
+  local target="$1" i
+  [[ ${#STAPLER[@]} -gt 0 ]] || return 2
+  for i in 1 2 3 4; do
+    if "${STAPLER[@]}" validate "$target" >/dev/null 2>&1; then return 0; fi
+    sleep 6
+  done
+  return 1
+}
+
 pass() { printf '    %s✓%s %s\n' "$G" "$N" "$1"; }
 fail() { printf '    %s✗%s %s\n' "$R" "$N" "$1"; FAILS=$((FAILS + 1)); }
 warn() { printf '    %s⚠%s %s\n' "$Y" "$N" "$1"; }
@@ -98,14 +123,14 @@ verify_mac_app() {
     fi
   fi
 
-  if command -v stapler >/dev/null 2>&1; then
-    if stapler validate "$app" >/dev/null 2>&1; then
-      pass "stapler validate 通过（公证票据已装订，离线可验证）"
+  if [[ ${#STAPLER[@]} -gt 0 ]]; then
+    if stapler_validate "$app"; then
+      pass "stapler validate 通过（公证票据已装订；含 CloudKit 在线核验，已带重试）"
     else
-      fail "stapler validate 失败 —— 公证票据未装订。可用 --skip-stapling 构建导致，正式发布不可跳过"
+      fail "stapler validate 失败（4 次重试后）—— 公证票据未装订或 CloudKit 持续不可达；前者正式发布不可接受，后者换网络重跑"
     fi
   else
-    warn "无 stapler（Xcode CLT 未装？），跳过票据核验"
+    warn "无 stapler / xcrun（Xcode CLT 未装？），跳过票据核验"
   fi
 
   printf '    %sSHA-256%s 见对应 .dmg；.app 目录本身不单独出校验值\n' "$D" "$N"
@@ -123,10 +148,10 @@ verify_mac_dmg() {
   else
     warn "DMG 本身未签名（Tauri 默认只签 .app；Gatekeeper 靠 .app 的公证票据放行，通常可接受）"
   fi
-  if command -v stapler >/dev/null 2>&1; then
-    stapler validate "$dmg" >/dev/null 2>&1 \
-      && pass "DMG staple 票据有效" \
-      || fail "DMG staple 票据无效/缺失"
+  if [[ ${#STAPLER[@]} -gt 0 ]]; then
+    stapler_validate "$dmg" \
+      && pass "DMG staple 票据有效（含 CloudKit 在线核验，已带重试）" \
+      || fail "DMG staple 票据无效/缺失（4 次重试后；若 CloudKit 持续不可达请换网络重跑）"
   fi
   if command -v spctl >/dev/null 2>&1; then
     sp="$(spctl -a -vvv -t open --context context:primary-signature "$dmg" 2>&1 || true)"

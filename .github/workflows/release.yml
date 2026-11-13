@@ -125,7 +125,8 @@ jobs:
           # 重跑同一个 tag 时复用已有 Release，不重复创建
           # ⚠ gh 的 .id 是 GraphQL node id（RE_kwDO…），tauri-action 只认数字 REST id，
           # 传错会被静默跳过上传（2026-11-13 实测：Release 缺安装包、发布 job 判缺产物）。
-          if EXISTING="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .id 2>/dev/null)"; then
+          # 注意：REST releases/tags/{tag} 不返回 draft，必须走 releases 列表按 tag_name 找
+          if EXISTING="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq ".[] | select(.tag_name==\"${TAG}\") | .id" 2>/dev/null | head -n1)" && [[ -n "$EXISTING" ]]; then
             echo "复用已存在的 Release $TAG（id=$EXISTING）"
             echo "release_id=$EXISTING" >> "$GITHUB_OUTPUT"
             exit 0
@@ -140,7 +141,7 @@ jobs:
             --notes-file "$RUNNER_TEMP/notes.md" \
             --target "${GITHUB_SHA}"
 
-          ID="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .id)"
+          ID="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq ".[] | select(.tag_name==\"${TAG}\") | .id" | head -n1)"
           [[ -n "$ID" && "$ID" != "null" ]] || { echo "::error::拿不到 release id"; exit 1; }
           echo "release_id=$ID" >> "$GITHUB_OUTPUT"
           echo "已创建 draft Release $TAG（id=$ID）"

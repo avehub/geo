@@ -11,25 +11,33 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use geo_crawler::{CrawlerError, SiteFetcher};
 use geo_domain::{
-    channel_secret_ref, channel_status, page_from_asset, CheckDetail, ProjectId, SiteChannel,
-    SiteChannelId, SiteChannelKind, SiteChannelStatus, SiteOwnership, SitePage, SitePatch,
-    SitePlatform, SiteProfile, SiteProfileId,
+    channel_secret_ref, channel_status, page_from_asset, ActionBoard, ActionCategory, CheckDetail,
+    ProjectId, SiteChannel, SiteChannelId, SiteChannelKind, SiteChannelStatus, SiteOwnership,
+    SitePage, SitePatch, SitePatchKind, SitePlatform, SiteProfile, SiteProfileId,
 };
-use geo_store::{AssetRepo, ProjectRepo, SitePatchRepo, SiteRepo};
+use geo_store::{AssetRepo, DiagnosisRepo, ProjectRepo, SitePatchRepo, SiteRepo, StoreError};
 use serde::Serialize;
 use sqlx::SqlitePool;
 
 use crate::error::IpcError;
 use crate::state::AppState;
 
-/// `site_board` 的聚合返回。补丁台账尚未落 Rust，`patches` / `pool` 本轮恒为空数组。
+/// 生成池目录项；字段与前端 `SitePatchPoolEntry` 逐字一致。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SitePatchPoolEntry {
+    pub action_id: String,
+    pub kind: SitePatchKind,
+    pub title: String,
+}
+
+/// `site_board` 的聚合返回。`pool` 由行动看板按处方类别投影得到。
 #[derive(Debug, Clone, Serialize)]
 pub struct SiteBoard {
     pub profile: Option<SiteProfile>,
     pub pages: Vec<SitePage>,
     pub channels: Vec<SiteChannel>,
     pub patches: Vec<SitePatch>,
-    pub pool: Vec<serde_json::Value>,
+    pub pool: Vec<SitePatchPoolEntry>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +71,22 @@ impl SiteService {
         SitePatchRepo::new(self.pool.clone())
     }
 
+    async fn action_board(&self, project_id: ProjectId) -> Result<ActionBoard, IpcError> {
+        let payload = DiagnosisRepo::new(self.pool.clone())
+            .action_board(&project_id.to_string())
+            .await?;
+        match payload {
+            Some(payload) => Ok(serde_json::from_str(&payload)
+                .map_err(|error| IpcError::from(StoreError::Serde(error)))?),
+            None => Ok(ActionBoard {
+                actions: Vec::new(),
+                attribution: Vec::new(),
+                contents: Vec::new(),
+                templates: Vec::new(),
+            }),
+        }
+    }
+
     async fn require_project(
         &self,
         project_id: ProjectId,
@@ -79,12 +103,13 @@ impl SiteService {
             .iter()
             .filter_map(page_from_asset)
             .collect();
+        let board = self.action_board(project_id).await?;
         Ok(SiteBoard {
             profile: self.sites().profile(project_id).await?,
             pages,
             channels: self.sites().channels(project_id).await?,
             patches: self.patches().list_by_project(project_id).await?,
-            pool: Vec::new(),
+            pool: build_patch_pool(&board),
         })
     }
 
@@ -267,6 +292,62 @@ impl SiteService {
         self.sites().save_channel(&channel).await?;
         Ok(channel)
     }
+}
+
+/// 处方类别 → 可生成的补丁类型（顺序即界面展示顺序）。
+///
+/// `SourceLayout` 落在站外平台（百科 / 行业媒体 / B2B 平台），按 DR-46 不进补丁台账。
+fn patch_kinds_for(category: ActionCategory) -> &'static [SitePatchKind] {
+    match category {
+        ActionCategory::SiteStructure => &[
+            SitePatchKind::LlmsTxt,
+            SitePatchKind::RobotsTxt,
+            SitePatchKind::Jsonld,
+            SitePatchKind::HtmlFragment,
+        ],
+        ActionCategory::FactCorrection => &[
+            SitePatchKind::EntityConsistency,
+            SitePatchKind::HtmlFragment,
+        ],
+        ActionCategory::ContentProduction => &[
+            SitePatchKind::HtmlFragment,
+            SitePatchKind::MetaTitle,
+            SitePatchKind::MetaDescription,
+        ],
+        ActionCategory::SourceLayout => &[],
+    }
+}
+
+fn patch_kind_label(kind: SitePatchKind) -> &'static str {
+    match kind {
+        SitePatchKind::LlmsTxt => "llms.txt",
+        SitePatchKind::RobotsTxt => "robots.txt",
+        SitePatchKind::Jsonld => "JSON-LD",
+        SitePatchKind::HtmlFragment => "页面片段",
+        SitePatchKind::MetaTitle => "标题",
+        SitePatchKind::MetaDescription => "描述",
+        SitePatchKind::Canonical => "canonical",
+        SitePatchKind::AltText => "图片替代文本",
+        SitePatchKind::InternalLink => "内链",
+        SitePatchKind::EntityConsistency => "实体口径",
+    }
+}
+
+fn build_patch_pool(board: &ActionBoard) -> Vec<SitePatchPoolEntry> {
+    board
+        .actions
+        .iter()
+        .flat_map(|action| {
+            patch_kinds_for(action.category)
+                .iter()
+                .copied()
+                .map(move |kind| SitePatchPoolEntry {
+                    action_id: action.id.clone(),
+                    kind,
+                    title: format!("{} · {}", action.title, patch_kind_label(kind)),
+                })
+        })
+        .collect()
 }
 
 fn crawler_reason(error: &CrawlerError) -> (&'static str, Option<String>) {

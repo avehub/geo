@@ -103,6 +103,9 @@ pub enum SearchIngestMode {
 pub enum SearchBindingField {
     SiteUrl,
     SiteId,
+    /// GSC / Bing 的 OAuth 客户端 ID。它是**非敏感**的应用标识（不是 secret），
+    /// 与 `siteUrl` 一样属于项目级绑定；client secret 才进钥匙串。
+    ClientId,
 }
 
 impl SearchBindingField {
@@ -110,6 +113,7 @@ impl SearchBindingField {
         match self {
             Self::SiteUrl => "siteUrl",
             Self::SiteId => "siteId",
+            Self::ClientId => "client_id",
         }
     }
 }
@@ -146,6 +150,8 @@ const TONGJI_MODES: &[SearchIngestMode] = &[
 const MANUAL_MODES: &[SearchIngestMode] = &[SearchIngestMode::ManualEntry];
 const SITE_URL: &[SearchBindingField] = &[SearchBindingField::SiteUrl];
 const SITE_ID: &[SearchBindingField] = &[SearchBindingField::SiteId];
+const OAUTH_BINDING: &[SearchBindingField] =
+    &[SearchBindingField::SiteUrl, SearchBindingField::ClientId];
 const NO_BINDING: &[SearchBindingField] = &[];
 
 pub static SEARCH_CATALOG: &[SearchSourceCatalog] = &[
@@ -183,7 +189,7 @@ pub static SEARCH_CATALOG: &[SearchSourceCatalog] = &[
         phase: 1,
         auth_mode: SearchAuthMode::Oauth,
         ingest_modes: GLOBAL_MODES,
-        binding_fields: SITE_URL,
+        binding_fields: OAUTH_BINDING,
     },
     SearchSourceCatalog {
         kind: SearchSourceKind::BingWmt,
@@ -192,6 +198,8 @@ pub static SEARCH_CATALOG: &[SearchSourceCatalog] = &[
         phase: 1,
         auth_mode: SearchAuthMode::Oauth,
         ingest_modes: GLOBAL_MODES,
+        // Bing 用官方 API Key（钥匙串里的 `keyring://llm/bing_wmt`），
+        // 只需要站点地址；不再要求 OAuth 的 client_id。
         binding_fields: SITE_URL,
     },
     SearchSourceCatalog {
@@ -319,6 +327,39 @@ mod tests {
         }
         assert_eq!(SearchSourceKind::Sogou.catalog().phase, 2);
         assert_eq!(SearchSourceKind::So360.catalog().phase, 2);
+    }
+
+    #[test]
+    fn only_gsc_requires_an_oauth_client_id() {
+        // Bing 改走官方 API Key（它的 OAuth 控制台不接受 loopback 回调地址），
+        // 所以只剩 GSC 需要非敏感的 client_id 绑定。
+        assert_eq!(
+            SearchSourceKind::Gsc.catalog().binding_fields,
+            &[SearchBindingField::SiteUrl, SearchBindingField::ClientId],
+            "GSC 的 OAuth 需要非敏感的 client_id 绑定"
+        );
+        assert_eq!(
+            SearchSourceKind::BingWmt.catalog().binding_fields,
+            &[SearchBindingField::SiteUrl],
+            "Bing 只需要站点地址，凭据是钥匙串里的 API Key"
+        );
+        assert_eq!(
+            SearchBindingField::ClientId.as_str(),
+            "client_id",
+            "OAuth 的 client_id 是非敏感绑定键，与目录表 / 抽屉字段名逐字一致"
+        );
+        for kind in SearchSourceKind::all() {
+            if kind != SearchSourceKind::Gsc {
+                assert!(
+                    !kind
+                        .catalog()
+                        .binding_fields
+                        .contains(&SearchBindingField::ClientId),
+                    "{} 不应要求 client_id",
+                    kind.as_str()
+                );
+            }
+        }
     }
 
     #[test]

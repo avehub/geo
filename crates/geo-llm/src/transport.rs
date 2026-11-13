@@ -16,10 +16,7 @@ use sha2::{Digest, Sha256};
 /// fixture key 的十六进制长度：`sha256(url + body)` 取前 16 位。
 const FIXTURE_KEY_HEX_LEN: usize = 16;
 
-/// 一次 HTTP 请求的最小描述。
-///
-/// API Key 只出现在 `headers` 里，因此 [`Debug`] 是手写实现：敏感头一律打码，
-/// 即使上层把整个结构体丢进 `tracing::debug!` 或 panic 消息也不会漏密钥。
+/// HTTP 方法。当前只需要 GET / POST。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HttpMethod {
     Get,
@@ -36,6 +33,14 @@ impl HttpMethod {
     }
 }
 
+/// 一次 HTTP 请求的最小描述。
+///
+/// 🔴 密钥**不只在 `headers` 里**：Bing Webmaster 官方推荐的认证方式就是把 API Key 放进
+/// `?apikey=…` 查询参数（见 `search_oauth.rs::fetch_bing_metrics`），别的接口也可能带
+/// `key` / `token` / `access_token`。因此 [`Debug`] 是手写实现：敏感请求头**和** URL 查询串里
+/// 的敏感参数值一律打码，即使上层把整个结构体丢进 `tracing::debug!` 或 panic 消息也不漏密钥。
+///
+/// 打码只作用于 `Debug` 视图：`url` / `headers` 字段本身仍是真实值，请求照原样发出去。
 #[derive(Clone, PartialEq, Eq)]
 pub struct HttpRequest {
     pub method: HttpMethod,
@@ -56,6 +61,53 @@ fn is_secret_header(name: &str) -> bool {
     SECRET_HEADERS
         .iter()
         .any(|secret| name.eq_ignore_ascii_case(secret))
+}
+
+/// 需要在 URL 查询串里打码的参数名（**整段**、大小写不敏感比对）。
+///
+/// 整段比对是刻意的：`monkey=` / `keyboard=` 这类形近参数不能被误伤，否则排查时
+/// 连真正的入参都看不见。
+const SECRET_QUERY_PARAMS: [&str; 4] = ["apikey", "key", "token", "access_token"];
+
+fn is_secret_query_param(name: &str) -> bool {
+    SECRET_QUERY_PARAMS
+        .iter()
+        .any(|secret| name.eq_ignore_ascii_case(secret))
+}
+
+/// 把 URL 查询串里的敏感参数值换成 `***`：参数名、其它参数与 fragment 原样保留。
+///
+/// 没有敏感参数时返回 `None`，`Debug` 直接渲染原串，不做无谓分配。
+fn mask_secret_query(url: &str) -> Option<String> {
+    let (base, query) = url.split_once('?')?;
+    let mut masked_query = String::with_capacity(query.len());
+    let mut changed = false;
+    for (index, param) in query.split('&').enumerate() {
+        if index > 0 {
+            masked_query.push('&');
+        }
+        match param.split_once('=') {
+            Some((name, _)) if is_secret_query_param(name) => {
+                changed = true;
+                masked_query.push_str(name);
+                masked_query.push_str("=***");
+            }
+            _ => masked_query.push_str(param),
+        }
+    }
+    changed.then(|| format!("{base}?{masked_query}"))
+}
+
+/// 只服务于 `Debug` 的 URL 视图：查询串里的敏感参数值换成 `***`。
+struct MaskedUrl<'a>(&'a str);
+
+impl fmt::Debug for MaskedUrl<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match mask_secret_query(self.0) {
+            Some(masked) => fmt::Debug::fmt(masked.as_str(), f),
+            None => fmt::Debug::fmt(self.0, f),
+        }
+    }
 }
 
 /// 只服务于 `Debug` 的请求头视图：敏感值换成 `***`，头名保留以便排查。
@@ -79,7 +131,7 @@ impl fmt::Debug for HttpRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HttpRequest")
             .field("method", &self.method)
-            .field("url", &self.url)
+            .field("url", &MaskedUrl(&self.url))
             .field("headers", &MaskedHeaders(&self.headers))
             .field("body", &self.body)
             .finish()
@@ -248,14 +300,60 @@ impl Transport for ReqwestTransport {
 }
 
 /// reqwest 错误归一化：超时单独成类，便于上层区分「重试」与「换网络」。
+///
+/// 🔴 错误串里可能嵌着**完整 URL**（reqwest 的 Display 形如
+/// `error sending request for url (https://…?siteUrl=a&apikey=SECRET)`），而
+/// `client.rs` 会把 `TransportError` 写进滚动日志 ⇒ 进日志前必须抹掉查询串里的凭据值。
 fn map_reqwest_error(err: reqwest::Error) -> TransportError {
     if err.is_timeout() {
         return TransportError::Timeout;
     }
+    let masked = mask_secret_params(&err.to_string());
     if err.is_connect() || err.is_request() {
-        return TransportError::Network(err.to_string());
+        return TransportError::Network(masked);
     }
-    TransportError::Other(err.to_string())
+    TransportError::Other(masked)
+}
+
+/// 抹掉文本里 `apikey=` / `key=` / `token=` / `access_token=` 的参数值（保留参数名）。
+///
+/// 值跑到 `&`、`)`、空白、引号或串尾为止；与 [`MaskedUrl`] 同一口径，但作用于
+/// **任意错误文本**（reqwest 把 URL 嵌在句子里，拿不到 `Url` 对象）。
+fn mask_secret_params(text: &str) -> String {
+    const PARAMS: [&str; 4] = ["apikey=", "key=", "token=", "access_token="];
+    let lower: Vec<char> = text.chars().flat_map(|c| c.to_lowercase()).collect();
+    let chars: Vec<char> = text.chars().collect();
+    let mut output = String::with_capacity(text.len());
+    let mut index = 0;
+    while index < chars.len() {
+        // 最长优先匹配，避免 `access_token=` 被 `key=`/`token=` 抢先截断
+        let hit = PARAMS
+            .iter()
+            .filter(|param| {
+                let needle: Vec<char> = param.chars().collect();
+                lower.len() >= index + needle.len()
+                    && lower[index..index + needle.len()] == needle[..]
+            })
+            .max_by_key(|param| param.len());
+        match hit {
+            Some(param) => {
+                output.push_str(param);
+                let value_start = index + param.chars().count();
+                let end = (value_start..chars.len())
+                    .find(|position| matches!(chars[*position], '&' | ')' | '"' | '\'' | ' '))
+                    .unwrap_or(chars.len());
+                if end > value_start {
+                    output.push_str("***");
+                }
+                index = end;
+            }
+            None => {
+                output.push(chars[index]);
+                index += 1;
+            }
+        }
+    }
+    output
 }
 
 /// 同一 key 的录制响应：单条时重复回放，多条时按调用顺序播放并停在最后一条。
@@ -424,6 +522,103 @@ mod tests {
         );
     }
 
+    /// P2-06：Bing 官方推荐的认证方式是把 API Key 放进 `?apikey=…` 查询参数
+    /// （见 `search_oauth.rs::fetch_bing_metrics`），所以 `url` 也必须打码，
+    /// 不能只打码头。
+    #[test]
+    fn debug_output_masks_secret_query_params_in_the_url() {
+        let req = HttpRequest {
+            method: HttpMethod::Get,
+            url: "https://x/?siteUrl=a&apikey=SECRET123".to_string(),
+            headers: Vec::new(),
+            body: String::new(),
+        };
+        let rendered = format!("{req:?}");
+        assert!(!rendered.contains("SECRET123"), "{rendered}");
+        assert!(
+            !format!("{req:#?}").contains("SECRET123"),
+            "pretty Debug 同样不得回显密钥"
+        );
+        // 排查仍需要看得见「带了哪些参数」：非敏感参数原样保留，敏感参数只留名字
+        assert!(rendered.contains("siteUrl=a"), "{rendered}");
+        assert!(rendered.contains("apikey="), "{rendered}");
+        // 🔴 脱敏只作用于 Debug 视图：真正发出去的 URL 仍然带着 Key
+        assert!(req.url.contains("apikey=SECRET123"), "{:?}", req.url);
+    }
+
+    #[test]
+    fn debug_output_masks_every_secret_query_param_name() {
+        let cases = [
+            (
+                "https://api.example.com/v1?siteUrl=a&key=KEY-SECRET",
+                "KEY-SECRET",
+            ),
+            ("https://api.example.com/v1?token=TOK-SECRET", "TOK-SECRET"),
+            (
+                "https://api.example.com/v1?access_token=AT-SECRET&x=1",
+                "AT-SECRET",
+            ),
+            // 参数名大小写不敏感
+            ("https://api.example.com/v1?APIKEY=UP-SECRET", "UP-SECRET"),
+            (
+                "https://api.example.com/v1?ApiKey=Mixed-SECRET",
+                "Mixed-SECRET",
+            ),
+            // 同名参数出现多次
+            ("https://api.example.com/v1?apikey=S1&apikey=S2", "S1"),
+        ];
+        for (url, secret) in cases {
+            let req = HttpRequest {
+                method: HttpMethod::Get,
+                url: url.to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            };
+            let rendered = format!("{req:?}");
+            assert!(!rendered.contains(secret), "{url} -> {rendered}");
+            assert!(rendered.contains("***"), "{url} -> {rendered}");
+        }
+        // 双份同名参数两份都要打码
+        let both = format!(
+            "{:?}",
+            HttpRequest {
+                method: HttpMethod::Get,
+                url: "https://api.example.com/v1?apikey=S1&apikey=S2".to_string(),
+                headers: Vec::new(),
+                body: String::new(),
+            }
+        );
+        assert!(!both.contains("S2"), "{both}");
+    }
+
+    /// 参数名是**整段**比对：形近的名字（`monkey` / `keyboard`）不能被误伤，
+    /// 否则排查时看不到真正的入参。
+    #[test]
+    fn debug_output_keeps_lookalike_params_visible() {
+        let req = HttpRequest {
+            method: HttpMethod::Get,
+            url: "https://api.example.com/v1?monkey=plain&keyboard=layout&keys=1".to_string(),
+            headers: Vec::new(),
+            body: String::new(),
+        };
+        let rendered = format!("{req:?}");
+        assert!(rendered.contains("monkey=plain"), "{rendered}");
+        assert!(rendered.contains("keyboard=layout"), "{rendered}");
+        assert!(rendered.contains("keys=1"), "{rendered}");
+    }
+
+    #[test]
+    fn debug_output_leaves_urls_without_secret_params_untouched() {
+        let url = "https://api.example.com/v1/chat/completions?model=deepseek-chat";
+        let req = HttpRequest {
+            method: HttpMethod::Get,
+            url: url.to_string(),
+            headers: Vec::new(),
+            body: String::new(),
+        };
+        assert!(format!("{req:?}").contains(url), "{req:?}");
+    }
+
     #[test]
     fn fixture_key_is_first_16_hex_of_sha256() {
         // 已知答案：printf '%s' '<url><body>' | shasum -a 256
@@ -575,5 +770,27 @@ mod tests {
             error.to_string()
         }
         assert_eq!(as_std_error(&TransportError::Timeout), "timeout");
+    }
+
+    #[test]
+    fn mask_secret_params_redacts_query_values_in_error_text() {
+        let text = "error sending request for url (https://ssl.bing.com/api.svc/json/GetQueryStats?siteUrl=https%3A%2F%2Fx.cn&apikey=SECRET123)";
+        let masked = super::mask_secret_params(text);
+        assert!(!masked.contains("SECRET123"), "{masked}");
+        assert!(masked.contains("apikey=***"), "{masked}");
+        assert!(masked.contains("siteUrl=https%3A%2F%2Fx.cn"), "{masked}");
+    }
+
+    #[test]
+    fn mask_secret_params_leaves_ordinary_text_alone() {
+        assert_eq!(
+            super::mask_secret_params("timeout waiting for pool"),
+            "timeout waiting for pool"
+        );
+        // 没有值的参数名不被改写
+        assert_eq!(
+            super::mask_secret_params("missing key= in config"),
+            "missing key= in config"
+        );
     }
 }

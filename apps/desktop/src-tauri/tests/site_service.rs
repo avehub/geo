@@ -286,3 +286,139 @@ async fn channel_test_repo_with_endpoint_is_pending_manual_check() {
     assert_eq!(tested.status, SiteChannelStatus::PendingVerify);
     assert_eq!(tested.check_detail.unwrap().code, "site_repo_manual_check");
 }
+
+use geo_domain::{
+    ActionBoard, ActionCategory, ActionItem, ActionLevel, ActionStatus, SitePatchKind,
+};
+use geo_store::DiagnosisRepo;
+
+fn action(project_id: ProjectId, id: &str, category: ActionCategory, title: &str) -> ActionItem {
+    ActionItem {
+        id: id.to_string(),
+        project_id: project_id.to_string(),
+        round_id: "round-1".to_string(),
+        category,
+        rank: 1,
+        title: title.to_string(),
+        rationale: "测试处方".to_string(),
+        impact: ActionLevel::High,
+        difficulty: ActionLevel::Medium,
+        owner_hint: "市场负责人".to_string(),
+        deliverable: "可下发补丁".to_string(),
+        affected_prompt_count: 3,
+        affected_engines: Vec::new(),
+        evidence_issue_ids: Vec::new(),
+        quick_win: false,
+        status: ActionStatus::Todo,
+        completed_at: None,
+        updated_at: now(),
+    }
+}
+
+async fn save_actions(state: &geo_desktop_lib::state::AppState, actions: Vec<ActionItem>) {
+    let project_id = actions.first().expect("至少一条").project_id.clone();
+    let board = ActionBoard {
+        actions,
+        attribution: Vec::new(),
+        contents: Vec::new(),
+        templates: Vec::new(),
+    };
+    DiagnosisRepo::new(state.pool.clone())
+        .save_action_board(
+            &project_id,
+            &serde_json::to_string(&board).unwrap(),
+            &now().to_rfc3339(),
+        )
+        .await
+        .expect("写行动看板");
+}
+
+#[tokio::test]
+async fn board_builds_patch_pool_from_action_categories() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let actions = vec![
+        action(
+            project_id,
+            "action-structure",
+            ActionCategory::SiteStructure,
+            "补齐站点结构",
+        ),
+        action(
+            project_id,
+            "action-fact",
+            ActionCategory::FactCorrection,
+            "统一实体口径",
+        ),
+        action(
+            project_id,
+            "action-content",
+            ActionCategory::ContentProduction,
+            "补产品页内容",
+        ),
+    ];
+    save_actions(&state, actions).await;
+
+    let board = SiteService::from_state(&state)
+        .board(project_id)
+        .await
+        .expect("读 board");
+    let kinds = |action_id: &str| {
+        board
+            .pool
+            .iter()
+            .filter(|entry| entry.action_id == action_id)
+            .map(|entry| entry.kind)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        kinds("action-structure"),
+        vec![
+            SitePatchKind::LlmsTxt,
+            SitePatchKind::RobotsTxt,
+            SitePatchKind::Jsonld,
+            SitePatchKind::HtmlFragment,
+        ]
+    );
+    assert_eq!(
+        kinds("action-fact"),
+        vec![
+            SitePatchKind::EntityConsistency,
+            SitePatchKind::HtmlFragment,
+        ]
+    );
+    assert_eq!(
+        kinds("action-content"),
+        vec![
+            SitePatchKind::HtmlFragment,
+            SitePatchKind::MetaTitle,
+            SitePatchKind::MetaDescription,
+        ]
+    );
+    assert!(board
+        .pool
+        .iter()
+        .any(|entry| entry.title.contains("补齐站点结构") && entry.title.contains("llms.txt")));
+}
+
+#[tokio::test]
+async fn board_skips_source_layout_actions_in_patch_pool() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let actions = vec![action(
+        project_id,
+        "action-source-layout",
+        ActionCategory::SourceLayout,
+        "补百科词条",
+    )];
+    save_actions(&state, actions).await;
+
+    let board = SiteService::from_state(&state)
+        .board(project_id)
+        .await
+        .expect("读 board");
+    assert!(
+        board.pool.is_empty(),
+        "source_layout 落在站外平台，不进补丁池"
+    );
+}

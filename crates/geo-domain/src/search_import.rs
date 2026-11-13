@@ -74,9 +74,9 @@ fn canonical(header: &str) -> Option<Column> {
     match header.trim() {
         "关键词" | "query" => Some(Column::Query),
         "页面" | "page_url" => Some(Column::PageUrl),
-        "AI曝光量" | "impressions" => Some(Column::Impressions),
-        "AI点击量" | "clicks" => Some(Column::Clicks),
-        "AI点击率" | "ctr_check" => Some(Column::CtrCheck),
+        "AI曝光量" | "曝光量" | "展现量" | "impressions" => Some(Column::Impressions),
+        "AI点击量" | "点击量" | "clicks" => Some(Column::Clicks),
+        "AI点击率" | "点击率" | "ctr_check" => Some(Column::CtrCheck),
         "AI引用量" | "citations" => Some(Column::Citations),
         "ai_clicks" => Some(Column::AiClicks),
         "ai_ctr_check" => Some(Column::AiCtrCheck),
@@ -513,5 +513,29 @@ mod tests {
         assert_eq!(parsed.metrics.len(), 1);
         assert_eq!(parsed.warnings.len(), 1);
         assert_eq!(parsed.warnings[0].kind, "ctr_mismatch");
+    }
+}
+
+#[cfg(test)]
+mod traditional_alias_tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn traditional_baidu_headers_map_to_canonical_columns() {
+        let parsed = parse_search_table(ParseInput {
+            payload: "关键词\t点击量\t展现量\t点击率\n工业除尘器\t8\t1200\t0.0067",
+            project_id: ProjectId::new(),
+            kind: SearchSourceKind::BaiduZiyuan,
+            period_start: "2026-09-01",
+            period_end: "2026-09-30",
+            data_through: "2026-09-30",
+            imported_at: Utc.with_ymd_and_hms(2026, 9, 30, 0, 0, 0).unwrap(),
+        })
+        .expect("传统百度表头应可识别");
+        assert_eq!(parsed.metrics.len(), 1);
+        assert_eq!(parsed.metrics[0].impressions, Some(1200));
+        assert_eq!(parsed.metrics[0].clicks, Some(8));
+        assert_eq!(parsed.metrics[0].surface, SearchSurface::WebSearch);
     }
 }

@@ -3,8 +3,10 @@
 mod support;
 
 use geo_domain::{
-    BrandRole, FactIssueKind, FactIssueStatus, IntentCategory, ProjectId, PromptItem, PromptSet,
-    RiskFlag, Sentiment, SourceType,
+    BrandRole, Citation, CollectionRecord, CollectionRecordDetail, CollectionRound,
+    CollectionStatus, EngineChannel, EngineId, FactIssueKind, FactIssueStatus, IntentCategory,
+    ProjectId, PromptItem, PromptSet, RiskFlag, RoundStatus, SampleSizeGrade, Sentiment,
+    SourceType,
 };
 use geo_store::{CollectionRepo, PromptSetRepo};
 use support::{now, openai_response, sample_draft, state_with_transport, ScriptedTransport};
@@ -129,7 +131,7 @@ async fn collection_triggers_parsing_fact_check_and_citations() {
     assert_eq!(overview.brand_coverage, 1.0);
     assert_eq!(overview.dimensions.len(), 5);
     assert!(
-        (overview.total_score - 65.5).abs() < 0.001,
+        (overview.total_score - 73.566_666_666_666_66).abs() < 0.001,
         "{}",
         overview.total_score
     );
@@ -300,7 +302,7 @@ async fn collection_triggers_parsing_fact_check_and_citations() {
         .expect("存在");
     assert_eq!(overview.fact_accuracy, 1.0);
     assert!(
-        (overview.total_score - 90.5).abs() < 0.001,
+        (overview.total_score - 88.566_666_666_666_66).abs() < 0.001,
         "{}",
         overview.total_score
     );
@@ -308,6 +310,97 @@ async fn collection_triggers_parsing_fact_check_and_citations() {
     assert_eq!(overview.alerts.len(), 0);
     // 旧告警已读状态只对仍存在的告警有意义；这里告警已消失，重建不报错即可。
     let _ = alert_id;
+}
+
+#[tokio::test]
+async fn search_citations_survive_model_reported_sources() {
+    let (state, _server, _secrets) =
+        state_with_transport(ScriptedTransport::new(vec![parse_body(0.9)])).await;
+    let (project_id, set_id) = seed_set(&state).await;
+    let repo = CollectionRepo::new(state.pool.clone());
+    let round_id = "round-search-citations".to_string();
+    repo.insert_round(&CollectionRound {
+        id: round_id.clone(),
+        project_id: project_id.to_string(),
+        prompt_set_id: set_id,
+        prompt_set_label: "题库".to_string(),
+        prompt_set_version: 1,
+        label: "搜索引用轮".to_string(),
+        round_index: 1,
+        status: RoundStatus::Succeeded,
+        engine_scope: vec![EngineId::Deepseek],
+        repeat_count: 1,
+        planned_queries: 1,
+        completed_queries: 1,
+        failed_queries: 0,
+        success_rate: 1.0,
+        started_at: Some(now()),
+        finished_at: Some(now()),
+        metric_spec_version: "geo-metrics-v1".to_string(),
+        sample_size_grade: SampleSizeGrade::Sufficient,
+        notes: None,
+    })
+    .await
+    .expect("轮次");
+
+    let record = CollectionRecord {
+        id: "record-search-citation".to_string(),
+        round_id: round_id.clone(),
+        prompt_id: "prompt-search-citation".to_string(),
+        prompt_text: "工业除尘器怎么选".to_string(),
+        intent: IntentCategory::PurchaseRecommendation,
+        engine: EngineId::Deepseek,
+        model: "deepseek-chat".to_string(),
+        channel: EngineChannel::OfficialApi,
+        status: CollectionStatus::Succeeded,
+        failure_reason: None,
+        mentioned: false,
+        rank: None,
+        sentiment: None,
+        citation_count: 1,
+        collected_at: now(),
+        latency_ms: 1200,
+        prompt_tokens: 20,
+        completion_tokens: 200,
+        repeat_index: 1,
+    };
+    repo.insert_record(&CollectionRecordDetail {
+        record: record.clone(),
+        answer_text: "推荐澜舟。".to_string(),
+        citations: vec![Citation {
+            url: "https://search.example.com/article".to_string(),
+            domain: "search.example.com".to_string(),
+            title: Some("搜索结果".to_string()),
+            source_type: SourceType::NewsMedia,
+        }],
+        screenshot_path: None,
+    })
+    .await
+    .expect("带搜索引用的记录");
+
+    let parsed = InsightService::from_state(&state)
+        .parse_round(&round_id)
+        .await
+        .expect("解析");
+    assert_eq!(parsed, 1);
+
+    let detail = repo.record(&record.id).await.expect("证据").expect("存在");
+    assert_eq!(detail.citations.len(), 2, "搜索引用保留，模型引用补空缺");
+    assert!(
+        detail
+            .citations
+            .iter()
+            .any(|citation| citation.domain == "search.example.com"),
+        "搜索引用不能被模型自述的 sources 覆盖"
+    );
+    assert!(
+        detail
+            .citations
+            .iter()
+            .any(|citation| citation.domain == "www.example.com"),
+        "模型引用用来补空缺"
+    );
+    assert_eq!(detail.record.citation_count, 2);
 }
 
 #[tokio::test]

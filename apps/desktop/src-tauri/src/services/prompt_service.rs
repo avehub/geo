@@ -114,12 +114,12 @@ impl PromptDraft {
             .with_tags(tags);
         item.source = PromptSource::Manual;
         item.repeat_count = repeat_count;
-        item.group_name = Some(
-            group_name
-                .map(|name| name.trim().to_string())
-                .filter(|name| !name.is_empty())
-                .unwrap_or_else(|| intent.label_zh().to_string()),
-        );
+        // P1-03（2026-11-07 测试报告）：分组列是**数据**不是枚举标签。没填就留空，
+        // 前端按词典回落（`enumLabel(t, 'prompt.intents', intent)`），en-US 不再泄漏中文；
+        // 与 `PromptItem::new` / csv 导入同一契约。
+        item.group_name = group_name
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty());
         item
     }
 }
@@ -564,9 +564,11 @@ impl PromptService {
             };
             let mut next = edit.clone();
             next.position = position as i32;
-            if next.group_name.as_deref().unwrap_or("").trim().is_empty() {
-                next.group_name = Some(next.intent.label_zh().to_string());
-            }
+            // P1-03：空分组归一成 None（不再兜底中文标签），前端按词典回落。
+            next.group_name = next
+                .group_name
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty());
             items[position] = next.clone();
             last = Some(next);
         }

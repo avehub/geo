@@ -632,6 +632,30 @@ impl CollectionRepo {
         .map_err(StoreError::from)
     }
 
+    /// 一轮里的全部引用（含来源类型），供诊断按「自有页 / 权威源占比」算信源健康。
+    ///
+    /// 按记录与引用位置排序，保证同一轮重建诊断时输入稳定。
+    pub async fn citations(&self, round_id: &str) -> Result<Vec<Citation>, StoreError> {
+        let rows = sqlx::query_as::<_, (String, String, Option<String>, String)>(
+            "SELECT c.url, c.domain, c.title, c.source_type FROM collection_citations c \
+             JOIN collection_records r ON r.id = c.record_id WHERE r.round_id = ? \
+             ORDER BY r.id, c.position",
+        )
+        .bind(round_id)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|(url, domain, title, source_type)| {
+                Ok(Citation {
+                    url,
+                    domain,
+                    title,
+                    source_type: codec::decode_scalar::<SourceType>(&source_type)?,
+                })
+            })
+            .collect()
+    }
+
     /// 证据附录用：一次取回 id → 回答全文，避免逐条 record_get 的 N+1。
     pub async fn answer_texts(&self, round_id: &str) -> Result<Vec<(String, String)>, StoreError> {
         let rows = sqlx::query_as::<_, (String, String)>(

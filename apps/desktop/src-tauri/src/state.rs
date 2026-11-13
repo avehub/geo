@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use geo_crawler::{FetchLimits, SiteFetcher};
+use geo_domain::GeoError;
 use geo_llm::{FixtureTransport, LlmClient, LlmConfig, LlmProvider, ReqwestTransport, Transport};
 use geo_store::{AppSettings, KeyringSecretStore, SecretStore, SettingsRepo};
 use sqlx::SqlitePool;
@@ -64,12 +65,19 @@ impl LlmFactory {
 
     /// 由 `AppSettings` 推出 provider 配置；`model` 为空则用 provider 默认模型。
     ///
-    /// 三处失败一律发 `llm/config` + 稳定 `reason`（裁定 R-E）：
-    /// `unknown_provider`（`value` = 用户填的非法串）/ `missing_base_url` /
-    /// `missing_model`（`value` = `Provider::as_str()` 的稳定 id）。
+    /// 配置失败一律发稳定 `reason`：`unsupported_protocol` 走 `config/invalid`，
+    /// 其余三处走 `llm/config` —— `unknown_provider`（`value` = 用户填的非法串）/
+    /// `missing_base_url` / `missing_model`（`value` = `Provider::as_str()` 的稳定 id）。
     /// 「设置 → 模型服务商 → 接口地址」这类可操作指引由前端词典按 locale 渲染，
     /// 后端不拼句子（AGENTS 规则 7）。
     pub fn config_from_settings(settings: &AppSettings) -> Result<LlmConfig, IpcError> {
+        // 协议分流：Rust 目前只实现了 OpenAI 兼容那一支。`anthropic` 允许存进设置，
+        // 但绝不能静默按 OpenAI 的路径 / 鉴权头发出去——那会把用户的 Key 发到错的端点。
+        if settings.model.protocol != "openai_compat" {
+            return Err(GeoError::config("unsupported_protocol")
+                .with_param("value", &settings.model.protocol)
+                .into());
+        }
         let provider = LlmProvider::parse(&settings.model.provider).ok_or_else(|| {
             IpcError::with_params(
                 err_codes::LLM_CONFIG,
@@ -136,6 +144,10 @@ pub struct AppState {
     pub secrets: Arc<dyn SecretStore>,
     pub llm: Arc<LlmFactory>,
     pub fetcher: Arc<SiteFetcher>,
+    /// 原始证据截图目录（元宝浏览器通道使用）。
+    pub screenshots_dir: std::path::PathBuf,
+    /// 系统 Chrome 浏览器助手使用的独立 profile（百度站长路径 C）。
+    pub browser_profile_dir: std::path::PathBuf,
 }
 
 impl AppState {
@@ -155,6 +167,10 @@ impl AppState {
 
         let settings = SettingsRepo::new(pool.clone()).get().await?;
         let proxy = crate::services::active_proxy(&settings);
+        let screenshots_dir = data_dir.join("screenshots");
+        let browser_profile_dir = data_dir.join("browser-profile");
+        std::fs::create_dir_all(&screenshots_dir)?;
+        std::fs::create_dir_all(&browser_profile_dir)?;
 
         Ok(Self {
             pool: pool.clone(),
@@ -164,6 +180,8 @@ impl AppState {
                 proxy.clone(),
             )?),
             fetcher: build_fetcher(fetch_limits_from(&settings), proxy)?,
+            screenshots_dir,
+            browser_profile_dir,
         })
     }
 
@@ -179,6 +197,8 @@ impl AppState {
             secrets,
             llm,
             fetcher,
+            screenshots_dir: std::env::temp_dir().join("gdk-geo-test-screenshots"),
+            browser_profile_dir: std::env::temp_dir().join("gdk-geo-test-browser-profile"),
         }
     }
 
@@ -215,6 +235,22 @@ mod tests {
         assert_eq!(config.base_url, "https://api.example.com/v1");
         assert_eq!(config.model, "my-model");
         assert_eq!(config.secret_ref, geo_store::secret_ref("llm", "custom"));
+    }
+
+    /// 协议不是 `openai_compat` 时必须在发请求前拒绝，不能静默按 OpenAI 发送。
+    #[test]
+    fn unsupported_protocol_is_rejected_before_sending() {
+        let mut settings = AppSettings::default();
+        settings.model.protocol = "anthropic".to_string();
+
+        let error = LlmFactory::config_from_settings(&settings)
+            .expect_err("anthropic 今天还没有 Rust 实现，必须拦下");
+        assert_eq!(error.code, "config/invalid");
+        assert_eq!(error.params["reason"], "unsupported_protocol");
+        assert_eq!(error.params["value"], "anthropic");
+
+        settings.model.protocol = "openai_compat".to_string();
+        LlmFactory::config_from_settings(&settings).expect("默认协议仍可构造客户端");
     }
 
     /// 配置不全时要在**发请求之前**拦下，并发出稳定 `reason` + provider id。

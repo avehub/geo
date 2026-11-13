@@ -192,6 +192,13 @@ pub struct PromptItem {
     pub intent: IntentCategory,
     /// 核心词加权，1..=5。
     pub weight: u8,
+    /// 用户自己写的分组名，**只装数据，不装枚举标签**。
+    ///
+    /// 🔴 P1-03：这里曾经由构造期兜底成 `intent.label_zh()`，中文枚举标签因此顺着 DTO
+    /// 原样进 `PromptTable.tsx` 的分组列，en-US 桌面端直接泄漏中文；而残留守卫跑在刻意不镜像
+    /// 中文表的 demo 后端上，对真后端结构性失明。现在留空 ⇒ 序列化成 JSON `null`，
+    /// 由前端按 `intent` 查词典渲染（范式同 `ProviderInfo.label_zh`：后端可以有中文标签，前端不读）。
+    /// `label_zh()` 只保留给后端自己的诊断文案（`PromptSet::shortfall_advice`），不进 DTO。
     pub group_name: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -212,7 +219,7 @@ impl PromptItem {
             text: text.into(),
             intent,
             weight: 3,
-            group_name: Some(intent.label_zh().to_string()),
+            group_name: None,
             tags: Vec::new(),
             source: PromptSource::Template,
             competitor_ids: Vec::new(),
@@ -553,6 +560,40 @@ mod tests {
                 .validate()
                 .is_ok()
         );
+    }
+
+    /// P1-03：`PromptItem::new` **不得**把中文枚举标签写进 `group_name`。
+    ///
+    /// 该字段原样进 DTO，`PromptTable.tsx` 直接上屏，en-US 桌面端因此泄漏中文；
+    /// 而残留守卫跑在刻意不镜像中文表的 demo 后端上，对真后端结构性失明
+    /// （范式见 `ProviderInfo.label_zh`：后端可以有中文标签，前端不读）。
+    /// 构造期留空 ⇒ 分组回落由前端按 `intent` 查词典渲染；`label_zh()` 只留给
+    /// 后端自己的诊断文案（`shortfall_advice`）。
+    #[test]
+    fn new_item_leaves_group_name_unset() {
+        let item = PromptItem::new(
+            PromptSetId::new(),
+            "宏宇泵业和南方泵业比怎么样",
+            IntentCategory::BrandComparison,
+        );
+        assert_eq!(item.group_name, None, "构造期不填分组");
+        // DTO 面上必须是 JSON null：既不是空串，也不是 `label_zh()` 的中文。
+        let value = serde_json::to_value(&item).expect("可序列化");
+        assert!(value["group_name"].is_null(), "{value}");
+        assert_eq!(
+            IntentCategory::BrandComparison.label_zh(),
+            "品牌对比",
+            "中文标签仍在，只是不再进 DTO"
+        );
+    }
+
+    /// 用户显式写过的分组按数据原样保留（本次改的是构造期兜底，不是这条路径）。
+    #[test]
+    fn explicit_group_name_is_preserved_verbatim() {
+        let mut item = PromptItem::new(PromptSetId::new(), "问题", IntentCategory::PricingPlan);
+        item.group_name = Some("华东重点客户".to_string());
+        assert_eq!(item.group_name.as_deref(), Some("华东重点客户"));
+        assert!(item.validate().is_ok());
     }
 
     #[test]

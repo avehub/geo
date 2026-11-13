@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use geo_domain::{AppEnvironment, AppStorageInfo, PermissionState, Permissions};
+use geo_store::SettingsRepo;
 use sqlx::SqlitePool;
 
 use crate::error::IpcError;
@@ -23,12 +24,18 @@ pub struct EnvironmentPaths {
 }
 
 impl EnvironmentPaths {
-    pub fn under(data_dir: impl Into<PathBuf>, db_name: &str) -> Self {
+    /// `log_dir` **必须由桌面壳注入**（Tauri 的 `app_log_dir()`），不在这里从 `data_dir` 派生。
+    ///
+    /// macOS 上 `app_data_dir` = `~/Library/Application Support/<id>`、
+    /// `app_log_dir` = `~/Library/Logs/<id>`，是两个不同的目录；而 `lib.rs` 的
+    /// `init_logging` 写的是后者。曾经在这里拼 `data_dir.join("logs")`，
+    /// 导致设置页显示的「日志目录」里一个日志文件都没有。
+    pub fn under(data_dir: impl Into<PathBuf>, db_name: &str, log_dir: impl Into<PathBuf>) -> Self {
         let data_dir = data_dir.into();
         Self {
             db_path: data_dir.join(db_name),
             screenshots_dir: data_dir.join("screenshots"),
-            log_dir: data_dir.join("logs"),
+            log_dir: log_dir.into(),
             data_dir,
         }
     }
@@ -58,6 +65,9 @@ impl EnvironmentService {
     }
 
     pub async fn get(&self) -> Result<AppEnvironment, IpcError> {
+        // 上次导出目录是可写偏好，存在 `settings.storage.last_export_dir`；
+        // 读失败（缺段 / 坏 JSON）由 `SettingsRepo::get` 回落默认值，不会挡住环境信息。
+        let settings = SettingsRepo::new(self.pool.clone()).get().await?;
         Ok(AppEnvironment {
             app_version: self.app_version.clone(),
             build_number: self.build_number.clone(),
@@ -68,8 +78,7 @@ impl EnvironmentService {
                 db_size_bytes: file_size(&self.paths.db_path).await,
                 screenshots_dir: display(&self.paths.screenshots_dir),
                 log_dir: display(&self.paths.log_dir),
-                // `AppSettings` 没有 storage 段，桌面端今天没有"上次导出目录"可读。
-                export_dir: None,
+                export_dir: settings.storage.last_export_dir,
                 migrations_applied: sqlx::query_scalar::<_, i64>(
                     "SELECT COUNT(*) FROM _sqlx_migrations WHERE success = 1",
                 )

@@ -928,7 +928,9 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].text, "上海有没有靠谱的工业水泵服务商，能上门吗");
         assert_eq!(items[0].intent, IntentCategory::LocalService);
-        assert_eq!(items[0].group_name.as_deref(), Some("本地服务"));
+        // P1-03（2026-11-07 测试报告）：分组列是**数据**不是枚举标签；
+        // 构造期留空，前端按词典回落（en-US 不再泄漏中文）。
+        assert_eq!(items[0].group_name, None);
     }
 
     #[test]

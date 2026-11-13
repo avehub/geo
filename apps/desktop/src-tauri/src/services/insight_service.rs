@@ -266,9 +266,30 @@ impl InsightService {
                     for issue in &issues {
                         repo.insert_issue(issue).await?;
                     }
-                    CollectionRepo::new(self.pool.clone())
-                        .replace_citations(&record.id, &citations)
-                        .await?;
+                    let collection = CollectionRepo::new(self.pool.clone());
+                    if record.citation_count > 0 {
+                        // 采集侧已经落了搜索引用：保留它们，模型自述的 sources 只补空缺。
+                        let mut merged = collection
+                            .record(&record.id)
+                            .await?
+                            .map(|detail| detail.citations)
+                            .unwrap_or_default();
+                        let known = merged
+                            .iter()
+                            .map(|citation| citation.url.clone())
+                            .collect::<HashSet<_>>();
+                        let before = merged.len();
+                        for citation in citations {
+                            if !known.contains(&citation.url) {
+                                merged.push(citation);
+                            }
+                        }
+                        if merged.len() != before {
+                            collection.replace_citations(&record.id, &merged).await?;
+                        }
+                    } else {
+                        collection.replace_citations(&record.id, &citations).await?;
+                    }
                     parsed += 1;
                 }
                 Err(error) => {
@@ -331,7 +352,7 @@ impl InsightService {
             .collect::<Vec<_>>();
         let records = collection.records(round_id).await?;
         let issues = self.insights().fact_issues(round_id).await?;
-        let citation_domains = collection.citation_domains(round_id).await?;
+        let citations = collection.citations(round_id).await?;
         let engine_runs = collection.engine_runs(round_id).await?;
         let snapshots = DiagnosisRepo::new(self.pool.clone());
         // 找**最近一个有 overview 快照**的上一轮（中间可能有未采集 / 未诊断的轮次）。
@@ -359,7 +380,7 @@ impl InsightService {
             records: &records,
             insights: &insights,
             issues: &issues,
-            citation_domains: &citation_domains,
+            citations: &citations,
             competitors: &competitors,
             engine_runs: &engine_runs,
             previous: previous.as_ref(),

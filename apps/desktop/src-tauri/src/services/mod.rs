@@ -2,6 +2,7 @@
 
 pub mod action_service;
 pub mod article_service;
+pub mod browser;
 pub mod collection_service;
 pub mod diagnosis_service;
 pub mod entity_card_service;
@@ -14,6 +15,8 @@ pub mod project_service;
 pub mod project_transfer;
 pub mod prompt_service;
 pub mod report_service;
+pub mod search_browser;
+pub mod search_oauth;
 pub mod search_service;
 pub mod settings_service;
 pub mod site_patch_service;
@@ -34,6 +37,10 @@ pub use project_service::{ProjectDetail, ProjectService};
 pub use project_transfer::{ImportReport, ProjectExport, EXPORT_FORMAT_VERSION};
 pub use prompt_service::{GenerateOptions, PromptDraft, PromptService, DEFAULT_TARGET_COUNT};
 pub use report_service::ReportService;
+pub use search_browser::{browser_capture, browser_open, SearchBrowserSession};
+pub use search_oauth::{
+    fetch_bing_metrics, fetch_gsc_metrics, oauth_exchange, BingAuth, GscFlowError, SearchOAuthStart,
+};
 pub use search_service::{SearchBoardResult, SearchMetricImportResult, SearchService};
 pub use settings_service::{
     active_proxy, LlmModelsQuery, LlmTestResult, ModelsListResult, ModelsListSource, ProviderInfo,

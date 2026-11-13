@@ -4,9 +4,9 @@
 
 use chrono::{DateTime, Utc};
 use geo_domain::{
-    SearchActionLevel, SearchAuthMode, SearchGroup, SearchIngestMode, SearchOpportunity,
-    SearchOpportunityId, SearchOpportunityStatus, SearchPrescriptionCategory, SearchRegion,
-    SearchSource, SearchSourceKind, SiteChannelStatus, SiteCredentialsState,
+    CheckDetail, SearchActionLevel, SearchAuthMode, SearchGroup, SearchIngestMode,
+    SearchOpportunity, SearchOpportunityId, SearchOpportunityStatus, SearchPrescriptionCategory,
+    SearchRegion, SearchSource, SearchSourceKind, SiteChannelStatus, SiteCredentialsState,
 };
 use sqlx::{FromRow, SqlitePool};
 
@@ -23,7 +23,7 @@ const SELECT_SOURCES: &str = concat!(
 const SELECT_OPPORTUNITIES: &str = concat!(
     "SELECT id, project_id, rule_id, title_key, basis, evidence_metric_ids, ",
     "prescription_category, impact, difficulty, confidence, status, created_at, updated_at ",
-    "FROM search_opportunities WHERE project_id = ? ORDER BY created_at DESC, id ASC"
+    "FROM search_opportunities WHERE project_id = ? ORDER BY rule_id ASC, title_key ASC, basis ASC, id ASC"
 );
 
 #[derive(Debug, FromRow)]
@@ -172,6 +172,41 @@ impl SearchRepo {
         Ok(())
     }
 
+    /// 写一次「拉数结果」：状态 / 凭据状态 / 数据截至日 / 自检结论。
+    ///
+    /// 与 [`upsert_source`](Self::upsert_source) 的区别：那个是**配置**写入（刻意清空自检结论、
+    /// 保留旧 `data_through`），这里是**运行**写入（必须能推进 `data_through` 并落结论）。
+    /// `data_through` 传 `None` 时保留旧值：OAuth 失败不该抹掉上一次成功拉到的数据。
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_source_run(
+        &self,
+        project_id: geo_domain::ProjectId,
+        kind: SearchSourceKind,
+        status: SiteChannelStatus,
+        credentials_state: SiteCredentialsState,
+        data_through: Option<&str>,
+        checked_at: Option<DateTime<Utc>>,
+        check_detail: Option<CheckDetail>,
+        updated_at: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            "UPDATE search_sources SET status = ?, credentials_state = ?, \
+             data_through = COALESCE(?, data_through), checked_at = ?, check_detail = ?, \
+             updated_at = ? WHERE project_id = ? AND kind = ?",
+        )
+        .bind(codec::encode_scalar(&status)?)
+        .bind(codec::encode_scalar(&credentials_state)?)
+        .bind(data_through)
+        .bind(checked_at.map(|value| codec::encode_time(&value)))
+        .bind(codec::encode_optional_json(&check_detail)?)
+        .bind(codec::encode_time(&updated_at))
+        .bind(project_id.to_string())
+        .bind(codec::encode_scalar(&kind)?)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     /// 删除源（幂等），回剩余快照。
     pub async fn remove_source(
         &self,
@@ -239,6 +274,45 @@ impl SearchRepo {
         .bind(codec::encode_time(&opportunity.updated_at))
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    /// 用新一轮机会替换本项目全部旧机会（同一事务内 DELETE + INSERT）。
+    ///
+    /// 调用方负责在传入前继承人工状态；本方法只做持久化，不判断业务规则。
+    pub async fn replace_opportunities(
+        &self,
+        project_id: geo_domain::ProjectId,
+        opportunities: &[SearchOpportunity],
+    ) -> Result<(), StoreError> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM search_opportunities WHERE project_id = ?")
+            .bind(project_id.to_string())
+            .execute(&mut *tx)
+            .await?;
+        for opportunity in opportunities {
+            sqlx::query(concat!(
+                "INSERT INTO search_opportunities (id, project_id, rule_id, title_key, basis, ",
+                "evidence_metric_ids, prescription_category, impact, difficulty, confidence, ",
+                "status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ))
+            .bind(opportunity.id.to_string())
+            .bind(opportunity.project_id.to_string())
+            .bind(i64::from(opportunity.rule_id))
+            .bind(&opportunity.title_key)
+            .bind(&opportunity.basis)
+            .bind(codec::encode_json(&opportunity.evidence_metric_ids)?)
+            .bind(codec::encode_scalar(&opportunity.prescription_category)?)
+            .bind(codec::encode_scalar(&opportunity.impact)?)
+            .bind(codec::encode_scalar(&opportunity.difficulty)?)
+            .bind(opportunity.confidence)
+            .bind(codec::encode_scalar(&opportunity.status)?)
+            .bind(codec::encode_time(&opportunity.created_at))
+            .bind(codec::encode_time(&opportunity.updated_at))
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 

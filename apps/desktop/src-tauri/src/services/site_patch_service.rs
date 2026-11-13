@@ -72,6 +72,10 @@ impl SitePatchService {
     }
 
     /// 手动新建：`status = draft`、`review_status = approved`、`source = manual`。
+    ///
+    /// 🔴 P2-09：标题与正文过广告法红线扫描，与 `generate` / CSV 导入同一道闸。
+    /// 补丁是要下发到客户官网的**对外内容**，「人工录入」不豁免；命中即整条拒绝
+    /// （`compliance/violation`），台账里不留半条。「人工录入 = approved」的裁定不变。
     pub async fn add(
         &self,
         project_id: ProjectId,
@@ -83,6 +87,14 @@ impl SitePatchService {
             return Err(GeoError::validation("action_id", "not_allowed").into());
         }
         draft.validate()?;
+        // 与生成路径（本文件 `generate`）逐字同一调用方式：命中即整条拒绝。
+        // `target_hint` 不扫——它是给实施人的落点提示（「首页 <head> 内」），
+        // 不进 `published_body`，扫描面与生成路径保持一致。
+        for text in [&draft.title, &draft.body] {
+            if !compliance::is_clean(text) {
+                return Err(compliance_violation(text));
+            }
+        }
         let position = self.patches().next_position(project_id).await?;
         let patch = draft.into_patch(project_id, position, now)?;
         let event = SitePatchEvent {

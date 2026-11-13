@@ -111,6 +111,8 @@ pub fn prompts_to_csv(items: &[PromptItem]) -> Result<String, GeoError> {
             item.text.clone(),
             item.intent.as_str().to_string(),
             item.weight.to_string(),
+            // 分组为空就写**空单元格**，不回落成中文标签，也不写 `intent.as_str()`：
+            // 意图本来就有独立的一列（稳定 id），再导入时靠它兜住 intent，分组列不承担这个职责。
             item.group_name.clone().unwrap_or_default(),
             item.tags.join(&TAG_SEPARATOR.to_string()),
             item.source.as_str().to_string(),
@@ -266,8 +268,11 @@ fn parse_prompt_row(
     item.source = source;
     item.repeat_count = repeat_count;
     item.position = position;
+    // 🔴 P1-03：分组列留空 ⇒ `None`（DTO 上是 JSON null），**不再**兜底成 `intent.label_zh()`。
+    // 中文枚举标签顺着 DTO 进 `PromptTable.tsx` 会让 en-US 端泄漏中文，回落交给前端按 `intent`
+    // 查词典渲染。用户在 CSV 里写过的分组照旧原样保留——那是数据，不是文案。
     item.group_name = if group_name.is_empty() {
-        Some(intent.label_zh().to_string())
+        None
     } else {
         Some(group_name)
     };
@@ -370,6 +375,69 @@ mod tests {
             assert_eq!(original.repeat_count, imported.repeat_count);
             assert_eq!(original.group_name, imported.group_name);
         }
+    }
+
+    /// P1-03：`group_name` 列留空 ⇒ 导入后保持 `None`，**不再**兜底成中文意图标签
+    /// （原先是 `Some(intent.label_zh())`，会顺着 DTO 原样上屏，en-US 端泄漏中文）。
+    #[test]
+    fn import_without_group_column_leaves_group_name_unset() {
+        let csv = "text,intent,weight,group_name,tags,source,repeat_count\n\
+                   问题一,pricing_plan,3,,,,\n";
+        let result = prompts_from_csv(csv, PromptSetId::new()).unwrap();
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.imported_count(), 1);
+        assert_eq!(result.items[0].group_name, None);
+        assert_eq!(result.items[0].intent, IntentCategory::PricingPlan);
+    }
+
+    /// 用户在 CSV 里写过的分组原样保留：那是**数据**不是文案，中文也不动。
+    #[test]
+    fn import_keeps_user_written_group_name_verbatim() {
+        let csv = "text,intent,weight,group_name,tags,source,repeat_count\n\
+                   问题一,pricing_plan,3,华东重点客户,,manual,1\n";
+        let result = prompts_from_csv(csv, PromptSetId::new()).unwrap();
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(
+            result.items[0].group_name.as_deref(),
+            Some("华东重点客户"),
+            "显式分组不被改写"
+        );
+    }
+
+    /// 导出方向：分组为空 ⇒ 该列写**空单元格**，不是中文标签；round-trip 靠 `intent`
+    /// 列的稳定 id 兜住意图，不依赖分组列非空（因此不需要回落写 `intent.as_str()`）。
+    #[test]
+    fn export_writes_blank_group_cell_and_roundtrip_keeps_intent() {
+        let set_id = PromptSetId::new();
+        let item = PromptItem::new(
+            set_id,
+            "工业水泵的售后响应一般多久？",
+            IntentCategory::AfterSalesReputation,
+        );
+        assert_eq!(item.group_name, None);
+        let csv = prompts_to_csv(&[item]).unwrap();
+        let label = IntentCategory::AfterSalesReputation.label_zh();
+        assert!(!csv.contains(label), "导出不得夹带中文枚举标签：{csv}");
+
+        let row = csv.lines().nth(1).expect("有一行数据");
+        let cells: Vec<&str> = row.split(',').collect();
+        assert_eq!(cells.len(), PROMPT_CSV_HEADER.len(), "{row}");
+        let group_index = PROMPT_CSV_HEADER
+            .iter()
+            .position(|name| *name == "group_name")
+            .unwrap();
+        assert_eq!(cells[group_index], "", "分组列为空单元格：{row}");
+        assert_eq!(cells[1], "after_sales_reputation", "意图列是稳定 id");
+
+        let imported = prompts_from_csv(&csv, set_id).unwrap();
+        assert!(imported.errors.is_empty(), "{:?}", imported.errors);
+        assert_eq!(imported.imported_count(), 1);
+        assert_eq!(
+            imported.items[0].intent,
+            IntentCategory::AfterSalesReputation,
+            "round-trip 不丢 intent"
+        );
+        assert_eq!(imported.items[0].group_name, None, "空进空出");
     }
 
     #[test]

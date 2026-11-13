@@ -18,6 +18,11 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 
+# macOS 的 `secret_status` 只查属性、不取 data（见 `src/secret.rs` 的 `entry_exists`）。
+# 版本与 keyring 的 apple store 传递依赖保持一致（3.7），避免同一 crate 两份编译。
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"
+
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -100,6 +100,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../src/services/search_service.rs"),
     ),
     (
+        "services/search_oauth.rs",
+        include_str!("../src/services/search_oauth.rs"),
+    ),
+    (
         "services/collection_service.rs",
         include_str!("../src/services/collection_service.rs"),
     ),
@@ -342,19 +346,21 @@ fn service_error_sites_carry_no_chinese_prose() {
 #[test]
 fn the_guard_sees_every_production_site() {
     let expected: &[(&str, usize)] = &[
-        ("state.rs", 3),
+        ("state.rs", 4),
         ("services/mod.rs", 1),
         ("services/project_service.rs", 10),
         ("services/project_transfer.rs", 2),
         ("services/prompt_service.rs", 13),
         ("services/entity_card_service.rs", 2),
-        ("services/settings_service.rs", 11),
+        ("services/settings_service.rs", 13),
         ("services/keyword_service.rs", 3),
         ("services/faq_service.rs", 3),
         ("services/kb_service.rs", 2),
         ("services/site_service.rs", 0),
         ("services/site_patch_service.rs", 7),
-        ("services/search_service.rs", 8),
+        ("services/search_service.rs", 12),
+        // GSC OAuth：`bind_failed()` 一处稳定的 `validation/failed` 映射。
+        ("services/search_oauth.rs", 1),
         ("services/collection_service.rs", 8),
         ("services/insight_service.rs", 7),
         ("services/diagnosis_service.rs", 2),
@@ -366,7 +372,8 @@ fn the_guard_sees_every_production_site() {
         ("services/templates/catalog.rs", 0),
         // Task 5b 新增（A-4）：`ipc/` 整棵树。只有 `export.rs` 有站点。
         ("ipc/mod.rs", 0),
-        ("ipc/export.rs", 1),
+        // 导出新增 xlsx / pdf 分支后多了一处稳定错误映射（工作区既有改动）。
+        ("ipc/export.rs", 2),
         ("ipc/project.rs", 0),
         ("ipc/prompt.rs", 0),
         ("ipc/settings.rs", 0),
@@ -381,7 +388,9 @@ fn the_guard_sees_every_production_site() {
         ("ipc/collection.rs", 0),
         ("ipc/insight.rs", 0),
         ("ipc/diagnosis.rs", 0),
-        ("ipc/environment.rs", 1),
+        // 日志目录改由桌面壳注入 `app_log_dir()` 后，多了一处稳定错误映射
+        // （`app_log_dir_unavailable`）：原来只有 `app_data_dir_unavailable` 一处。
+        ("ipc/environment.rs", 2),
         ("ipc/article.rs", 0),
         ("ipc/action.rs", 0),
         ("ipc/report.rs", 0),
@@ -405,6 +414,6 @@ fn the_guard_sees_every_production_site() {
         assert_eq!(actual, *want, "{name} 的生产站点数变了，守卫清单要同步");
         total += actual;
     }
-    assert_eq!(total, 112, "壳侧生产站点总数");
+    assert_eq!(total, 122, "壳侧生产站点总数");
     assert_eq!(FILES.len(), expected.len(), "FILES 与期望表要一一对应");
 }

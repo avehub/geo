@@ -9,7 +9,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use chrono::{DateTime, Utc};
 
 use crate::collection::Sentiment;
-use crate::collection::{CollectionRecord, CollectionRound, EngineId, EngineRun, RoundStatus};
+use crate::collection::{
+    Citation, CollectionRecord, CollectionRound, EngineId, EngineRun, RoundStatus, SourceType,
+};
 use crate::diagnosis::{
     AlertItem, AlertKind, AlertSeverity, CompetitorMatrix, CompetitorMatrixRow, DiagnosisDimension,
     DiagnosisOverview, DimensionScore, EngineScore, FunnelRow, FunnelStage, IntentFunnel,
@@ -19,9 +21,13 @@ use crate::insight::{AnswerInsight, BrandRole, FactCheckIssue, FactIssueStatus};
 use crate::prompt::{sample_size_grade, IntentCategory};
 
 /// 五维权重（合计 1.0）。Visibility / Recommendation / Sentiment / FactAccuracy / SourceHealth。
-pub const DIMENSION_WEIGHTS: [f64; 5] = [0.30, 0.20, 0.15, 0.25, 0.10];
-/// 引用域名数达到该值即拿满 SourceHealth 分。
-pub const CITATION_BREADTH_TARGET: f64 = 20.0;
+/// 与产品定义附录 C 一致：0.35 / 0.25 / 0.15 / 0.15 / 0.10。
+pub const DIMENSION_WEIGHTS: [f64; 5] = [0.35, 0.25, 0.15, 0.15, 0.10];
+/// 引用域名数达到该值即拿满 SourceHealth 的域名分。
+///
+/// 与 demo 基线轮的手算口径对齐：47 个去重域名 ≈ 0.78 归一化，配合 31% 的
+/// 自有页 / 权威源占比得到约 50 分（0.31×60 + 47/60×40）。
+pub const CITATION_BREADTH_TARGET: f64 = 60.0;
 /// 覆盖率较上轮下降达到该值触发告警。
 pub const COVERAGE_DROP_THRESHOLD: f64 = 0.10;
 /// 事实准确率低于该值触发告警。
@@ -37,7 +43,7 @@ pub struct DiagnosisInput<'a> {
     pub records: &'a [CollectionRecord],
     pub insights: &'a [AnswerInsight],
     pub issues: &'a [FactCheckIssue],
-    pub citation_domains: &'a [String],
+    pub citations: &'a [Citation],
     pub competitors: &'a [String],
     pub engine_runs: &'a [EngineRun],
     pub previous: Option<&'a DiagnosisOverview>,
@@ -58,45 +64,63 @@ pub fn build_diagnosis(input: DiagnosisInput<'_>) -> DiagnosisOutput {
     let self_prompts = prompts_where_self_mentioned(input.insights);
     let brand_coverage = ratio(self_prompts.len(), total_prompts.len());
     let share_of_voice = share_of_voice(input.insights, input.self_brand, input.competitors);
-    let fact_accuracy = fact_accuracy(input.insights.len(), input.issues);
-    let distinct_domains = input
-        .citation_domains
+    let self_answers = input
+        .insights
         .iter()
-        .map(|domain| domain.trim().to_lowercase())
-        .filter(|domain| !domain.is_empty())
-        .collect::<HashSet<_>>()
-        .len();
+        .filter(|insight| insight.self_mentioned)
+        .count();
+    let fact_accuracy = fact_accuracy(self_answers, input.issues);
+    let citation_count = input.citations.len();
+    let authoritative = input
+        .citations
+        .iter()
+        .filter(|citation| is_authoritative(citation.source_type))
+        .count();
+    let authority_share = ratio(authoritative, citation_count);
+    let distinct_domains = distinct_citation_domains(input.citations);
+    let domain_breadth = (distinct_domains as f64 / CITATION_BREADTH_TARGET).clamp(0.0, 1.0);
+    let source_health = authority_share * 60.0 + domain_breadth * 40.0;
 
-    let (_top1, top3, mentioned) = self_rank_counts(input.insights);
+    let (top1, top23, mention_only, _mentioned) = self_rank_prompt_counts(input.insights);
+    let recommendation_rate = ratio_f64(
+        top1 as f64 + top23 as f64 * 0.7 + mention_only as f64 * 0.3,
+        total_prompts.len(),
+    );
     let (positive, negative, with_sentiment) = self_sentiment_counts(input.insights);
-    let dimensions = dimension_scores(
+    let positive_rate = ratio(positive, with_sentiment);
+    let negative_rate = ratio(negative, with_sentiment);
+    let (dimensions, dimension_margins) = dimension_scores(
         brand_coverage,
-        ratio(top3, mentioned),
-        ratio(positive, with_sentiment),
+        recommendation_rate,
+        positive_rate,
+        negative_rate,
         fact_accuracy,
-        distinct_domains,
-        sample_size,
+        source_health,
         total_prompts.len(),
         self_prompts.len(),
-        top3,
-        mentioned,
+        top1,
+        top23,
+        mention_only,
         positive,
+        negative,
+        with_sentiment,
         effective_issue_count(input.issues),
-        input.insights.len(),
+        self_answers,
         distinct_domains,
+        citation_count,
     );
     let total_score: f64 = dimensions
         .iter()
         .map(|dimension| dimension.score * dimension.weight)
         .sum();
-    let score_margin = input
-        .previous
-        .map(|previous| total_score - previous.total_score)
-        .unwrap_or(0.0);
-    let brand_coverage_margin = input
-        .previous
-        .map(|previous| brand_coverage - previous.brand_coverage)
-        .unwrap_or(0.0);
+    // margin 是 95% 区间半宽（±），不是与上一轮的差值。
+    // 总分区间 = 各维度区间半宽的加权和。
+    let score_margin: f64 = dimension_margins
+        .iter()
+        .zip(DIMENSION_WEIGHTS)
+        .map(|(margin, weight)| margin * weight)
+        .sum();
+    let brand_coverage_margin = wilson_half_width(brand_coverage, total_prompts.len());
     let collected_at = input
         .round
         .finished_at
@@ -115,12 +139,18 @@ pub fn build_diagnosis(input: DiagnosisInput<'_>) -> DiagnosisOutput {
                 collected_at: previous.collected_at,
                 status: RoundStatus::Succeeded,
                 brand_coverage: previous.brand_coverage,
-                coverage_margin: previous.brand_coverage_margin,
+                coverage_margin: 0.0,
                 total_score: previous.total_score,
                 fact_accuracy: previous.fact_accuracy,
                 sample_size: previous.sample_size,
             });
         }
+    }
+    // 历史趋势点可能来自旧口径（环比差值）；这里统一按该点自己的覆盖率与样本量
+    // 重算 Wilson 半宽，保证趋势图的 ± 语义一致。
+    for point in &mut trend {
+        let n = usize::try_from(point.sample_size).unwrap_or(0);
+        point.coverage_margin = wilson_half_width(point.brand_coverage, n);
     }
     trend.retain(|point| point.round_id != input.round.id);
     trend.push(TrendPoint {
@@ -139,7 +169,6 @@ pub fn build_diagnosis(input: DiagnosisInput<'_>) -> DiagnosisOutput {
     }
 
     let competitor_matrix = build_competitors(&input, sample_size, brand_coverage);
-    let negative_rate = ratio(negative, with_sentiment);
     let alerts = build_alerts(
         &input,
         brand_coverage,
@@ -197,11 +226,13 @@ fn effective_issue_count(issues: &[FactCheckIssue]) -> usize {
         .count()
 }
 
-fn fact_accuracy(checked: usize, issues: &[FactCheckIssue]) -> f64 {
-    if checked == 0 {
+/// 事实准确的分母是「涉及本品牌的回答数」（`self_mentioned` 的 insight），
+/// 不是全部 insight 数。
+fn fact_accuracy(self_answers: usize, issues: &[FactCheckIssue]) -> f64 {
+    if self_answers == 0 {
         return 0.0;
     }
-    (1.0 - effective_issue_count(issues) as f64 / checked as f64).clamp(0.0, 1.0)
+    (1.0 - effective_issue_count(issues) as f64 / self_answers as f64).clamp(0.0, 1.0)
 }
 
 fn ratio(numerator: usize, denominator: usize) -> f64 {
@@ -212,20 +243,84 @@ fn ratio(numerator: usize, denominator: usize) -> f64 {
     }
 }
 
-fn self_rank_counts(insights: &[AnswerInsight]) -> (usize, usize, usize) {
-    let mentioned = insights
+fn ratio_f64(numerator: f64, denominator: usize) -> f64 {
+    if denominator == 0 {
+        0.0
+    } else {
+        numerator / denominator as f64
+    }
+}
+
+/// Wilson 95% 置信区间半宽（z = 1.96），返回 0~1 比例尺度。
+///
+/// 用于可见度 / 推荐力 / 情感 / 事实准确这类比例型维度。区间在 0 或 1 附近
+/// 被截断时按截断后的实际区间计算半宽，避免把「不可能越界」的部分算进误差。
+fn wilson_half_width(proportion: f64, n: usize) -> f64 {
+    if n == 0 {
+        return 0.0;
+    }
+    let p = proportion.clamp(0.0, 1.0);
+    let n = n as f64;
+    let z = 1.96_f64;
+    let z2 = z * z;
+    let denominator = 1.0 + z2 / n;
+    let center = (p + z2 / (2.0 * n)) / denominator;
+    let half = (z / denominator) * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).max(0.0).sqrt();
+    let lower = (center - half).max(0.0);
+    let upper = (center + half).min(1.0);
+    (upper - lower) / 2.0
+}
+
+/// 信源健康没有单一比例分母，按引用条数用 1/√n 做保守近似（0~100 分尺度）。
+fn source_health_margin(citation_count: usize) -> f64 {
+    if citation_count == 0 {
+        0.0
+    } else {
+        100.0 / (citation_count as f64).sqrt()
+    }
+}
+
+fn is_authoritative(source_type: SourceType) -> bool {
+    matches!(
+        source_type,
+        SourceType::OwnedPage | SourceType::Baike | SourceType::OfficialDoc | SourceType::NewsMedia
+    )
+}
+
+fn distinct_citation_domains(citations: &[Citation]) -> usize {
+    citations
         .iter()
-        .filter(|insight| insight.self_mentioned)
+        .map(|citation| citation.domain.trim().to_lowercase())
+        .filter(|domain| !domain.is_empty())
+        .collect::<HashSet<_>>()
+        .len()
+}
+
+/// 推荐力按「题目」而不是按回答条数计：同一道题被多个引擎 / 多次采样提及时只取
+/// 最好的位次归档。返回值 `(Top1 题数, 第 2-3 名题数, 仅提及题数, 被提及题数)`。
+fn self_rank_prompt_counts(insights: &[AnswerInsight]) -> (usize, usize, usize, usize) {
+    #[derive(Default)]
+    struct Category {
+        top1: bool,
+        top23: bool,
+    }
+
+    let mut by_prompt: BTreeMap<&str, Category> = BTreeMap::new();
+    for insight in insights.iter().filter(|insight| insight.self_mentioned) {
+        let category = by_prompt.entry(insight.prompt_id.as_str()).or_default();
+        match insight.self_rank {
+            Some(1) => category.top1 = true,
+            Some(rank) if rank <= 3 => category.top23 = true,
+            _ => {}
+        }
+    }
+    let top1 = by_prompt.values().filter(|category| category.top1).count();
+    let top23 = by_prompt
+        .values()
+        .filter(|category| !category.top1 && category.top23)
         .count();
-    let top1 = insights
-        .iter()
-        .filter(|insight| insight.self_mentioned && insight.self_rank == Some(1))
-        .count();
-    let top3 = insights
-        .iter()
-        .filter(|insight| insight.self_mentioned && insight.self_rank.is_some_and(|rank| rank <= 3))
-        .count();
-    (top1, top3, mentioned)
+    let mention_only = by_prompt.len() - top1 - top23;
+    (top1, top23, mention_only, by_prompt.len())
 }
 
 fn self_sentiment_counts(insights: &[AnswerInsight]) -> (usize, usize, usize) {
@@ -296,58 +391,71 @@ fn share_of_voice(insights: &[AnswerInsight], self_brand: &str, competitors: &[S
 #[allow(clippy::too_many_arguments)]
 fn dimension_scores(
     coverage: f64,
-    top3_rate: f64,
+    recommendation_rate: f64,
     positive_rate: f64,
+    negative_rate: f64,
     fact_accuracy: f64,
-    distinct_domains: usize,
-    sample_size: i64,
+    source_health: f64,
     total_prompts: usize,
     covered_prompts: usize,
-    top3: usize,
-    mentioned: usize,
+    top1: usize,
+    top23: usize,
+    mention_only: usize,
     positive: usize,
+    negative: usize,
+    with_sentiment: usize,
     issue_count: usize,
-    checked: usize,
+    self_answers: usize,
     domains: usize,
-) -> Vec<DimensionScore> {
-    let source_score = (domains as f64 / CITATION_BREADTH_TARGET).clamp(0.0, 1.0);
-    vec![
+    citation_count: usize,
+) -> (Vec<DimensionScore>, [f64; 5]) {
+    let sentiment_score = (positive_rate * 100.0 - negative_rate * 50.0).max(0.0);
+    let margins = [
+        wilson_half_width(coverage, total_prompts) * 100.0,
+        wilson_half_width(recommendation_rate, total_prompts) * 100.0,
+        wilson_half_width(positive_rate, with_sentiment) * 100.0
+            + wilson_half_width(negative_rate, with_sentiment) * 50.0,
+        wilson_half_width(fact_accuracy, self_answers) * 100.0,
+        source_health_margin(citation_count),
+    ];
+    let dimensions = vec![
         DimensionScore {
             dimension: DiagnosisDimension::Visibility,
             score: coverage * 100.0,
             weight: DIMENSION_WEIGHTS[0],
-            sample_size,
+            sample_size: i64::try_from(total_prompts).unwrap_or(i64::MAX),
             detail: format!("{covered_prompts} / {total_prompts}"),
         },
         DimensionScore {
             dimension: DiagnosisDimension::Recommendation,
-            score: top3_rate * 100.0,
+            score: recommendation_rate * 100.0,
             weight: DIMENSION_WEIGHTS[1],
-            sample_size,
-            detail: format!("{top3} / {mentioned}"),
+            sample_size: i64::try_from(total_prompts).unwrap_or(i64::MAX),
+            detail: format!("{top1} / {top23} / {mention_only} / {total_prompts}"),
         },
         DimensionScore {
             dimension: DiagnosisDimension::Sentiment,
-            score: positive_rate * 100.0,
+            score: sentiment_score,
             weight: DIMENSION_WEIGHTS[2],
-            sample_size,
-            detail: format!("{positive} / {mentioned}"),
+            sample_size: i64::try_from(with_sentiment).unwrap_or(i64::MAX),
+            detail: format!("{positive} / {negative} / {with_sentiment}"),
         },
         DimensionScore {
             dimension: DiagnosisDimension::FactAccuracy,
             score: fact_accuracy * 100.0,
             weight: DIMENSION_WEIGHTS[3],
-            sample_size,
-            detail: format!("{issue_count} / {checked}"),
+            sample_size: i64::try_from(self_answers).unwrap_or(i64::MAX),
+            detail: format!("{issue_count} / {self_answers}"),
         },
         DimensionScore {
             dimension: DiagnosisDimension::SourceHealth,
-            score: source_score * 100.0,
+            score: source_health,
             weight: DIMENSION_WEIGHTS[4],
-            sample_size,
-            detail: format!("{distinct_domains}"),
+            sample_size: i64::try_from(citation_count).unwrap_or(i64::MAX),
+            detail: format!("{domains}"),
         },
-    ]
+    ];
+    (dimensions, margins)
 }
 
 fn build_competitors(
@@ -496,7 +604,7 @@ fn row_for_brand(
             0
         },
         cited_domain_count: if is_self {
-            i64::try_from(input.citation_domains.len()).unwrap_or(i64::MAX)
+            i64::try_from(distinct_citation_domains(input.citations)).unwrap_or(i64::MAX)
         } else {
             0
         },
@@ -753,6 +861,7 @@ fn build_alerts(
 mod tests {
     use super::*;
     use crate::diagnosis::{AlertKind, CompetitorMatrixRow};
+    use crate::insight::{AnswerShape, CorrectionChannel, FactIssueKind};
     use crate::prompt::SampleSizeGrade;
 
     fn round() -> CollectionRound {
@@ -855,7 +964,7 @@ mod tests {
             records: &[],
             insights: &[],
             issues: &[],
-            citation_domains: &[],
+            citations: &[],
             competitors: &["南方泵业".to_string()],
             engine_runs: &[],
             previous: Some(&previous),
@@ -869,5 +978,215 @@ mod tests {
         assert!(alerts
             .iter()
             .any(|alert| alert.kind == AlertKind::CompetitorOvertake));
+    }
+
+    /// demo 基线轮（第 2 轮）的数字：62 道题、26 道提及、Top1 4 / 第 2-3 名 9 /
+    /// 仅提及 13、正面 12 / 中性 9 / 负面 5、涉及本品牌回答 168 条、事实问题 27 条、
+    /// 自有页与权威源占比 31%、去重域名 47 个。
+    fn demo_baseline() -> (
+        CollectionRound,
+        Vec<AnswerInsight>,
+        Vec<FactCheckIssue>,
+        Vec<Citation>,
+    ) {
+        let round = round();
+        let mut insights = Vec::new();
+        for index in 0..168 {
+            let prompt_index = index % 26;
+            let (rank, sentiment) = if index < 26 {
+                match prompt_index {
+                    0..=3 => (Some(1), Some(Sentiment::Positive)),
+                    4..=11 => (Some(2), Some(Sentiment::Positive)),
+                    12 => (Some(2), Some(Sentiment::Neutral)),
+                    13..=20 => (None, Some(Sentiment::Neutral)),
+                    _ => (None, Some(Sentiment::Negative)),
+                }
+            } else {
+                (None, None)
+            };
+            insights.push(AnswerInsight {
+                id: format!("insight-{index}"),
+                round_id: round.id.clone(),
+                record_id: format!("record-{index}"),
+                prompt_id: format!("prompt-{prompt_index:02}"),
+                prompt_text: format!("题目 {prompt_index}"),
+                engine: EngineId::Deepseek,
+                mentions: Vec::new(),
+                self_mentioned: true,
+                self_rank: rank,
+                self_sentiment: sentiment,
+                answer_shape: AnswerShape::default(),
+                source_types: BTreeMap::new(),
+                confidence: 0.9,
+                needs_review: false,
+                risks: Vec::new(),
+                corrected_fields: Vec::new(),
+                reviewed_at: None,
+            });
+        }
+        for prompt_index in 26..62 {
+            insights.push(AnswerInsight {
+                id: format!("insight-not-mentioned-{prompt_index}"),
+                round_id: round.id.clone(),
+                record_id: format!("record-not-mentioned-{prompt_index}"),
+                prompt_id: format!("prompt-{prompt_index:02}"),
+                prompt_text: format!("题目 {prompt_index}"),
+                engine: EngineId::Deepseek,
+                mentions: Vec::new(),
+                self_mentioned: false,
+                self_rank: None,
+                self_sentiment: None,
+                answer_shape: AnswerShape::default(),
+                source_types: BTreeMap::new(),
+                confidence: 0.9,
+                needs_review: false,
+                risks: Vec::new(),
+                corrected_fields: Vec::new(),
+                reviewed_at: None,
+            });
+        }
+
+        let issues = (0..27)
+            .map(|index| FactCheckIssue {
+                id: format!("issue-{index}"),
+                round_id: round.id.clone(),
+                record_id: format!("record-{index}"),
+                prompt_id: format!("prompt-{:02}", index % 26),
+                prompt_text: "题目".to_string(),
+                engine: EngineId::Deepseek,
+                kind: FactIssueKind::Wrong,
+                field_path: "price_range".to_string(),
+                answer_excerpt: "旧价格".to_string(),
+                entity_value: "新价格".to_string(),
+                confidence: 0.9,
+                status: FactIssueStatus::Open,
+                correction_channel: CorrectionChannel::OfficialSite,
+                note: None,
+                resolved_at: None,
+            })
+            .collect();
+
+        let authority = [
+            SourceType::OwnedPage,
+            SourceType::Baike,
+            SourceType::OfficialDoc,
+            SourceType::NewsMedia,
+        ];
+        let mut citations = Vec::new();
+        for index in 0..47 {
+            citations.push(Citation {
+                url: format!("https://source-{index}.example.com/page"),
+                domain: format!("source-{index}.example.com"),
+                title: None,
+                source_type: if index < 31 {
+                    authority[index % authority.len()]
+                } else {
+                    SourceType::Other
+                },
+            });
+        }
+        for index in 47..100 {
+            let domain_index = index % 47;
+            citations.push(Citation {
+                url: format!("https://source-{domain_index}.example.com/other"),
+                domain: format!("source-{domain_index}.example.com"),
+                title: None,
+                source_type: SourceType::Other,
+            });
+        }
+        (round, insights, issues, citations)
+    }
+
+    #[test]
+    fn demo_baseline_matches_appendix_c() {
+        let (round, insights, issues, citations) = demo_baseline();
+        let output = build_diagnosis(DiagnosisInput {
+            round: &round,
+            self_brand: "澜舟",
+            records: &[],
+            insights: &insights,
+            issues: &issues,
+            citations: &citations,
+            competitors: &[],
+            engine_runs: &[],
+            previous: None,
+            previous_matrix: None,
+            now: Utc::now(),
+        });
+        let overview = output.overview;
+        let score = |dimension: DiagnosisDimension| {
+            overview
+                .dimensions
+                .iter()
+                .find(|item| item.dimension == dimension)
+                .expect("五维齐全")
+                .score
+        };
+        assert!(
+            (score(DiagnosisDimension::Recommendation) - 23.0).abs() < 1.0,
+            "推荐力 {}",
+            score(DiagnosisDimension::Recommendation)
+        );
+        assert!(
+            (score(DiagnosisDimension::Sentiment) - 37.0).abs() < 1.0,
+            "口碑情感 {}",
+            score(DiagnosisDimension::Sentiment)
+        );
+        assert!(
+            (score(DiagnosisDimension::FactAccuracy) - 84.0).abs() < 1.0,
+            "事实准确 {}",
+            score(DiagnosisDimension::FactAccuracy)
+        );
+        assert!(
+            (score(DiagnosisDimension::SourceHealth) - 50.0).abs() < 1.0,
+            "信源健康 {}",
+            score(DiagnosisDimension::SourceHealth)
+        );
+        assert!(
+            (overview.total_score - 44.0).abs() < 1.0,
+            "总分 {}",
+            overview.total_score
+        );
+    }
+
+    #[test]
+    fn margins_are_interval_half_widths_not_round_deltas() {
+        let (round, insights, issues, citations) = demo_baseline();
+        let mut previous = previous_overview();
+        previous.total_score = 10.0;
+        previous.brand_coverage = 0.10;
+        let output = build_diagnosis(DiagnosisInput {
+            round: &round,
+            self_brand: "澜舟",
+            records: &[],
+            insights: &insights,
+            issues: &issues,
+            citations: &citations,
+            competitors: &[],
+            engine_runs: &[],
+            previous: Some(&previous),
+            previous_matrix: None,
+            now: Utc::now(),
+        });
+        let overview = output.overview;
+        let expected = wilson_half_width(26.0 / 62.0, 62);
+        assert!(
+            (overview.brand_coverage_margin - expected).abs() < 1e-9,
+            "覆盖率 margin 应是 Wilson 半宽"
+        );
+        assert!(overview.brand_coverage_margin > 0.0);
+        let round_delta = overview.brand_coverage - previous.brand_coverage;
+        assert!(
+            (overview.brand_coverage_margin - round_delta).abs() > 0.1,
+            "覆盖率 margin 不是与上一轮的差值"
+        );
+        assert!(overview.score_margin > 0.0);
+        assert!(
+            (overview.score_margin - (overview.total_score - previous.total_score)).abs() > 1.0,
+            "总分 margin 不是与上一轮的差值"
+        );
+        let last = overview.trend.last().expect("趋势含本轮");
+        assert_eq!(last.round_id, round.id);
+        assert_eq!(last.coverage_margin, overview.brand_coverage_margin);
     }
 }

@@ -36,12 +36,14 @@ pub mod client;
 pub mod error;
 pub mod json;
 pub mod provider;
+pub mod search;
 pub mod transport;
 
 pub use client::{ChatMessage, ChatRequest, ChatResponse, ChatRole, LlmClient, Usage};
 pub use error::LlmError;
 pub use json::{chat_json, extract_json};
 pub use provider::{LlmConfig, LlmProvider, Pricing};
+pub use search::{SearchClient, SearchEngine, SearchHit};
 pub use transport::{
     fixture_key, FixtureTransport, HttpMethod, HttpRequest, HttpResponse, ReqwestTransport,
     Transport, TransportError,

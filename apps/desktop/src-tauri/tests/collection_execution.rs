@@ -120,7 +120,9 @@ async fn start_queues_tasks_and_executes_deepseek() {
 }
 
 #[tokio::test]
-async fn unsupported_engines_are_skipped_and_retry_is_refused() {
+async fn yuanbao_fails_cleanly_when_the_browser_is_unavailable() {
+    // 集成测试不允许启动真实浏览器。显式禁用后，元宝任务应稳定失败而不是挂住。
+    std::env::set_var("GEO_DISABLE_BROWSER", "1");
     let (state, _server, _secrets) = state_with_transport(ScriptedTransport::new(Vec::new())).await;
     let (project_id, set_id) = seed_set(&state, 1).await;
     let service = CollectionService::from_state(&state);
@@ -131,26 +133,39 @@ async fn unsupported_engines_are_skipped_and_retry_is_refused() {
     service.execute_round(&round.id).await.expect("执行");
     let repo = geo_store::CollectionRepo::new(state.pool.clone());
     let tasks = repo.tasks(&round.id).await.expect("任务");
-    assert_eq!(tasks[0].status, CollectionStatus::Skipped);
-    assert_eq!(tasks[0].failure_reason, None);
+    assert_eq!(tasks[0].status, CollectionStatus::Failed);
+    assert_eq!(
+        tasks[0].failure_reason,
+        Some(geo_domain::FailureReason::Transport)
+    );
     let round = repo.round(&round.id).await.expect("轮次").expect("存在");
     assert_eq!(round.status, RoundStatus::Failed);
     assert_eq!(round.failed_queries, 1);
     let runs = repo.engine_runs(&tasks[0].round_id).await.expect("汇总");
-    assert_eq!(runs[0].failed, 1, "跳过在引擎汇总里计为失败");
+    assert_eq!(runs[0].failed, 1);
 
-    let error = service
-        .retry_task(tasks[0].id.clone())
-        .await
-        .expect_err("跳过的任务不能重跑");
-    assert_eq!(error.code, "state/conflict");
-    assert_eq!(error.params["reason"], "not_allowed");
-    assert_eq!(error.params["value"], "skipped");
+    // 失败任务允许重跑；浏览器仍不可用时再次失败，但尝试次数 +1。
+    let retried = service.retry_task(tasks[0].id.clone()).await.expect("重跑");
+    assert_eq!(retried.status, CollectionStatus::Failed);
+    assert_eq!(retried.attempt, 2);
+    std::env::remove_var("GEO_DISABLE_BROWSER");
 }
 
 #[tokio::test]
 async fn missing_key_fails_login_required_then_retry_succeeds() {
-    let transport = ScriptedTransport::new(vec![openai_response("Kimi 的回答"), parse_body()]);
+    let transport = ScriptedTransport::new(vec![
+        serde_json::json!({
+            "search_results": [{
+                "title": "来源",
+                "url": "https://example.com/a",
+                "snippet": "摘要",
+                "site_name": "站点"
+            }]
+        })
+        .to_string(),
+        openai_response("Kimi 的回答"),
+        parse_body(),
+    ]);
     let (state, _server, secrets) = state_with_transport(transport.clone()).await;
     let (project_id, set_id) = seed_set(&state, 1).await;
     let service = CollectionService::from_state(&state);
@@ -176,7 +191,11 @@ async fn missing_key_fails_login_required_then_retry_succeeds() {
     assert_eq!(retried.status, CollectionStatus::Succeeded);
     assert_eq!(retried.attempt, 2);
     assert!(retried.record_id.is_some());
-    assert_eq!(transport.request_count(), 2, "一次采集 + 一次解析");
+    assert_eq!(
+        transport.request_count(),
+        3,
+        "一次搜索 + 一次回答 + 一次解析"
+    );
     let round = repo.round(&round.id).await.expect("轮次").expect("存在");
     assert_eq!(round.status, RoundStatus::Succeeded);
 }
@@ -258,4 +277,68 @@ async fn start_counts_prompt_times_engine_times_repeat() {
         .await
         .expect("任务");
     assert_eq!(tasks.len(), 8);
+}
+
+#[tokio::test]
+async fn qwen_uses_enable_search_and_persists_platform_citations() {
+    let transport = ScriptedTransport::new(vec![
+        serde_json::json!({
+            "model": "qwen-plus",
+            "choices": [{ "message": { "content": "澜舟在推荐列表里[1]" }, "finish_reason": "stop" }],
+            "usage": { "prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150 },
+            "search_info": { "search_results": [{
+                "index": 1,
+                "title": "澜舟产品页",
+                "url": "https://www.lanzhou-hb.example.com/products/bag-filter",
+                "snippet": "脉冲布袋除尘器"
+            }]}
+        })
+        .to_string(),
+        parse_body(),
+    ]);
+    let (state, _server, secrets) = state_with_transport(transport.clone()).await;
+    secrets
+        .set(&geo_store::secret_ref("llm", "ali_bailian"), TEST_API_KEY)
+        .await
+        .expect("写千问 Key");
+    let (project_id, set_id) = seed_set(&state, 1).await;
+    let service = CollectionService::from_state(&state);
+    let round = service
+        .start(project_id, options(&set_id, vec![EngineId::Qwen], 1))
+        .await
+        .expect("排一轮");
+    service.execute_round(&round.id).await.expect("执行");
+
+    let repo = geo_store::CollectionRepo::new(state.pool.clone());
+    let tasks = repo.tasks(&round.id).await.expect("任务");
+    assert_eq!(tasks[0].status, CollectionStatus::Succeeded);
+    let detail = repo
+        .record(tasks[0].record_id.as_deref().unwrap())
+        .await
+        .expect("证据")
+        .expect("存在");
+    assert!(
+        !detail.citations.is_empty(),
+        "平台 search_info 引用必须落库"
+    );
+    assert!(
+        detail
+            .citations
+            .iter()
+            .any(|citation| citation.url.contains("lanzhou-hb.example.com")),
+        "平台返回的引用 URL 必须保留"
+    );
+    assert!(detail.answer_text.contains("[1]"));
+
+    let requests = transport.requests();
+    let body: serde_json::Value = serde_json::from_str(&requests[0].body).expect("JSON 请求体");
+    assert_eq!(
+        body["enable_search"],
+        serde_json::json!(true),
+        "千问必须开启联网搜索"
+    );
+    assert_eq!(
+        body["search_options"]["enable_source"],
+        serde_json::json!(true)
+    );
 }

@@ -1,68 +1,111 @@
 {
   "codes": [
     {
+      "code": "browser/unavailable",
+      "params": [
+        "reason"
+      ],
+      "note": "services/search_browser.rs：系统 Chrome/Edge 浏览器助手失败。reason 是稳定子原因（chrome_not_found / launch_failed / debug_port_timeout / connect_failed / no_tab / evaluate_failed / invalid_ws_url / browser_disabled / browser_task_failed）。"
+    },
+    {
       "code": "competitor/not_found",
-      "params": ["kind", "id"],
+      "params": [
+        "kind",
+        "id"
+      ],
       "note": "GeoError::not_found(competitor, …)（services/project_service.rs）与 StoreError::NotFound { kind: competitor }（repo/competitor.rs）；code 由 format!({kind}/not_found) 动态拼出，params.kind 恒为 competitor。"
     },
     {
       "code": "compliance/violation",
-      "params": ["terms"],
+      "params": [
+        "terms"
+      ],
       "note": "services/prompt_service.rs 在新增/编辑条目命中广告法红线词时用 IpcError::new 直接构造；terms 是命中的词以顿号拼接。词典文案不得复述红线词本身，也不得出现绝对化用语（AGENTS 规则 6）。"
     },
     {
       "code": "config/invalid",
-      "params": ["reason", "value"],
+      "params": [
+        "reason",
+        "value"
+      ],
       "note": "GeoError::Config 与 StoreError::Secret（系统钥匙串读写失败）共用此码；reason 是稳定 key（如 missing_base_url / secret_unavailable），value 是该 key 的配套原始值——StoreError::Secret 装已 redact 的钥匙串底层原文。取值不得含密钥（AGENTS 规则 3）。reason key 目录以 crates/geo-domain/src/error.rs 的模块文档注释为准。"
     },
     {
       "code": "crawler/blocked",
-      "params": ["url", "reason", "value"],
+      "params": [
+        "url",
+        "reason",
+        "value"
+      ],
       "note": "CrawlerError::Blocked { url, content_type }：MIME 白名单拒收响应体（fetch.rs）。reason 恒为稳定 key not_allowed（目录里「协议/取值/内容不被允许」），value = 响应的 content-type，头缺失或不可解码时是 unknown（永远发 value，前端不必条件渲染）。robots.txt 的拒绝不走本码——那是 site.rs 的 SkippedPage，最终落进 crawler/empty 的 skipped（Plan A Task 5 接管）。"
     },
     {
       "code": "crawler/decode",
-      "params": ["reason"],
+      "params": [
+        "reason"
+      ],
       "note": "CrawlerError::Decode：页面解码或 HTML 转文本失败（extract.rs）。"
     },
     {
       "code": "crawler/empty",
-      "params": ["domain", "skipped"],
+      "params": [
+        "domain",
+        "skipped"
+      ],
       "note": "services/entity_card_service.rs 整站抓取后一页都没抓到时用 IpcError::new 构造；skipped 是至多 3 条被跳过页面的 url（reason）。不是 CrawlerError 变体，因此没有对应的 upstream/crawler/empty。"
     },
     {
       "code": "crawler/invalid_url",
-      "params": ["url", "reason"],
+      "params": [
+        "url",
+        "reason"
+      ],
       "note": "CrawlerError::InvalidUrl { url, reason }：链接无法解析或非 http/https（extract.rs），代理地址非法也走这里（fetch.rs）。url 是裸地址，reason 是解析器原文（raw passthrough），不进词典。"
     },
     {
       "code": "crawler/network",
-      "params": ["url", "status", "reason"],
+      "params": [
+        "url",
+        "status",
+        "reason"
+      ],
       "note": "CrawlerError::Network { url, status, reason }：连接失败或 HTTP 非 2xx（fetch.rs）。url / status 是 Option：拿到非 2xx 响应时两者都有且 reason 为稳定记号 http_status；请求发出后失败时只有 url；构造客户端失败时两者都没有。后两种 reason 装 reqwest 原文（raw passthrough），不进词典。"
     },
     {
       "code": "crawler/timeout",
-      "params": ["url"],
+      "params": [
+        "url"
+      ],
       "note": "CrawlerError::Timeout：单页抓取超时（fetch.rs）。"
     },
     {
       "code": "crawler/too_large",
-      "params": ["url", "limit"],
+      "params": [
+        "url",
+        "limit"
+      ],
       "note": "CrawlerError::TooLarge { url, limit }：响应体超过 FetchLimits::max_bytes（fetch.rs）；limit 为该上限的字节数。"
     },
     {
       "code": "data/invalid",
-      "params": ["reason"],
+      "params": [
+        "reason"
+      ],
       "note": "GeoError::Serde 与 StoreError::Serde（JSON 列/请求体解析失败，含 codec.rs）共用此码。"
     },
     {
       "code": "entity_card/not_found",
-      "params": ["kind", "id"],
+      "params": [
+        "kind",
+        "id"
+      ],
       "note": "GeoError::not_found(entity_card, project_id)（services/entity_card_service.rs）；此处 id 传的是 project_id，params.kind 恒为 entity_card。"
     },
     {
       "code": "io/failed",
-      "params": ["reason"],
+      "params": [
+        "reason"
+      ],
       "note": "GeoError::Io、StoreError::Io，以及 StoreError::Sqlx 中非唯一约束的数据库错误（error.rs 的 is_unique_violation 判定）。"
     },
     {
@@ -72,32 +115,49 @@
     },
     {
       "code": "ipc/invoke_failed",
-      "params": ["cmd", "reason"],
+      "params": [
+        "cmd",
+        "reason"
+      ],
       "note": "前端专用：src/api/client.ts 的 unwrapIpcError 在 invoke 自身 reject 时构造（Plan A 后续 task 落地），Rust 侧没有发射点，属预期。cmd 是失败的 IPC 命令名。"
     },
     {
       "code": "ipc/unknown",
-      "params": ["cmd", "reason"],
+      "params": [
+        "cmd",
+        "reason"
+      ],
       "note": "前端兜底：src/api/client.ts 的 IpcRequestError 构造子在 payload.code 为空串时回退到此码（今天已存在，不是新增）。Rust 侧没有发射点。Plan A Task 12 改造 unwrapIpcError 时要决定保留还是并入 ipc/invoke_failed。"
     },
     {
       "code": "ipc/unknown_command",
-      "params": ["cmd"],
+      "params": [
+        "cmd"
+      ],
       "note": "demo 后端专用：src/demo/backend.ts 的运行时守卫在收到 IPC_COMMANDS 之外的命令时 reject（Plan A 后续 task 落地），Rust 侧没有发射点，属预期。"
     },
     {
       "code": "llm/bad_response",
-      "params": ["reason", "value"],
+      "params": [
+        "reason",
+        "value"
+      ],
       "note": "LlmError::BadResponse { reason, extra }：响应体不是合法 JSON 或缺 choices（client.rs / json.rs）。reason 取 parse_failed / json_not_found / missing_choices（目录 key，不是散文）；value 只在 parse_failed 时发，装 serde 的库消息，可能含上游响应片段，已按字符限长 200（crates/geo-llm/src/error.rs 的 library_reason）。**被禁的是 upstream（上游响应体原文）**：站点拿不到它，且把响应体塞进错误违反「错误里不得出现完整回答正文」（crates/geo-llm/src/error.rs 模块注释）——value 是库原文而非回答正文，登记 value 不是对 upstream 禁令的回退。跨 crate 转成 GeoError::Upstream 后走 upstream/llm/bad_response。"
     },
     {
       "code": "llm/config",
-      "params": ["reason", "value"],
+      "params": [
+        "reason",
+        "value"
+      ],
       "note": "LlmError::Config（client.rs）与 state.rs / settings_service.rs 里 IpcError::new 直接构造的配置错误共用；reason 取 missing_base_url / missing_model / unknown_provider / parse_failed（unknown_provider 由 Plan A Task 5 落地），value 装该 key 的配套原始值（provider 的稳定 id、用户传入的那个不存在的档案标识、serde 原文）；合法取值**列表**属文案，只能由词典模板给出，不得进 params（CF-1）。reason key 目录以 crates/geo-domain/src/error.rs 的模块文档注释为准。"
     },
     {
       "code": "llm/deserialize",
-      "params": ["reason", "value"],
+      "params": [
+        "reason",
+        "value"
+      ],
       "note": "LlmError::Deserialize { reason, extra }：带错误说明追问一次后结构仍不符合预期（json.rs）。reason 取 parse_failed / json_not_found / validation_failed（目录 key）；value 只在 parse_failed 时发，装 serde 的库消息，可能含上游响应片段，已按字符限长 200。字段校验器的原文（validate 闭包返回的那句）**不进 params**：它是我们自己的判据说的话，塞进 value 会让 UI 出现「错误套错误」的开发腔，只进日志与追问文案（裁定 G-3.1）。同样不登记 upstream（同 llm/bad_response）。"
     },
     {
@@ -112,22 +172,32 @@
     },
     {
       "code": "llm/server",
-      "params": ["status"],
+      "params": [
+        "status"
+      ],
       "note": "LlmError::Server：上游返回非 2xx（client.rs）；status 为 HTTP 状态码。"
     },
     {
       "code": "llm/transport",
-      "params": ["reason"],
+      "params": [
+        "reason"
+      ],
       "note": "LlmError::Transport（TransportError::Network / Timeout / Other）；reason 取 network / timeout / other（TransportError::reason_key()）。底层 reqwest / fixture 原文只进日志（TransportError::Display），不进 params。"
     },
     {
       "code": "project/not_found",
-      "params": ["kind", "id"],
+      "params": [
+        "kind",
+        "id"
+      ],
       "note": "GeoError::not_found(project, …) 与 StoreError::NotFound { kind: project }（repo/project.rs）；params.kind 恒为 project。"
     },
     {
       "code": "prompt_item/not_found",
-      "params": ["kind", "id"],
+      "params": [
+        "kind",
+        "id"
+      ],
       "note": "GeoError::not_found(prompt_item, …)（services/prompt_service.rs 的编辑与批量删除路径）。"
     },
     {
@@ -137,82 +207,133 @@
     },
     {
       "code": "prompt_set/not_found",
-      "params": ["kind", "id"],
+      "params": [
+        "kind",
+        "id"
+      ],
       "note": "StoreError::NotFound { kind: prompt_set }（repo/prompt_set.rs）与 GeoError::not_found(prompt_set, …)。"
     },
     {
       "code": "state/conflict",
-      "params": ["reason", "value"],
+      "params": [
+        "reason",
+        "value"
+      ],
       "note": "GeoError::Conflict、StoreError::Conflict，以及 StoreError::Sqlx 命中 SQLite 唯一约束/主键冲突（错误码 2067 / 1555 / 19）。reason 取 duplicate / write_failed 等稳定 key；value 装底层错误原文（如 CSV 导出写失败时的 OS/驱动报文），不进词典。reason key 目录以 crates/geo-domain/src/error.rs 的模块文档注释为准。"
     },
     {
       "code": "upstream/crawler/blocked",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族：GeoError::code() 对 Upstream 返回 format!(upstream/{code})。本条来自 CrawlerError 先经 GeoError::from 转成 Upstream { code: crawler/blocked } 再出 IPC；upstream_code 为原始 crawler/* 码，upstream 为上游原文。新增 crawler/* 码时必须同步补对应条目。"
     },
     {
       "code": "upstream/crawler/decode",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：CrawlerError::Decode 经 GeoError::from 转成 Upstream 后的形态，语义同 crawler/decode。"
     },
     {
       "code": "upstream/crawler/invalid_url",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：CrawlerError::InvalidUrl 经 GeoError::from 转成 Upstream 后的形态，语义同 crawler/invalid_url。"
     },
     {
       "code": "upstream/crawler/network",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：CrawlerError::Network 经 GeoError::from 转成 Upstream 后的形态，语义同 crawler/network。"
     },
     {
       "code": "upstream/crawler/timeout",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：CrawlerError::Timeout 经 GeoError::from 转成 Upstream 后的形态，语义同 crawler/timeout。"
     },
     {
       "code": "upstream/crawler/too_large",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：CrawlerError::TooLarge 经 GeoError::from 转成 Upstream 后的形态，语义同 crawler/too_large。"
     },
     {
       "code": "upstream/llm/bad_response",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：LlmError::BadResponse 经 GeoError::from 转成 Upstream 后的形态，语义同 llm/bad_response。"
     },
     {
       "code": "upstream/llm/config",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：LlmError::Config 经 GeoError::from 转成 Upstream 后的形态，语义同 llm/config。"
     },
     {
       "code": "upstream/llm/deserialize",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：LlmError::Deserialize 经 GeoError::from 转成 Upstream 后的形态，语义同 llm/deserialize。"
     },
     {
       "code": "upstream/llm/missing_secret",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：LlmError::MissingSecret 经 GeoError::from 转成 Upstream 后的形态，语义同 llm/missing_secret。"
     },
     {
       "code": "upstream/llm/rate_limited",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：LlmError::RateLimited 经 GeoError::from 转成 Upstream 后的形态，语义同 llm/rate_limited。"
     },
     {
       "code": "upstream/llm/server",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：LlmError::Server 经 GeoError::from 转成 Upstream 后的形态，语义同 llm/server。"
     },
     {
       "code": "upstream/llm/transport",
-      "params": ["upstream_code", "upstream"],
+      "params": [
+        "upstream_code",
+        "upstream"
+      ],
       "note": "动态族 upstream/{code}：LlmError::Transport 经 GeoError::from 转成 Upstream 后的形态，语义同 llm/transport。"
     },
     {
       "code": "validation/failed",
-      "params": ["expected", "field", "limit", "reason", "value"],
+      "params": [
+        "expected",
+        "field",
+        "limit",
+        "reason",
+        "value"
+      ],
       "note": "GeoError::Validation 与 StoreError::Validation；field 是字段名（与前端表单一一对应），reason 是稳定 key（如 required / too_long / out_of_range）。reason key 目录以 crates/geo-domain/src/error.rs 的模块文档注释为准，本文件不再复制清单（两处清单必然漂移）；limit / expected / value 是该 key 的配套参数：limit 是字符数上限，expected 是语言中立区间表达式（如 1~5、<=5、0~9），value 是出错的原始值。"
     }
   ]

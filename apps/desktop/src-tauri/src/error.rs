@@ -199,27 +199,48 @@ fn redact_value(value: &mut serde_json::Value) {
 /// `IpcError` 只是最后一关，`LlmTestResult.message`、`prompt_sets.notes`
 /// 这些不经过 `IpcError` 的出口同样是泄漏面（AGENTS 规则 3）。
 pub(crate) fn redact(message: &str) -> String {
-    const PREFIX: &str = "sk-";
+    // P2-07（2026-11-07 测试报告）：凭据形状不止 `sk-`。Google access token 是
+    // `ya29.…`、refresh token 是 `1//…`；而 `Bearer <token>` 的 token 可能**不带任何
+    // 前缀**（Bing Webmaster 的 API Key 就是裸串）。只认 `sk-` 时这些形状原样漏过。
+    const PREFIXES: [&str; 3] = ["sk-", "ya29.", "1//"];
+    /// `_scheme_` 词本身不是秘密（留着错误信息才可读），秘密是它后面那串 token。
+    const BEARER: &str = "bearer ";
+
     let chars: Vec<char> = message.chars().collect();
-    let prefix: Vec<char> = PREFIX.chars().collect();
+    let lower: Vec<char> = chars
+        .iter()
+        .flat_map(|character| character.to_lowercase())
+        .collect();
     let mut output = String::with_capacity(message.len());
     let mut index = 0;
 
     while index < chars.len() {
-        let matches_prefix = chars[index..]
-            .iter()
-            .zip(prefix.iter())
-            .take_while(|(actual, expected)| actual.eq_ignore_ascii_case(expected))
-            .count()
-            == prefix.len();
-
-        if matches_prefix {
-            let end = (index..chars.len())
-                .find(|position| !is_token_char(chars[*position]))
-                .unwrap_or(chars.len());
-            output.push_str("***");
+        if starts_with_at(&lower, index, BEARER) {
+            let token_start = index + BEARER.chars().count();
+            let end = token_end(&chars, token_start);
+            output.extend(chars[index..token_start].iter());
+            if end > token_start {
+                output.push_str("***");
+            }
             index = end;
             continue;
+        }
+
+        let prefix_len = PREFIXES
+            .iter()
+            .find(|prefix| starts_with_at(&lower, index, prefix))
+            .map(|prefix| prefix.chars().count());
+
+        if let Some(prefix_len) = prefix_len {
+            let token_start = index + prefix_len;
+            let end = token_end(&chars, token_start);
+            // 前缀后面**没有** token 字符（孤立的 `ya29.` / 句末的 `sk-`）不算凭据，
+            // 原样保留：宁可漏抹一个不完整的前缀，也不把普通文本吃掉。
+            if end > token_start {
+                output.push_str("***");
+                index = end;
+                continue;
+            }
         }
 
         output.push(chars[index]);
@@ -227,6 +248,19 @@ pub(crate) fn redact(message: &str) -> String {
     }
 
     output
+}
+
+/// `haystack[index..]` 是否以 `needle` 开头（ASCII 大小写不敏感，haystack 需已小写化）。
+fn starts_with_at(haystack: &[char], index: usize, needle: &str) -> bool {
+    let needle: Vec<char> = needle.chars().collect();
+    haystack.len() >= index + needle.len() && haystack[index..index + needle.len()] == needle[..]
+}
+
+/// 从 `token_start` 起第一个非 token 字符的位置（到尾则返回长度）。
+fn token_end(chars: &[char], token_start: usize) -> usize {
+    (token_start..chars.len())
+        .find(|position| !is_token_char(chars[*position]))
+        .unwrap_or(chars.len())
 }
 
 fn is_token_char(character: char) -> bool {
@@ -354,6 +388,52 @@ mod tests {
         assert_eq!(error.message, "config/invalid reason=missing_base_url");
     }
 
+    /// P2-07（2026-11-07 测试报告）：凭据形状不止 `sk-`。Google access token 是
+    /// `ya29.…`、refresh token 是 `1//…`，而 `Bearer <token>` 的 token 可能不带任何
+    /// 前缀（Bing API Key 就是）。只认 `sk-` 的 [`redact`] 对这些形状是透明的。
+    #[test]
+    fn redaction_covers_non_sk_credential_shapes() {
+        let access = IpcError::from(GeoError::upstream(
+            "auth",
+            "token 失效：ya29.aBcDeF123456_-x 请重新授权",
+        ));
+        assert!(
+            !access.message.contains("ya29.aBcDeF123456_-x"),
+            "{access:?}"
+        );
+        assert!(access.message.contains("***"), "{access:?}");
+
+        let refresh = IpcError::from(GeoError::upstream(
+            "auth",
+            "refresh 1//aBcDeF123456GhI 被 Google 拒绝",
+        ));
+        assert!(
+            !refresh.message.contains("1//aBcDeF123456GhI"),
+            "{refresh:?}"
+        );
+
+        let bearer = IpcError::from(GeoError::upstream(
+            "auth",
+            "上游回 401：Bearer aBcDeF123456GhIjKl 无效",
+        ));
+        assert!(!bearer.message.contains("aBcDeF123456GhIjKl"), "{bearer:?}");
+        // 「Bearer」这个_scheme_ 词本身不是秘密，保留它错误信息才可读
+        assert!(bearer.message.contains("Bearer"), "{bearer:?}");
+    }
+
+    #[test]
+    fn redaction_does_not_eat_ordinary_text() {
+        // 斜杠、百分号与孤立数字都不是凭据形状，不能被误伤
+        // 注：`1//<数字>` 与 refresh token 形状不可区分，会被抹掉——这是有意的取舍
+        // （宁可误抹一个罕见写法，不漏抹真凭据），故普通文本样本里不放它。
+        assert_eq!(
+            redact("路径 a/1/2 与 100% 保持原样"),
+            "路径 a/1/2 与 100% 保持原样"
+        );
+        assert_eq!(redact("Bearer"), "Bearer");
+        assert_eq!(redact("ya29."), "ya29.");
+    }
+
     /// `internal` 的 message 是「前端词典 miss」时的兜底渲染出口（**Task 7 建完词典后**才退化成
     /// 只进日志；在那之前它会经 `userMessage` 原样进 toast——见 `ipc/export.rs` 里同一时态的
     /// 说明），而 Plan A 的前提就是后端不再产出自然语言 ⇒ 它必须是 Task 3 那种紧凑日志串（`{code} {k}={v}`），
@@ -405,6 +485,92 @@ mod tests {
         "prompt_item",
         "competitor",
     ];
+
+    /// 发射点真实存在、但**刻意不进共享契约**的 `{kind}/not_found`：service 层会把它们
+    /// 转成 `validation/failed { field, reason: invalid_id }`，前端永远看不到原码
+    /// （2026-11-07 测试报告 P2-02）。列在这里是为了让下面的双向守卫能发现漂移：
+    /// 新增发射点必须**显式**二选一——进契约（补两侧词典转正）或进本清单（确认已兜底）。
+    const INTERNAL_NOT_FOUND_KINDS: [&str; 8] = [
+        "article_direction",
+        "article_schedule",
+        "article_template",
+        "faq",
+        "kb_entry",
+        "keyword",
+        "search_opportunity",
+        "site_patch",
+    ];
+
+    /// 构建期源码快照：`{kind}/not_found` 字面量发射点所在的**全部**文件。
+    ///
+    /// 用 `include_str!` 而不是运行期读文件：测试二进制不依赖工作目录。
+    /// 漏列文件 ⇒ 派生集合缺 kind ⇒ 双向断言立刻红（P2-02 的旧守卫是单向的，
+    /// 注释里那条 `rg` 取证命令跑出 13 个 kind、清单只写 5 个，却全绿）。
+    const NOT_FOUND_SOURCE_FILES: [&str; 12] = [
+        include_str!("services/project_service.rs"),
+        include_str!("services/prompt_service.rs"),
+        include_str!("services/entity_card_service.rs"),
+        include_str!("services/collection_service.rs"),
+        include_str!("../../../../crates/geo-store/src/repo/project.rs"),
+        include_str!("../../../../crates/geo-store/src/repo/prompt_set.rs"),
+        include_str!("../../../../crates/geo-store/src/repo/article.rs"),
+        include_str!("../../../../crates/geo-store/src/repo/site_patch.rs"),
+        include_str!("../../../../crates/geo-store/src/repo/kb.rs"),
+        include_str!("../../../../crates/geo-store/src/repo/faq.rs"),
+        include_str!("../../../../crates/geo-store/src/repo/search.rs"),
+        include_str!("../../../../crates/geo-store/src/repo/keyword.rs"),
+    ];
+
+    /// 从源码快照里派生真实发射的 kind 集合（扫 `not_found("<kind>"` 字面量）。
+    fn derived_not_found_kinds() -> BTreeSet<String> {
+        let mut kinds = BTreeSet::new();
+        for source in NOT_FOUND_SOURCE_FILES {
+            let mut cursor = 0;
+            while let Some(hit) = source[cursor..].find("not_found(\"") {
+                let start = cursor + hit + "not_found(\"".len();
+                let Some(end) = source[start..].find('"') else {
+                    break;
+                };
+                kinds.insert(source[start..start + end].to_string());
+                cursor = start + end;
+            }
+        }
+        kinds
+    }
+
+    /// 双向守卫：派生集合必须**恰好等于**两份清单的并集。
+    /// 旧版只断言「清单 ⊆ 发射点方向的反面」（emitted ⊆ catalog），漏登记的 kind 恒绿。
+    #[test]
+    fn not_found_kinds_match_the_emission_sites_exactly() {
+        let derived = derived_not_found_kinds();
+        let declared: BTreeSet<String> = NOT_FOUND_KINDS
+            .iter()
+            .chain(INTERNAL_NOT_FOUND_KINDS.iter())
+            .map(|kind| (*kind).to_string())
+            .collect();
+        assert!(
+            !derived.is_empty(),
+            "派生集合为空：include_str! 快照或扫描逻辑坏了，这条守卫等于没跑"
+        );
+        assert_eq!(
+            derived, declared,
+            "发射点与清单漂移：左边多出来的是「新发射但没登记」，右边多出来的是「登记了但没人发」"
+        );
+    }
+
+    /// INTERNAL 清单里的码**不得**进共享契约：它们一旦出现在
+    /// `contracts/error-codes.json`，就说明该转正了（补两侧词典），应从 INTERNAL 移走。
+    #[test]
+    fn internal_not_found_kinds_stay_out_of_the_shared_catalog() {
+        let known = catalog();
+        for kind in INTERNAL_NOT_FOUND_KINDS {
+            let code = format!("{kind}/not_found");
+            assert!(
+                !known.contains(code.as_str()),
+                "{code} 已进共享契约：把它从 INTERNAL_NOT_FOUND_KINDS 移到 NOT_FOUND_KINDS，并补两侧词典"
+            );
+        }
+    }
 
     fn llm_variants() -> Vec<LlmError> {
         vec![
@@ -554,6 +720,7 @@ mod tests {
                 err_codes::LLM_CONFIG,
                 [("reason", "missing_model"), ("value", "custom")],
             ),
+            IpcError::with_params("browser/unavailable", [("reason", "chrome_not_found")]),
             IpcError::internal("export dialog dismissed"),
         ]
     }

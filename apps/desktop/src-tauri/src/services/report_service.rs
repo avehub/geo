@@ -98,9 +98,25 @@ impl ReportService {
                 .collect();
         }
 
+        // 环比：取同项目上一轮“有 overview 快照”的诊断。没有上一轮时 delta 全为 null。
+        let previous = previous_overview(&self.pool, &round).await?;
         let headline = vec![
-            metric("brand_coverage", overview.brand_coverage, "percent", None),
-            metric("total_score", overview.total_score, "score", None),
+            metric(
+                "brand_coverage",
+                overview.brand_coverage,
+                "percent",
+                previous
+                    .as_ref()
+                    .map(|value| (overview.brand_coverage - value.brand_coverage) * 100.0),
+            ),
+            metric(
+                "total_score",
+                overview.total_score,
+                "score",
+                previous
+                    .as_ref()
+                    .map(|value| overview.total_score - value.total_score),
+            ),
             metric("fact_error_count", issues.len() as f64, "count", None),
         ];
         let mut sections = Vec::new();
@@ -320,6 +336,28 @@ impl ReportService {
             white_label: options.white_label,
         })
     }
+}
+
+async fn previous_overview(
+    pool: &SqlitePool,
+    round: &geo_domain::CollectionRound,
+) -> Result<Option<DiagnosisOverview>, IpcError> {
+    let snapshots = DiagnosisRepo::new(pool.clone());
+    let mut rounds = CollectionRepo::new(pool.clone())
+        .rounds(&round.project_id)
+        .await?;
+    rounds.sort_by_key(|candidate| std::cmp::Reverse(candidate.round_index));
+    for candidate in rounds
+        .into_iter()
+        .filter(|candidate| candidate.round_index < round.round_index)
+    {
+        if let Some(payload) = snapshots.snapshot(&candidate.id, "overview").await? {
+            let overview: DiagnosisOverview = serde_json::from_str(&payload)
+                .map_err(|error| IpcError::from(StoreError::Serde(error)))?;
+            return Ok(Some(overview));
+        }
+    }
+    Ok(None)
 }
 
 fn metric(metric: &str, value: f64, unit: &str, delta: Option<f64>) -> ReportBlock {

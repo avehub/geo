@@ -247,3 +247,69 @@ async fn add_missing_project_is_project_not_found() {
         .expect_err("未知项目必须报 project/not_found");
     assert_eq!(error.code, "project/not_found");
 }
+
+/// P2-09：手工录入的补丁同样是要下发到客户官网的**对外内容**，红线闸不能只装在
+/// 生成路径上——否则「让模型生成」被拦、「自己敲进去」直通发布，是一条现成的绕过路径。
+#[tokio::test]
+async fn add_rejects_absolute_wording_in_manual_copy() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SitePatchService::from_state(&state);
+
+    let mut in_title = draft();
+    in_title.title = "保证排名第一的 llms.txt".to_string();
+    let error = service
+        .add(project_id, in_title, now())
+        .await
+        .expect_err("标题命中红线必须拒绝");
+    assert_eq!(error.code, "compliance/violation", "{error}");
+    assert!(
+        error.params["terms"].contains("保证排名"),
+        "terms 装命中的词：{:?}",
+        error.params
+    );
+
+    let mut in_body = draft();
+    in_body.body = "User-agent: *\n# 效果 100% 可见".to_string();
+    let error = service
+        .add(project_id, in_body, now())
+        .await
+        .expect_err("正文命中红线必须拒绝");
+    assert_eq!(error.code, "compliance/violation", "{error}");
+    assert!(
+        error.params["terms"].contains("100%"),
+        "terms 装命中的词：{:?}",
+        error.params
+    );
+
+    assert!(
+        service.list(project_id).await.expect("台账").is_empty(),
+        "命中红线不得留下半条台账"
+    );
+}
+
+/// 反面用例：正常文案必须照常新建，且保留「人工录入 = approved」的既有裁定。
+#[tokio::test]
+async fn add_keeps_clean_manual_copy_approved() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let project_id = project(&state).await;
+    let service = SitePatchService::from_state(&state);
+
+    let mut value = draft();
+    value.kind = SitePatchKind::MetaDescription;
+    value.title = "首页 meta description 补企业与产品线".to_string();
+    value.target_url = "/".to_string();
+    value.target_hint = Some("首页 <head> 内".to_string());
+    value.body = "宏宇泵业生产立式管道离心泵，覆盖楼宇二次供水与暖通循环场景。".to_string();
+    value.channel_kind = SiteChannelKind::Cms;
+
+    let patch = service.add(project_id, value, now()).await.expect("新建");
+    assert_eq!(patch.review_status, ContentStatus::Approved);
+    assert_eq!(patch.status, SitePatchStatus::Draft);
+    assert_eq!(patch.source, geo_domain::LibrarySource::Manual);
+    assert_eq!(
+        service.list(project_id).await.expect("台账"),
+        vec![patch],
+        "干净文案照常落库"
+    );
+}

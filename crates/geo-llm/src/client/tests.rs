@@ -143,3 +143,37 @@ fn debug_output_redacts_api_key() {
     // secret_ref 只是钥匙串引用，可以出现
     assert!(debug.contains("keyring://llm/deepseek"));
 }
+
+#[test]
+fn build_body_merges_provider_extra_fields() {
+    let client = deepseek_client();
+    let req = ChatRequest::new(vec![ChatMessage::user("杭州天气")])
+        .with_extra("enable_search", json!(true))
+        .with_extra("search_options", json!({ "enable_source": true }));
+    let body: serde_json::Value = serde_json::from_str(&client.build_body(&req).unwrap()).unwrap();
+    assert_eq!(body["enable_search"], json!(true));
+    assert_eq!(body["search_options"]["enable_source"], json!(true));
+    assert_eq!(body["model"], "deepseek-chat");
+}
+
+#[test]
+fn parse_chat_response_collects_qwen_search_citations() {
+    let response = HttpResponse {
+        status: 200,
+        body: json!({
+            "model": "qwen-plus",
+            "choices": [{ "message": { "content": "答案[1]" }, "finish_reason": "stop" }],
+            "usage": { "prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3 },
+            "search_info": {
+                "search_results": [
+                    { "index": 1, "title": "标题", "url": "https://example.com/a", "snippet": "摘要" }
+                ]
+            }
+        })
+        .to_string(),
+    };
+    let parsed = parse_chat_response(&response).unwrap();
+    assert_eq!(parsed.citations.len(), 1);
+    assert_eq!(parsed.citations[0].title, "标题");
+    assert_eq!(parsed.citations[0].url, "https://example.com/a");
+}

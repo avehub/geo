@@ -74,6 +74,10 @@ pub struct ChatRequest {
     #[serde(default)]
     pub response_format_json: bool,
     pub temperature: Option<f32>,
+    /// Provider 专用参数（如 Qwen 的 `enable_search` / `search_options`）。
+    /// 不进 OpenAI 标准字段，构造请求体时合并到顶层。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_body: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 impl ChatRequest {
@@ -82,6 +86,7 @@ impl ChatRequest {
             messages,
             response_format_json: false,
             temperature: None,
+            extra_body: None,
         }
     }
 
@@ -93,6 +98,13 @@ impl ChatRequest {
 
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = Some(temperature);
+        self
+    }
+
+    /// 追加一个 Provider 专用顶层参数。重复 key 覆盖旧值。
+    pub fn with_extra(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
+        let extra = self.extra_body.get_or_insert_with(serde_json::Map::new);
+        extra.insert(key.into(), value);
         self
     }
 
@@ -110,6 +122,9 @@ pub struct ChatResponse {
     pub usage: Usage,
     pub model: String,
     pub finish_reason: Option<String>,
+    /// 搜索型模型（Qwen `search_info.search_results` 等）返回的引用。
+    #[serde(default)]
+    pub citations: Vec<crate::search::SearchHit>,
 }
 
 /// OpenAI 兼容客户端。API Key 只在构造时传入，绝不写日志、不落库。
@@ -234,9 +249,22 @@ impl LlmClient {
                 kind: "json_object",
             }),
         };
+        // 先按 Wire 结构序列化再解析成 Value：这样 f32 的 0.3 仍是最短表示，
+        // 不会被 `to_value` 的 f64 提升成 0.30000001192092896。
+        let wire = serde_json::to_string(&payload)
+            .map_err(|err| LlmError::config("parse_failed").with_param("value", err))?;
+        let mut body: serde_json::Value = serde_json::from_str(&wire)
+            .map_err(|err| LlmError::config("parse_failed").with_param("value", err))?;
+        if let Some(extra) = &req.extra_body {
+            if let serde_json::Value::Object(map) = &mut body {
+                for (key, value) in extra {
+                    map.insert(key.clone(), value.clone());
+                }
+            }
+        }
         // 请求体序列化失败属目录里的 `parse_failed`（序列化器库返回的 Error），
         // `value` 装 serde 原文
-        serde_json::to_string(&payload)
+        serde_json::to_string(&body)
             .map_err(|err| LlmError::config("parse_failed").with_param("value", err))
     }
 }
@@ -264,6 +292,8 @@ struct WireChatResponse {
     choices: Vec<WireChoice>,
     #[serde(default)]
     usage: Option<WireUsage>,
+    #[serde(default)]
+    search_info: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -337,6 +367,11 @@ fn parse_chat_response(response: &HttpResponse) -> Result<ChatResponse, LlmError
         usage: wire.usage.map(Usage::from).unwrap_or_default(),
         model: wire.model.unwrap_or_default(),
         finish_reason: choice.finish_reason,
+        citations: wire
+            .search_info
+            .as_ref()
+            .map(crate::search::hits_from_search_info)
+            .unwrap_or_default(),
     })
 }
 

@@ -120,7 +120,8 @@ pub use search_metrics::{
     WindowSource,
 };
 pub use search_opportunity::{
-    SearchActionLevel, SearchOpportunity, SearchOpportunityStatus, SearchPrescriptionCategory,
+    build_search_opportunities, SearchActionLevel, SearchOpportunity, SearchOpportunityInput,
+    SearchOpportunityStatus, SearchPrescriptionCategory,
 };
 pub use site::{
     channel_secret_ref, channel_status, page_from_asset, page_role_for_url, SiteChannel,

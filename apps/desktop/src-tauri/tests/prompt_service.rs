@@ -85,7 +85,8 @@ async fn generate_hits_the_p0a_acceptance_bar() {
             item.text
         );
         assert!(item.weight >= 1 && item.weight <= 5);
-        assert_eq!(item.group_name.as_deref(), Some(item.intent.label_zh()));
+        // P1-03：生成路径不再把中文枚举标签写进 group_name（前端按词典回落）
+        assert_eq!(item.group_name, None);
     }
     // position 连续且唯一，前端表格与 CSV 导出都依赖它
     let positions: Vec<i32> = set.items.iter().map(|item| item.position).collect();
@@ -675,11 +676,9 @@ async fn add_items_appends_manual_prompts_and_refreshes_the_snapshot() {
     assert_eq!(added.weight, 4);
     assert_eq!(added.repeat_count, 2);
     assert_eq!(added.tags, vec!["核心词".to_string()], "人工标签要原样保留");
-    assert_eq!(
-        added.group_name.as_deref(),
-        Some(added.intent.label_zh()),
-        "没填分组时按意图归组，与生成管线一致"
-    );
+    // P1-03（2026-11-07 测试报告）：分组列是**数据**不是枚举标签。没填分组就留空，
+    // 由前端按词典回落（en-US 不再泄漏中文）；与生成管线 / csv 导入同一契约。
+    assert_eq!(added.group_name, None, "没填分组时留空，前端按词典回落");
     assert_eq!(added.set_id, set.id);
     let positions: Vec<i32> = updated.items.iter().map(|item| item.position).collect();
     assert_eq!(positions, (0..positions.len() as i32).collect::<Vec<_>>());

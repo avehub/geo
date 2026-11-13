@@ -192,6 +192,13 @@ jobs:
       - name: 补齐交叉编译 target
         run: rustup target add ${{ matrix.rust_target }}
 
+      # cargo 缓存：同 target 重跑时把 macOS 编译从 ~15min 压到 ~5min。
+      # 公开仓库分钟数免费，但省排队与等待；缓存未命中时行为与现在完全一致。
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.rust_target }}
+          workspaces: "."
+
       - name: 安装前端依赖
         run: pnpm --dir apps/desktop/ui install --frozen-lockfile
 
@@ -308,6 +315,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msix-x86_64-pc-windows-msvc
+          workspaces: "."
 
       - name: 安装前端依赖
         run: pnpm --dir apps/desktop/ui install --frozen-lockfile

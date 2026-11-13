@@ -234,29 +234,13 @@ jobs:
           chmod 600 "$KEYDIR/AuthKey_${APPLE_API_KEY}.p8"
           echo "APPLE_API_KEY_PATH=$KEYDIR/AuthKey_${APPLE_API_KEY}.p8" >> "$GITHUB_ENV"
 
-      # ── Windows：装 artifact-signing-cli + 生成 signCommand 配置 ──────────
-      - name: 安装 artifact-signing-cli
-        if: matrix.os == 'windows-latest'
-        run: cargo install artifact-signing-cli --locked
+      # ── Windows：直下载通道（NSIS）当前**不签名**（DR-R3 修订 2026-11-13）────
+      # 中国大陆主体拿不到 Azure Artifact Signing 公共信任（组织限 US/CA/EU/UK，
+      # 个人限 US/CA），原 Azure 签名 CLI 与六个凭据/变量链路整体作废。
+      # 主通道改走 Store MSIX（见下方 msix job，微软重签、免费、无 SmartScreen 警告）；
+      # 直下载 exe 短期带 SmartScreen 提示，下载页必须如实写明（规格 DR-R3 修订）。
+      # OV 证书（商业 CA 云签名）作为直下载通道的后续补签方案，单独立项。
 
-      - name: 生成 Windows 签名配置
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        env:
-          AZURE_CODESIGN_ENDPOINT: ${{ vars.AZURE_CODESIGN_ENDPOINT }}
-          AZURE_CODESIGN_ACCOUNT: ${{ vars.AZURE_CODESIGN_ACCOUNT }}
-          AZURE_CODESIGN_PROFILE: ${{ vars.AZURE_CODESIGN_PROFILE }}
-        run: |
-          set -euo pipefail
-          for v in AZURE_CODESIGN_ENDPOINT AZURE_CODESIGN_ACCOUNT AZURE_CODESIGN_PROFILE; do
-            [[ -n "${!v}" ]] || { echo "::error::缺少 variable $v（非密配置，见发布规格 §7）"; exit 1; }
-          done
-          CONF="$RUNNER_TEMP/windows-sign.json"
-          printf '{\n  "bundle": {\n    "windows": {\n      "signCommand": "artifact-signing-cli -e %s -a %s -c %s -d 稿得快GEO %%1"\n    }\n  }\n}\n' \
-            "$AZURE_CODESIGN_ENDPOINT" "$AZURE_CODESIGN_ACCOUNT" "$AZURE_CODESIGN_PROFILE" > "$CONF"
-          cat "$CONF"
-          # signCommand 里含空格与 %1，整段作为单个参数传给 tauri build --config
-          echo "TAURI_EXTRA_ARGS=--config=$CONF" >> "$GITHUB_ENV"
 
       - name: 构建 + 签名 + 公证 + 上传到 Release
         uses: tauri-apps/tauri-action@v1
@@ -270,17 +254,15 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
-          # Windows 签名：Azure Artifact Signing（DR-R3）
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          # Windows：Store MSIX 主通道由 msix job 出包、微软重签（DR-R3 修订）；
+          # 直下载 NSIS 当前不签名，后续补商业 CA OV 云签名。
           # 自动更新（0.2 才启用，DR-R8）。Secret 未设时为空 = 不产出 .sig / latest.json
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: ${{ env.PROJECT_PATH }}
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: --target ${{ matrix.rust_target }} --bundles ${{ matrix.bundles }} ${{ env.TAURI_EXTRA_ARGS }}
+          args: --target ${{ matrix.rust_target }} --bundles ${{ matrix.bundles }}
           # DR-R8：0.2 开启自动更新时把下面这行改成 true，
           # 并同时在 tauri.conf.json 打开 bundle.createUpdaterArtifacts（两件事必须同一个提交做）。
           uploadUpdaterJson: false
@@ -289,6 +271,73 @@ jobs:
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: bundle-${{ matrix.suffix }}-${{ matrix.os }}
           retryAttempts: 2
+
+  # ── Windows Store MSIX 包（主通道，DR-R3 修订 2026-11-13）──────────────────
+  # 中国大陆主体无 Azure Artifact Signing 公共信任资格；Store 通道的 MSIX 在认证
+  # 通过后由微软用自家证书重签：免费、无 SmartScreen 警告、Smart App Control 可装。
+  # ⚠ 产物**只**进 workflow artifact（store-msix-*），**不**进 Release asset：
+  #    未自签的 MSIX 在 Store 之外装不了，放出去只会误导客户。
+  # 上传 Store 目前手工（Partner Center → 程序包）；0.2 再评估 Store Developer CLI 自动化。
+  msix:
+    name: Windows Store MSIX 包
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+          cache: pnpm
+          cache-dependency-path: apps/desktop/ui/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: 安装前端依赖
+        run: pnpm --dir apps/desktop/ui install --frozen-lockfile
+
+      - name: 构建裸应用目录（不产 bundle）
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/desktop
+          ./ui/node_modules/.bin/tauri build --target x86_64-pc-windows-msvc --no-bundle
+
+      - name: 渲染包清单 + 备料
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(scripts/version.sh get)"
+          scripts/msix-manifest.sh "$VERSION" msix-stage
+          mkdir -p msix-stage/assets target/release/bundle/msix
+          cp apps/desktop/src-tauri/icons/Square44x44Logo.png \
+             apps/desktop/src-tauri/icons/Square150x150Logo.png \
+             apps/desktop/src-tauri/icons/StoreLogo.png msix-stage/assets/
+          echo "MSIX_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: makeappx 打包（不签名，Store 会重签）
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Copy-Item "target/release/gdk-geo.exe" "msix-stage/"
+          Get-ChildItem "target/release/*.dll" | Copy-Item -Destination "msix-stage/"
+          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter makeappx.exe |
+                      Sort-Object FullName | Select-Object -Last 1
+          if (-not $makeappx) { throw "找不到 makeappx.exe（Windows SDK）" }
+          & $makeappx.FullName pack /d msix-stage /p "target/release/bundle/msix/gdk-geo_${env:MSIX_VERSION}_x64.msix" /l
+
+      - name: 上传 workflow artifact（仅 Store 提交用）
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-msix-x64
+          path: target/release/bundle/msix/*.msix
+          if-no-files-found: error
 
   # ── SHA256SUMS + 发布 ───────────────────────────────────────────────────
   checksums:

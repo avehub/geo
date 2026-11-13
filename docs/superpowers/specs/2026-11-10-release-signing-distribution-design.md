@@ -47,27 +47,49 @@ Windows 11 开了 Smart App Control 会**直接拒绝运行**、下载页与隐�
 - **Linux 推到 0.2**：无签名门槛但要额外维护 AppImage/deb 与 glibc 兼容矩阵，0.1 不做。
 - bundle targets 已是 `"all"`，由 `release.yml` 的 `--bundles` 参数收窄到实际要发的格式。
 
-### DR-R3 Windows 签名：Azure Artifact Signing（原 Azure Trusted Signing）
+### DR-R3 Windows 签名：Store MSIX 主通道 + 直下载备通道（2026-11-13 修订）
 
-**这条推翻了「买 EV 证书」的常见结论。** Tauri 官方文档（2026-10-27 更新）明确：
+**修订裁定（2026-11-13，推翻本节原裁定）**：Azure Artifact Signing 对本主体**不可用**；
+Windows 改走 **Microsoft Store MSIX 主通道**（微软重签、免费、无 SmartScreen 警告、SAC 可装），
+直下载 NSIS 通道短期不签名、后续补商业 CA 的 OV 云签名。
 
-> Since 2024, an EV Certificate no longer gives your app an immediate reputation with Microsoft SmartScreen.
-> Microsoft removed the special treatment of EV code signing certificates from its Trusted Root Program in 2024.
+事实依据（2026-11-13 浏览器实测 + 微软现行文档）：
 
-即 EV 证书每年 300–600 美元买到的「立即获得 SmartScreen 信誉」这个核心卖点**已经不存在了**，
-EV 与 OV 现在积累信誉的方式一样。既然如此，选月费约 9.99 美元、有 Tauri 官方 `signCommand`
-支持、CI 里无需插 USB 硬件令牌的 Azure Artifact Signing。
+1. **地理资格**：Artifact Signing 公共信任仅适用于 **US / CA / EU / UK 的组织**与 **US / CA 的个人开发者**，
+   组织还要求**三年或以上可验证税务记录**。本主体结算地为中国大陆 → 只能拿**专用信任**；
+   专用信任的根不在客户机器上，对公开分发无意义（FAQ 原文："此限制不适用于专用信任证书"）。
+2. **Azure 前置缺失**：两个 Microsoft 账号（501232866@qq.com / avework@outlook.com）均**无 Azure 订阅**，
+   资源提供程序注册与账户创建都无从谈起；为不可达的资格绑卡开订阅是纯浪费。
+3. **Store 通道反而更优**（微软官方代码签名对比表首推）：MSIX 认证通过后由 **Store 用微软证书重签**——
+   免费、**无 SmartScreen 警告**、Smart App Control 开启的机器可装；开发者注册费已取消
+   （2025 免个人、2026-05 免公司）；非游戏类应用可接**自有支付**并保留 100% 收入。
+4. **帐户实测**：Partner Center 个人开发者帐户**状态=活动**（卖家 ID 97279770，发布者显示名"众友合"），
+   `稿得快GEO` 名称已保留（Store ID 9MSXNS1VDQ50）。首版先用个人帐户跑通；公司帐户（邓白氏已备好）
+   作为后续品牌升级——个人→公司**不可转换**，需新建帐户并重新保留名称。
 
-- 工具链：`cargo install artifact-signing-cli`，`tauri.conf.json` → `bundle.windows.signCommand`。
-- 凭据：`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`（App Registration 的客户端凭据）。
-- **仍需预期**：新签名头几个版本照样可能弹 SmartScreen 警告，直到信誉积累。这是平台机制，
-  不是我们配置错了。缓解手段：①每个版本都用**同一**证书签名让信誉可累积；②向 Microsoft
-  提交应用做人工复核（不保证通过）。下载页必须**如实写明**这一点与绕过步骤，不能承诺「无警告」。
-- **Windows 11 Smart App Control（SAC）是硬门槛**：SAC 开启时**完全阻止**未知未签名应用，
-  且用户**无法为单个应用放行**，只能整体关闭 SAC。所以 Windows 侧**不签名等于对一部分客户不可用**，
-  不接受「0.1 先不签 Windows」这个选项。
-- **前置条件**：Azure Artifact Signing 需要**组织身份验证**（个人或企业均可申请，但要过验证），
-  审批可能要几个工作日。**今天就提交申请**，不要等到 Week 2 末尾。
+落地形态：
+
+- `release.yml` 新增 `msix` job：`tauri build --bundles none` → `scripts/msix-manifest.sh` 渲染清单 →
+  `makeappx pack`（不签名）。清单 Identity 三要素钉死在
+  `apps/desktop/src-tauri/msix/AppxManifest.xml`，由 `scripts/tests/msix-manifest.test.sh` 守护：
+  Name=`F73A5A8D.GEO`、Publisher=`CN=CB52BB16-C062-4464-AAA0-CAEA878E6358`、PublisherDisplayName=`众友合`
+  （与 Partner Center「产品标识」页逐字一致，错一个字符认证即失败）。
+- MSIX 产物**只**进 workflow artifact（`store-msix-x64`），**不**进 Release asset：未自签 MSIX 在
+  Store 之外装不了，放出去只会误导客户。上传 Store 目前手工（Partner Center → 程序包），
+  0.2 再评估 Store Developer CLI / Submission API 自动化。
+- 直下载 NSIS 通道当前**不签名**：下载页必须如实写明 SmartScreen 提示与绕过步骤（继承原裁定文案纪律）。
+  补签方案＝商业 CA 的 **OV 代码签名 + 云签名 HSM**（GitHub Actions 插不了 UKey，UKey 款直接排除）；
+  已取得的邓白氏编号即 CA 核身材料。单独立项，不阻塞 Store 首版。
+- §7 的六个 `AZURE_*` 条目**作废**；Store 通道**不需要任何 secret / variable**。
+
+已知容器化代价（干净机器实测后回填 `current-state.md`）：打包应用的 `%APPDATA%` 等已知文件夹被重定向到
+`%LOCALAPPDATA%\Packages\<PFN>\LocalCache\…`（PFN=`F73A5A8D.GEO_hbxpqea2bc6ae`），Store 版与直装版
+**数据不互通**、隐私政策的"彻底删除"指引需分通道写（叠加未决风险 #12）；Store 通道**禁用**
+tauri-plugin-updater（更新走 Store，DR-R8 按通道拆分）；WebView2 缺失机器需启动检测或包内 fixed-version。
+
+> **原裁定摘要（2026-11-10，已作废）**：曾选 Azure Artifact Signing（月费约 $9.99、Tauri `signCommand`
+> 集成、无需 UKey），理由是 2024 年起 EV 证书不再有 SmartScreen 即时信誉。该裁定隐含
+> "主体位于 US/CA/EU/UK" 的前提；前提不成立即整体作废。原六步推进清单见 §4.5 修订前版本（git 历史）。
 
 ### DR-R4 macOS 公证：走 App Store Connect API Key，不走 Apple ID + 专用密码
 
@@ -281,26 +303,19 @@ cd - && mise run release:verify         # 核验签名 / 公证 / staple 票据
 3. `APPLE_API_KEY` = 表格 **Key ID** 列
 4. 下载 `.p8` 私钥 —— **只能下载一次**，且只在**页面刷新后**才出现下载按钮（在新建那一行）
 
-### 4.5 Windows 侧并行推进
+### 4.5 Windows 侧：Store MSIX 主通道（2026-11-13 修订）
 
-Azure Artifact Signing 的组织验证有审批周期，**与 4.1–4.4 同时启动**，不要串行等：
+原"并行推进 Azure Artifact Signing"六步清单**作废**（资格不成立，见 DR-R3 修订）。现行序列：
 
-1. 创建 Artifact Signing 账户 + 证书配置文件（Certificate profile）
-2. 建 App Registration，拿 `AZURE_TENANT_ID` / `AZURE_CLIENT_ID`，建 client secret
-3. 给 App Registration 授予对该 Artifact Signing 账户的签名权限
-4. 本地 `cargo install artifact-signing-cli` 试签一次
-5. `tauri.conf.json` 加：
+1. ✅ Partner Center 个人开发者帐户已验证（卖家 ID 97279770，发布者显示名"众友合"）；`稿得快GEO` 名称已保留。
+2. ✅ 仓库侧落地（2026-11-13）：`release.yml` 的 `msix` job + `msix/AppxManifest.xml` 模板 +
+   `scripts/msix-manifest.sh` 渲染脚本 + `scripts/tests/msix-manifest.test.sh` 守护测试（已接 `mise run test`）。
+3. 提交首版：补完商店一览 / 属性 / 年龄分级 / **AI 披露** → 下载 `store-msix-x64` artifact 上传 → 认证。
+4. 干净 Windows 机实测：安装、启动、采集链路、数据落盘路径（`Packages\<PFN>\LocalCache\…`）、SAC 开启态。
+5. 后续：公司开发者帐户（邓白氏）承接品牌；直下载通道补 OV 云签名；0.2 评估 Store CLI 自动上传。
 
-```json
-"bundle": {
-  "windows": {
-    "signCommand": "artifact-signing-cli -e https://<region>.codesigning.azure.net -a <账户名> -c <配置文件名> -d 稿得快GEO %1"
-  }
-}
-```
-
-⚠ `-d`（内容描述）对 `.msi` 会显示为 UAC 弹窗里的安装程序名，**不设会显示一串随机字符**。
-我们只发 NSIS（DR-R2），但仍建议设上，避免以后加 MSI 时踩坑。
+⚠ 提交问卷中"是否使用生成式 AI"必须如实勾选并写清内容审核策略；采集链路属客户端行为、认证不会测，
+但用户协议需保留速率与合规约束文案（第三方投诉的长尾风险）。
 
 ## 5. Week 3：SHA256SUMS + 下载页 + 法务文档
 
@@ -344,9 +359,9 @@ secret 名都必须与这里一致。新增/改名时三处同步。
 | `APPLE_API_ISSUER` | 公证 | App Store Connect → Integrations → Issuer ID | macOS 必需 |
 | `APPLE_API_KEY` | 公证 | 同上，Key ID | macOS 必需 |
 | `APPLE_API_KEY_CONTENT` | 公证 | `.p8` 私钥**文件内容**（CI 里落成临时文件后导出 `APPLE_API_KEY_PATH`，见 DR-R4） | macOS 必需 |
-| `AZURE_TENANT_ID` | Windows 签名 | Azure App Registration | Windows 必需 |
-| `AZURE_CLIENT_ID` | Windows 签名 | 同上 | Windows 必需 |
-| `AZURE_CLIENT_SECRET` | Windows 签名 | App Registration 的 client secret | Windows 必需 |
+| `AZURE_TENANT_ID` | ~~Windows 签名~~ | — | **作废（2026-11-13，DR-R3 修订）** |
+| `AZURE_CLIENT_ID` | ~~Windows 签名~~ | — | **作废（2026-11-13，DR-R3 修订）** |
+| `AZURE_CLIENT_SECRET` | ~~Windows 签名~~ | — | **作废（2026-11-13，DR-R3 修订）** |
 | `TAURI_SIGNING_PRIVATE_KEY` | 自动更新（0.2） | `tauri signer generate` 产出的私钥 | 0.2 才需要 |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 自动更新（0.2） | 生成时自定密码 | 0.2 才需要 |
 
@@ -354,14 +369,14 @@ secret 名都必须与这里一致。新增/改名时三处同步。
 
 | Variable | 用于 | 来源 | 必需 |
 |---|---|---|---|
-| `AZURE_CODESIGN_ENDPOINT` | Windows 签名 | Artifact Signing 账户端点，形如 `https://wus2.codesigning.azure.net` | Windows 必需 |
-| `AZURE_CODESIGN_ACCOUNT` | Windows 签名 | Artifact Signing 账户名 | Windows 必需 |
-| `AZURE_CODESIGN_PROFILE` | Windows 签名 | 证书配置文件（Certificate profile）名 | Windows 必需 |
+| `AZURE_CODESIGN_ENDPOINT` | ~~Windows 签名~~ | — | **作废（2026-11-13，DR-R3 修订）** |
+| `AZURE_CODESIGN_ACCOUNT` | ~~Windows 签名~~ | — | **作废（2026-11-13，DR-R3 修订）** |
+| `AZURE_CODESIGN_PROFILE` | ~~Windows 签名~~ | — | **作废（2026-11-13，DR-R3 修订）** |
 
-⚠ `AZURE_CODESIGN_*` 三项**不是** Tauri 内置识别的名字，是我们在 `release.yml` 里
-用 `printf` 拼出 `signCommand` 后写进临时 JSON、再经 `tauri build --config=<该文件>` 注入的，
-目的是避免把账户名 / 端点硬编码进仓库。Tauri 内置识别的只有
-`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` 这三个**凭据**。
+⚠ **2026-11-13 修订（DR-R3）**：上表六个 `AZURE_*` 条目**整体作废**——中国大陆主体拿不到
+Artifact Signing 公共信任，且两个 Microsoft 账号均无 Azure 订阅。Windows 主通道改走 Microsoft Store
+MSIX（`release.yml` 的 `msix` job），**不需要任何 secret / variable**。直下载通道后续补商业 CA 的 OV
+云签名时，新凭据按本表流程登记并三处同步（本表 / `release.yml` / `setup-signing.sh`）。
 
 `release-check.sh` 会反向核对：`release.yml` 里出现的每一个 `secrets.X` 与 `vars.X`
 都必须在上面两张表登记，否则 FAIL。改名时三处（本表 / release.yml / setup-signing.sh）同步。

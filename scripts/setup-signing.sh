@@ -334,33 +334,17 @@ write_env KEYCHAIN_PASSWORD "$KEYCHAIN_PASSWORD"
 note "已生成并保存，你不需要记住它"
 
 # ── Stage 6 ──────────────────────────────────────────────────────────────
-stage "Azure Artifact Signing（Windows 签名）"
-say "原名 Azure Trusted Signing，2026 年已改名。选它的理由见 DR-R3："
-note "2024 年起 EV 证书不再有 SmartScreen 即时信誉，EV 的价格优势消失；"
-note "Azure Artifact Signing 月费约 9.99 美元，且 Tauri 官方支持 signCommand 集成。"
-warn "组织身份验证有审批周期（可能几天）。**现在就提交申请**，别等到要发版时。"
-open_url "https://portal.azure.com/"
-step "创建 Artifact Signing 账户（记下**账户名**与**端点 URL**，形如 https://wus2.codesigning.azure.net）"
-step "在账户里创建证书配置文件 Certificate profile（记下**配置文件名**）"
-step "创建 App Registration → 记下 **Directory (tenant) ID** 与 **Application (client) ID**"
-step "在 App Registration 里新建一个 client secret（值只显示一次，立刻复制）"
-step "给这个 App Registration 授予对该 Artifact Signing 账户的签名权限"
+stage "Windows 签名：Microsoft Store MSIX 主通道（2026-11-13 修订）"
+say "原 Azure Artifact Signing 路线**作废**：中国大陆主体拿不到公共信任（组织限 US/CA/EU/UK、"
+note "个人限 US/CA），且本账号无 Azure 订阅。裁定与事实见发布规格 DR-R3 修订。"
+say "现行主通道是 Microsoft Store 的 MSIX：认证通过后由微软重签，免费、无 SmartScreen 警告。"
+step "1) release.yml 的 msix job 产出 workflow artifact：store-msix-x64"
+step "2) Partner Center → 你的应用 → 程序包，上传该 .msix（不要自签名）"
+step "3) 补完商店一览 / 属性 / 年龄分级 / AI 披露后提交认证"
+warn "直下载 NSIS 通道当前不签名：下载页必须如实写明 SmartScreen 提示与绕过步骤。"
+warn "后续补签走商业 CA 的 OV 代码签名 + 云签名 HSM（GitHub Actions 插不了 UKey）；邓白氏编号即核身材料。"
 say ""
-if confirm "现在就配 Windows 签名？（选 n 可跳过，之后重跑本向导补上）"; then
-  ask_secret AZURE_TENANT_ID "Directory (tenant) ID："
-  ask_secret AZURE_CLIENT_ID "Application (client) ID："
-  ask_secret AZURE_CLIENT_SECRET "Client secret 的值："
-  ask AZURE_CODESIGN_ENDPOINT "Artifact Signing 端点 URL（https://…codesigning.azure.net）："
-  ask AZURE_CODESIGN_ACCOUNT "Artifact Signing 账户名："
-  ask AZURE_CODESIGN_PROFILE "证书配置文件名："
-  for kv in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET \
-            AZURE_CODESIGN_ENDPOINT AZURE_CODESIGN_ACCOUNT AZURE_CODESIGN_PROFILE; do
-    write_env "$kv" "${!kv}"
-  done
-else
-  warn "已跳过 Windows 签名。Windows 产物将无法签名，Smart App Control 开启的机器会完全拒绝运行。"
-  SKIPPED+=("Windows 签名凭据（重跑 mise run signing:wizard 补上）")
-fi
+note "本阶段无需任何凭据输入；Store 通道不需要 secret / variable。"
 
 # ── Stage 7 ──────────────────────────────────────────────────────────────
 stage "写入 GitHub Secrets / Variables"
@@ -374,13 +358,13 @@ else
   if confirm "现在写入 GitHub？（会覆盖同名 secret）"; then
     # 密文 → Secrets
     for s in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
-             APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_CONTENT KEYCHAIN_PASSWORD \
-             AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do
+             APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_CONTENT KEYCHAIN_PASSWORD; do
       v="${!s:-}"
       if [[ -n "$v" ]]; then set_secret "$s" "$v"; else warn "$s 为空，跳过（重跑向导补上）"; fi
     done
     # 非密 → Variables
-    for v in AZURE_CODESIGN_ENDPOINT AZURE_CODESIGN_ACCOUNT AZURE_CODESIGN_PROFILE APPLE_TEAM_ID; do
+    # AZURE_CODESIGN_* 三项 2026-11-13 作废（DR-R3 修订）；Store 通道不需要 variable
+    for v in APPLE_TEAM_ID; do
       val="${!v:-}"
       if [[ -n "$val" ]]; then set_var "$v" "$val"; else warn "$v 为空，跳过"; fi
     done

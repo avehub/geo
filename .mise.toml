@@ -46,10 +46,11 @@ description = "构建前端产物并用 vite preview 起静态服务器（demo �
 run = "pnpm --dir apps/desktop/ui run build && pnpm --dir apps/desktop/ui exec vite preview --port 4173"
 
 [tasks.test]
-description = "Rust + 前端全量测试"
+description = "Rust + 前端全量测试 + 发布工程脚本测试"
 run = [
   "cargo test --workspace",
   "pnpm --dir apps/desktop/ui run test",
+  "scripts/tests/msix-manifest.test.sh",
 ]
 
 [tasks.lint]

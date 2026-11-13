@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Microsoft Store 主通道的包清单模板（2026-11-13 裁定，发布规格 DR-R3 修订）。
+  Identity 三要素与 PublisherDisplayName 必须与 Partner Center「产品标识」页**逐字一致**
+  （2026-11-13 实测：卖家 ID 97279770 / 个人帐户 / 发布者显示名 众友合）：
+    Package/Identity/Name      = F73A5A8D.GEO
+    Package/Identity/Publisher = CN=CB52BB16-C062-4464-AAA0-CAEA878E6358
+    PublisherDisplayName       = 众友合
+  错一个字符都会认证失败；scripts/tests/msix-manifest.test.sh 把这三个值钉死。
+  {{VERSION}} 由 scripts/msix-manifest.sh 渲染成四段版本号（X.Y.Z.0）。
+  提交 Store 时**不要自签名**：认证通过后由 Store 用微软证书重签（免费、无 SmartScreen 警告）。
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+  <Identity
+    Name="F73A5A8D.GEO"
+    Version="{{VERSION}}"
+    Publisher="CN=CB52BB16-C062-4464-AAA0-CAEA878E6358"
+    ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>稿得快GEO</DisplayName>
+    <PublisherDisplayName>众友合</PublisherDisplayName>
+    <Logo>assets\StoreLogo.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="zh-CN" />
+    <Resource Language="en-US" />
+  </Resources>
+  <Applications>
+    <Application Id="App" Executable="gdk-geo.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="稿得快GEO"
+        Description="面向国内中小企业的生成式引擎优化（GEO）桌面工具"
+        BackgroundColor="transparent"
+        Square150x150Logo="assets\Square150x150Logo.png"
+        Square44x44Logo="assets\Square44x44Logo.png" />
+    </Application>
+  </Applications>
+  <Capabilities>
+    <!-- Win32 full-trust：允许写用户目录、启动系统 Chrome（采集链路依赖） -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

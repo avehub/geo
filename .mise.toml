@@ -51,6 +51,7 @@ run = [
   "cargo test --workspace",
   "pnpm --dir apps/desktop/ui run test",
   "scripts/tests/msix-manifest.test.sh",
+  "scripts/tests/release-dmg.test.sh",
 ]
 
 [tasks.lint]
@@ -87,6 +88,10 @@ run = "scripts/version.sh set"
 [tasks."release:check"]
 description = "发布前门禁：文件齐备 / 版本一致 / 密钥不落仓 / 合规用语 / 法务占位符"
 run = "scripts/release-check.sh"
+
+[tasks."release:dmg"]
+description = "本地一键出包：签名 DMG + 公证 + staple（需 ~/.config/gdk-geo/signing.env；-- 后可传 --dry-run）"
+run = "scripts/release-dmg.sh"
 
 [tasks."release:verify"]
 description = "核验已构建产物的签名身份 / 公证 / staple 票据 / SHA-256"

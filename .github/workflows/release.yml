@@ -185,6 +185,11 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
+      # 仓库根 rust-toolchain.toml 钉了 1.98.1，会覆盖 dtolnay 装 targets 的工具链，
+      # 交叉 target（macOS Intel / Windows）因此缺失（run 43378551722 实测）。显式补一次。
+      - name: 补齐交叉编译 target
+        run: rustup target add ${{ matrix.rust_target }}
+
       - name: 安装前端依赖
         run: pnpm --dir apps/desktop/ui install --frozen-lockfile
 
@@ -327,8 +332,10 @@ jobs:
           $ErrorActionPreference = "Stop"
           # ⚠ 显式 --target 时 cargo 产物在三段目录 target/<triple>/release/，不是 target/release/
           $bin = "target/x86_64-pc-windows-msvc/release"
-          if (-not (Test-Path "$bin/gdk-geo.exe")) { throw "找不到 $bin/gdk-geo.exe（构建产物路径漂移？）" }
-          Copy-Item "$bin/gdk-geo.exe" "msix-stage/"
+          # ⚠ --no-bundle 的裸二进制用 cargo 包名（geo-desktop.exe）；productName 改名只发生在
+          #    bundle 阶段。清单 Executable=gdk-geo.exe，所以这里复制时改名。
+          if (-not (Test-Path "$bin/geo-desktop.exe")) { throw "找不到 $bin/geo-desktop.exe（构建产物路径漂移？）" }
+          Copy-Item "$bin/geo-desktop.exe" "msix-stage/gdk-geo.exe"
           Get-ChildItem "$bin/*.dll" | Copy-Item -Destination "msix-stage/"
           $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter makeappx.exe |
                       Sort-Object FullName | Select-Object -Last 1

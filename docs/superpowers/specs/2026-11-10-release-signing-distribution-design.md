@@ -317,6 +317,27 @@ cd - && mise run release:verify         # 核验签名 / 公证 / staple 票据
 ⚠ 提交问卷中"是否使用生成式 AI"必须如实勾选并写清内容审核策略；采集链路属客户端行为、认证不会测，
 但用户协议需保留速率与合规约束文案（第三方投诉的长尾风险）。
 
+### 4.6 Mac App Store 通道：整体后移到 0.2+（2026-11-13 裁定，DR-R12）
+
+**裁定**：0.1 单通道 = 官网 DMG（Developer ID + 公证 + staple，闭环已于 2026-11-12 验证，见 §8.1）；
+Mac App Store（MAS）通道整体后移到 0.2+ 立项。理由：0.1 的主分发通道是官网（DR-R5），而 MAS
+要求 App Sandbox 强制沙盒——本应用做网页采集、本地文件读写与子进程调用，entitlements 需逐项
+对照改造，是独立工程项目；双通道并行会拖慢 0.1 发布。
+
+已完成的前置（保留给 0.2 复用）：
+
+- App ID `com.gaodekuai.geo`（描述 `Gaodekuai GEO`，explicit）已于 2026-11-13 在开发者后台注册。
+
+后移清单（0.2 立项时按序执行）：
+
+1. Account Holder 在「商务」模块接受新版 **Paid Applications Schedule**——ASC 硬拦截：
+   不接受连新建 App 都不允许（2026-11-13 实测，弹窗原文「你的付费应用程序协议已过期」）；
+2. 建 App 记录：名称 `稿得快GEO`、平台 macOS、Bundle ID `com.gaodekuai.geo`、
+   SKU `gdk-geo-macos`、主语言简体中文；
+3. MAS 沙盒化可行性评估（输出 entitlements 对照表与改造清单）；
+4. MAS 构建链：Apple Distribution 证书 + Mac App Store 描述文件 + Transporter 上传 +
+   元数据（截屏 / 隐私 URL / 年龄分级）+ 提交审核。
+
 ## 5. Week 3：SHA256SUMS + 下载页 + 法务文档
 
 - `SHA256SUMS.txt`：`release.yml` 已自动生成并上传（DR-R7）
@@ -403,6 +424,25 @@ MSIX（`release.yml` 的 `msix` job），**不需要任何 secret / variable**�
 2. **`spctl --status` 在 disabled 时退出码是 1**。脚本开了 `pipefail`，
    所以 `spctl --status | grep -q …` 会被判成 false 而**静默跳过**告警。
    已改成先 `$(spctl --status || true)` 取值再 grep。
+3. **只有 CLT 的机器上裸 `stapler` 必败**：`/usr/bin/stapler` 是要求完整 Xcode 的桩
+   （报 `tool 'stapler' requires Xcode`），真工具要 `xcrun stapler` 解析。`verify-bundle.sh`
+   已改为优先 `xcrun stapler`；另 `stapler validate` 会向 `api.apple-cloudkit.com` 做在线核验，
+   大陆网络间歇超时，票据核验带 4 次重试（2026-11-13）。
+
+### 8.1 公证 + staple 闭环（2026-11-12 补测，Apple Silicon 宿主机）
+
+| 验证项 | 命令 / 凭据 | 结果 |
+|---|---|---|
+| app 公证 | `xcrun notarytool submit app.zip --wait`（ASC API Key 路线） | **Accepted**（submission `a6fb28cd-…`） |
+| app staple | `xcrun stapler staple gdk-geo.app` | The staple and validate action worked |
+| 用已装订 app 重打 DMG + 签名 | `hdiutil create -format UDZO` + `codesign -s "Developer ID Application: …"` | TeamIdentifier=SVY3ANC6N6 |
+| DMG 公证 + staple | `xcrun notarytool submit dmg --wait` + `xcrun stapler staple` | **Accepted + 已装订** |
+| 门禁正式结论 | `mise run release:verify` | **PASS（2 个产物）**；唯一 ⚠ 为本机 spctl assessments disabled 的预期告警（§6 干净机器复测） |
+| DMG SHA-256 | verify 输出 | `900dc422e604a1e39c53502dc47ad95c8496cc7b2ec4f16e2f6ba5dc70649387` |
+
+⚠ 过程坑（本机网络特有）：notarytool 向公证上传桶（S3 multipart）上传在大陆网络间歇被掐断
+（`HTTPClientError.connectTimeout` / `abortedUpload`），靠「成功才继续」的重试链在第 4 轮窗口跑通；
+CI（美区 runner）不受影响。
 
 ## 9. 未决风险
 

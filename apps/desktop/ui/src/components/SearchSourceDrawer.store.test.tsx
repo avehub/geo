@@ -36,6 +36,7 @@ function openDrawer() {
   renderWithProviders(
     <SearchSourceDrawer
       source={baiduSource}
+      asOf="2026-10-12"
       busy={false}
       onSave={() => {}}
       onTest={() => {}}

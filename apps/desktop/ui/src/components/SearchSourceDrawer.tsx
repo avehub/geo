@@ -1,12 +1,23 @@
 import { useState } from 'react';
-import { Button, Drawer, Input, Space, Tag, Tooltip, Typography } from 'antd';
-import { ApiOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons';
+import { BROWSER_ONLY_SOURCE_KINDS, isStoreBuild } from '../api/build-flavor';
+import { App, Button, Drawer, Input, Space, Tag, Tooltip, Typography } from 'antd';
+import { ApiOutlined, DeleteOutlined, LinkOutlined, SaveOutlined } from '@ant-design/icons';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
 
-import { catalogEntryOf, searchSecretRef } from '../api/search-catalog';
+import * as client from '../api/client';
+import { describeIpcError } from '../api/errors';
+import { runtime } from '../api/runtime';
+import {
+  catalogEntryOf,
+  searchSecretRef,
+} from '../api/search-catalog';
 import type { SearchBindingField, SearchIngestMode, SearchSource } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
 import CheckDetailText from './CheckDetailText';
+import SecretStatusPanel from './SecretStatus';
 import { dateTimeText } from './format';
 
 export interface SearchSourceDrawerProps {
@@ -17,6 +28,8 @@ export interface SearchSourceDrawerProps {
   onSave: (binding: Partial<Record<SearchBindingField, string>>, note: string | null) => void;
   onTest: () => void;
   onRemove: () => void;
+  /** `search_board.as_of`：取数区间只从页面锚点推导，不取系统今天。 */
+  asOf: string;
 }
 
 /** 状态标签配色：与站点通道同一套（DR-94 复用 `SiteChannelStatus`，配色也一并复用）。 */
@@ -51,13 +64,65 @@ export default function SearchSourceDrawer({
   onSave,
   onTest,
   onRemove,
+  asOf,
 }: SearchSourceDrawerProps) {
   const { t } = useTranslation();
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const entry = catalogEntryOf(source.kind);
   const [binding, setBinding] = useState<Partial<Record<SearchBindingField, string>>>(
     source.binding,
   );
   const [note, setNote] = useState(source.note ?? '');
+  /** 系统 Chrome 的 CDP 地址：只在本次抽屉会话里保存，不落库、不进 URL。 */
+  const [browserWsUrl, setBrowserWsUrl] = useState<string | null>(null);
+  const browserAssist =
+    runtime === 'tauri' &&
+    (source.kind === 'baidu_ziyuan' || source.kind === 'baidu_ziyuan_ai');
+  /** 近 28 天：`period_end = asOf`、`period_start = asOf - 27 天`。 */
+  const browserStart = dayjs(asOf).subtract(27, 'day').format('YYYY-MM-DD');
+
+  const oauthMutation = useMutation({
+    mutationFn: () => client.searchOauthBegin(source.project_id, source.kind),
+    onSuccess: async (start) => {
+      try {
+        await openUrl(start.auth_url);
+      } catch (error) {
+        message.error(describeIpcError(error, t));
+        return;
+      }
+      message.success(t('webmasterData.sourceCards.oauthStarted'));
+      // 授权在系统浏览器里完成；2 秒后拉一次 board，把 token 落库后的状态带回来。
+      window.setTimeout(() => {
+        void queryClient.invalidateQueries({ queryKey: ['search-board', source.project_id] });
+      }, 2000);
+    },
+    onError: (error) => message.error(describeIpcError(error, t)),
+  });
+
+  const browserOpenMutation = useMutation({
+    mutationFn: () => client.searchBrowserOpen(source.project_id, source.kind),
+    onSuccess: (session) => {
+      setBrowserWsUrl(session.ws_url);
+      message.success(t('webmasterData.sourceCards.browserOpened'));
+    },
+    onError: (error) => message.error(describeIpcError(error, t)),
+  });
+
+  const browserCaptureMutation = useMutation({
+    mutationFn: (wsUrl: string) =>
+      client.searchBrowserCapture(source.project_id, source.kind, wsUrl, browserStart, asOf),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['search-board', source.project_id] });
+      message.success(
+        t('webmasterData.sourceCards.browserImported', {
+          metrics: result.metrics.length,
+          overviews: result.ai_overviews.length,
+        }),
+      );
+    },
+    onError: (error) => message.error(describeIpcError(error, t)),
+  });
 
   function setField(field: SearchBindingField, value: string) {
     setBinding((previous) => ({ ...previous, [field]: value }));
@@ -71,6 +136,19 @@ export default function SearchSourceDrawer({
       onClose={onClose}
       footer={
         <Space size={6} wrap>
+          {/* 🔴 只有 GSC 走 OAuth：Bing 的 OAuth 控制台不接受 loopback 回调地址
+              （`http://localhost:…` 会被判“不是有效的 http 或 https url”），
+              所以 Bing 统一走官方 API Key，不给一个走不通的授权按钮。 */}
+          {runtime === 'tauri' && source.auth_mode === 'oauth' && source.kind === 'gsc' ? (
+            <Button
+              size="small"
+              icon={<LinkOutlined />}
+              loading={oauthMutation.isPending}
+              onClick={() => oauthMutation.mutate()}
+            >
+              {t('webmasterData.sourceCards.oauthStart')}
+            </Button>
+          ) : null}
           <Button
             type="primary"
             size="small"
@@ -155,6 +233,48 @@ export default function SearchSourceDrawer({
           </Typography.Paragraph>
         )}
 
+        {browserAssist ? (
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {t('webmasterData.sourceCards.browserHint')}
+            </Typography.Text>
+            <Space size={6} wrap>
+              {/* 2026-11-13 裁定 B8：Store 版不含浏览器取数通道，入口隐藏 */}
+              {!(isStoreBuild() && BROWSER_ONLY_SOURCE_KINDS.includes(source.kind)) && (
+                <Button
+                  size="small"
+                  icon={<LinkOutlined />}
+                  aria-label={t('webmasterData.sourceCards.browserOpen')}
+                  loading={browserOpenMutation.isPending}
+                  onClick={() => browserOpenMutation.mutate()}
+                >
+                  {t('webmasterData.sourceCards.browserOpen')}
+                </Button>
+              )}
+              <Button
+                size="small"
+                icon={<ApiOutlined />}
+                aria-label={t('webmasterData.sourceCards.browserCapture')}
+                loading={browserCaptureMutation.isPending}
+                disabled={browserWsUrl === null}
+                onClick={() => {
+                  if (browserWsUrl !== null) browserCaptureMutation.mutate(browserWsUrl);
+                }}
+              >
+                {t('webmasterData.sourceCards.browserCapture')}
+              </Button>
+            </Space>
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+              {t('webmasterData.sourceCards.browserWindow', { start: browserStart, end: asOf })}
+            </Typography.Paragraph>
+            {browserWsUrl === null ? (
+              <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+                {t('webmasterData.sourceCards.browserConnectFirst')}
+              </Typography.Paragraph>
+            ) : null}
+          </Space>
+        ) : null}
+
         <Input.TextArea
           rows={2}
           aria-label={t('common.noteOptional')}
@@ -191,8 +311,34 @@ export default function SearchSourceDrawer({
             </Typography.Text>
             {/* 🔴 常驻（AGENTS 规则 3）：演示模式一个密码与令牌都不收。 */}
             <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
-              {t('webmasterData.sourceCards.demoCredentials')}
+              {t(
+                runtime === 'demo'
+                  ? 'webmasterData.sourceCards.demoCredentials'
+                  : 'webmasterData.sourceCards.liveCredentials',
+              )}
             </Typography.Paragraph>
+            {runtime === 'tauri' && source.kind === 'gsc' ? (
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {t('webmasterData.sourceCards.googleClientSecret')}
+                </Typography.Text>
+                <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+                  {t('webmasterData.sourceCards.googleClientSecretHint')}
+                </Typography.Paragraph>
+                <SecretStatusPanel provider="google_oauth" allowTest={false} />
+              </Space>
+            ) : null}
+            {runtime === 'tauri' && source.kind === 'bing_wmt' ? (
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {t('webmasterData.sourceCards.bingApiKey')}
+                </Typography.Text>
+                <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+                  {t('webmasterData.sourceCards.bingApiKeyHint')}
+                </Typography.Paragraph>
+                <SecretStatusPanel provider="bing_wmt" allowTest={false} />
+              </Space>
+            ) : null}
           </Space>
         ) : null}
 

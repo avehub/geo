@@ -8,7 +8,7 @@ import * as collection from '../api/collection';
 import { runtime } from '../api/runtime';
 import { describeIpcError } from '../api/errors';
 import type { CollectionRound, EngineId } from '../api/types';
-import { ENGINE_VALUES } from '../api/types';
+import { availableEngines } from '../api/build-flavor';
 import { enumLabel } from '../i18n/enum-label';
 
 /** 重复采样的三个档位（产品定义 §3.5：1/2/3）。 */
@@ -127,7 +127,7 @@ export default function StartRoundModal({
           prompt_set_id:
             setsQuery.data?.find((set) => set.sample_size_grade === 'sufficient')?.id ??
             setsQuery.data?.[0]?.id,
-          engine_scope: [...ENGINE_VALUES],
+          engine_scope: [...availableEngines()],
           repeat_count: 1,
           label: '',
         }}
@@ -143,7 +143,7 @@ export default function StartRoundModal({
         </Form.Item>
         <Form.Item name="engine_scope" label={t('collection.start.engines')}>
           <Checkbox.Group
-            options={[...ENGINE_VALUES].map((engine) => ({
+            options={[...availableEngines()].map((engine) => ({
               value: engine,
               label: enumLabel(t, 'collection.engines', engine),
             }))}

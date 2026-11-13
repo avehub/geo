@@ -365,6 +365,27 @@
   ② 干净 Windows 机实测容器化数据路径（`Packages\<PFN>\LocalCache\…`）与 SAC 开启态；
   ③ 直下载通道 OV 证书立项（邓白氏即核身材料）；④ 隐私政策删除指引按通道拆分（叠加未决风险 #12）。
 
+### 2026-11-13 B5/B8 落地：摘外发开关 + Store 版通道门禁
+
+- **B5（产品裁定①）**：设置页「数据外发」四个预留开关全摘（无执行点，保留即误导）。
+  `PrivacyConfig` DTO / demo seed / fixtures / 词典键（zh-CN+en-US）两侧删除；老库 JSON 带
+  `privacy` 段仍可读（serde 忽略，前向兼容测试守护）；隐私政策 §7.4 改写为「没有全局数据外发开关」；
+  发布规格 §9-13 登记裁定落地。
+- **B8（Store 版通道门禁）**：Store（MSIX）版不含腾讯元宝采集通道与百度站长浏览器取数。
+  Rust 侧 cargo feature `store` + `build_flavor::reject_in_store_build` 运行时兜底
+  （命令面保持 108 条不变，Store 构建下回 `validation/failed`）；前端 `VITE_STORE_BUILD`
+  隐藏入口（`ui/src/api/build-flavor.ts`：StartRoundModal 引擎选项、WebmasterDataPage 源新建、
+  SearchSourceDrawer 取数按钮）；`release.yml` msix job 注入该 env 并 `--features store` 编译。
+  隐私政策 §5.4 / §6 增加「通道差异」标注（仅直下载版含这两条通道）。
+- **CI 实测两轮**：run 43373812483 暴露仓库 Workflow token 只读（已 API 改 write）与 rust-toolchain.toml
+  覆盖 dtolnay targets（已显式 `rustup target add`）；run 43378551722 暴露 `--no-bundle` 裸二进制是
+  cargo 包名 `geo-desktop.exe`（复制时改名 gdk-geo.exe）。msix 产物路径 `msix-out/`。
+- **Store 控制台进度**：类别=商务、隐私=是（策略本体待法务）、年龄分级 IARC 3+ 已保存、
+  提交选项=手动发布、定价=免费+全球；截图 4 张 1920×1080 存 `brand/store-screenshots/`；
+  一览文案草稿 `brand/store-listing.zh-CN.md`。**程序包未上传**（等 tag 重跑 CI 出 msix）。
+- **仍待办**：① tag 移到含 B5/B8 的提交并 push（触发新 run）；② 上传 msix 后填 Store 一览；
+  ③ 隐私策略法务放行后填 URL/全文；④ 干净 Windows 机实测（含 SAC 与容器化数据路径）。
+
 ## 4. 维护方式
 
 - 命令增删：先改 `apps/desktop/ui/src/api/client.ts` 的 `IPC_COMMANDS` 与 demo 后端，再更新本文「当前命令面」表和差异台账；Rust 侧是否落地以规格/台账为准，不按 demo-only 命令机械补注册。

@@ -17,7 +17,7 @@ use geo_domain::{dedupe, Industry, IntentCategory, SUFFICIENT_SAMPLE_SIZE};
 use geo_llm::LlmProvider;
 use geo_store::{
     AppSettings, ConcurrencyConfig, MemorySecretStore, ModelConfig, ProxyConfig, RateLimitConfig,
-    SecretStore,
+    SecretStore, StorageConfig, StoreError,
 };
 use wiremock::MockServer;
 
@@ -27,7 +27,8 @@ use support::{
 };
 
 use geo_desktop_lib::services::{
-    EntityCardService, GenerateOptions, ProjectService, PromptService, SettingsService,
+    EntityCardService, GenerateOptions, LlmModelsQuery, ProjectService, PromptService,
+    SettingsService,
 };
 use geo_desktop_lib::state::AppState;
 
@@ -165,9 +166,117 @@ async fn settings_update_rejects_values_outside_the_safe_range() {
     assert_eq!(untouched.proxy, AppSettings::default().proxy);
 }
 
+/// Plan C 的 E-48：`privacy` / `storage` / `model.protocol` 必须真的落库，
+/// 并各自守住协议白名单与绝对路径两条校验。
+#[tokio::test]
+async fn settings_persist_protocol_and_export_dir_with_validation() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let service = SettingsService::from_state(&state);
+
+    let mut settings = service.get().await.unwrap();
+    settings.model.protocol = "anthropic".to_string();
+    settings.storage = StorageConfig {
+        last_export_dir: Some("/Users/me/Desktop/exports".to_string()),
+    };
+
+    let saved = service
+        .update(settings.clone())
+        .await
+        .expect("合法设置可写");
+    assert_eq!(saved, settings, "服务必须原样回写新字段");
+
+    let reloaded = service.get().await.unwrap();
+    assert_eq!(reloaded.model.protocol, "anthropic");
+    assert_eq!(
+        reloaded.storage.last_export_dir.as_deref(),
+        Some("/Users/me/Desktop/exports")
+    );
+
+    let mut bad_protocol = reloaded.clone();
+    bad_protocol.model.protocol = "gemini".to_string();
+    let error = service
+        .update(bad_protocol)
+        .await
+        .expect_err("不支持的协议必须拒绝");
+    assert_eq!(error.code, "validation/failed");
+    assert_eq!(error.params["field"], "model.protocol");
+    assert_eq!(error.params["reason"], "not_allowed");
+    assert_eq!(error.params["value"], "gemini");
+
+    let mut bad_dir = reloaded.clone();
+    bad_dir.storage.last_export_dir = Some("relative/exports".to_string());
+    let error = service.update(bad_dir).await.expect_err("相对路径必须拒绝");
+    assert_eq!(error.code, "validation/failed");
+    assert_eq!(error.params["field"], "storage.last_export_dir");
+    assert_eq!(error.params["reason"], "invalid_format");
+    assert_eq!(error.params["value"], "relative/exports");
+
+    // 两次非法写入都整批拒绝，已保存的值没有被冲掉
+    let intact = service.get().await.unwrap();
+    assert_eq!(intact.model.protocol, "anthropic");
+    assert_eq!(
+        intact.storage.last_export_dir.as_deref(),
+        Some("/Users/me/Desktop/exports")
+    );
+}
+
 // ---------------------------------------------------------------------------
 // 密钥
 // ---------------------------------------------------------------------------
+
+/// 只回答「在不在」的替身：`get` 被调用就报错。
+///
+/// 设置页只需要 `configured`，不该为了看一眼状态去解密。macOS legacy Keychain
+/// 的解密路径在开发构建（ad-hoc 签名每次 cdhash 都变）会弹 ACL 授权框；
+/// 这一条把「`secret_status` 走了解密路径」钉成红色。
+#[derive(Debug)]
+struct PresenceOnlyStore {
+    present: bool,
+}
+
+#[async_trait::async_trait]
+impl SecretStore for PresenceOnlyStore {
+    async fn set(&self, _key: &str, _value: &str) -> Result<(), StoreError> {
+        Ok(())
+    }
+
+    async fn get(&self, _key: &str) -> Result<Option<String>, StoreError> {
+        Err(StoreError::secret("decrypt_must_not_be_called"))
+    }
+
+    async fn exists(&self, _key: &str) -> Result<bool, StoreError> {
+        Ok(self.present)
+    }
+
+    async fn delete(&self, _key: &str) -> Result<(), StoreError> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn secret_status_checks_presence_without_decrypting() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+
+    let configured = SettingsService::new(
+        state.pool.clone(),
+        Arc::new(PresenceOnlyStore { present: true }),
+        state.llm.clone(),
+    );
+    let status = configured
+        .secret_status("deepseek")
+        .await
+        .expect("可读状态");
+    assert!(status.configured);
+    assert_eq!(status.secret_ref, default_secret_ref());
+    assert_eq!(status.provider, LlmProvider::DeepSeek.as_str());
+
+    let missing = SettingsService::new(
+        state.pool.clone(),
+        Arc::new(PresenceOnlyStore { present: false }),
+        state.llm.clone(),
+    );
+    assert!(!missing.secret_status("deepseek").await.unwrap().configured);
+}
 
 #[tokio::test]
 async fn secret_status_reports_the_reference_but_never_the_value() {
@@ -221,6 +330,57 @@ async fn secret_delete_makes_the_status_unconfigured_again() {
     assert!(!service.secret_status("moonshot").await.unwrap().configured);
     // 幂等：再删一次不报错
     service.delete_secret("moonshot").await.unwrap();
+}
+
+/// 搜索专用的 `metaso` 只走三条密钥命令；它不能冒充模型厂商。
+#[tokio::test]
+async fn metaso_secret_is_accepted_without_becoming_a_model_provider() {
+    let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
+    let service = SettingsService::from_state(&state);
+
+    service
+        .set_secret("metaso", TEST_API_KEY)
+        .await
+        .expect("搜索 API Key 可写入钥匙串");
+    let status = service.secret_status("metaso").await.expect("可读密钥状态");
+    assert!(status.configured);
+    assert_eq!(status.provider, "metaso");
+    assert_eq!(status.secret_ref, geo_store::secret_ref("llm", "metaso"));
+    assert!(
+        !serde_json::to_string(&status)
+            .unwrap()
+            .contains(TEST_API_KEY),
+        "密钥状态不得回显明文"
+    );
+
+    // 模型设置不认 metaso：它不在 LlmProvider 里，`llm_providers` 也不会返回它。
+    let mut settings = service.get().await.unwrap();
+    settings.model.provider = "metaso".to_string();
+    let error = service
+        .update(settings)
+        .await
+        .expect_err("metaso 不能作为 model.provider");
+    assert_eq!(error.code, "validation/failed");
+    assert_eq!(error.params["field"], "model.provider");
+    assert_eq!(error.params["reason"], "unknown_provider");
+    assert_eq!(error.params["value"], "metaso");
+
+    // 模型清单的草稿 provider 同样只走 LlmProvider，且在发请求前就拒绝。
+    let error = service
+        .list_models(LlmModelsQuery {
+            provider: "metaso".to_string(),
+            protocol: Some("openai_compat".to_string()),
+            base_url: None,
+            api_key: None,
+        })
+        .await
+        .expect_err("metaso 不是模型厂商");
+    assert_eq!(error.code, "llm/config");
+    assert_eq!(error.params["reason"], "unknown_provider");
+    assert_eq!(error.params["value"], "metaso");
+
+    service.delete_secret("metaso").await.expect("可删除");
+    assert!(!service.secret_status("metaso").await.unwrap().configured);
 }
 
 #[tokio::test]

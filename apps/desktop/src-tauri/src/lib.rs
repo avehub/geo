@@ -3,6 +3,7 @@
 //! 分层：`ipc` 只做 Tauri 命令与 DTO 转换，`services` 负责编排（不依赖 `tauri::*`，
 //! 因此集成测试可以直接构造 service 调用，无需启动 WebView）。
 
+pub mod build_flavor;
 pub mod error;
 pub mod ipc;
 pub mod services;
@@ -84,6 +85,30 @@ pub fn run() {
                     if let Err(error) = service.run_due(chrono::Utc::now()).await {
                         tracing::warn!(code = error.code.as_str(), "article scheduler failed");
                     }
+                }
+            });
+            // GSC / Bing 每日拉取：启动即跑一次，之后每 24 小时一次；失败只写源状态。
+            let search_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval =
+                    tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
+                loop {
+                    interval.tick().await;
+                    let state = search_handle.state::<AppState>();
+                    let count = services::search_oauth::refresh_all_gsc(
+                        state.pool.clone(),
+                        state.secrets.clone(),
+                        state.llm.transport(),
+                    )
+                    .await;
+                    tracing::info!(refreshed = count, "GSC daily refresh finished");
+                    let bing = services::search_oauth::refresh_all_bing(
+                        state.pool.clone(),
+                        state.secrets.clone(),
+                        state.llm.transport(),
+                    )
+                    .await;
+                    tracing::info!(refreshed = bing, "Bing daily refresh finished");
                 }
             });
             // 断点续跑：上次退出时停在 queued / running 的轮次，启动后接着跑。

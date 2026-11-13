@@ -287,6 +287,9 @@ jobs:
     name: Windows Store MSIX 包
     runs-on: windows-latest
     timeout-minutes: 90
+    env:
+      # 2026-11-13 裁定 B8：Store 版不含浏览器自动化通道（前端入口隐藏）
+      VITE_STORE_BUILD: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -312,7 +315,7 @@ jobs:
         run: |
           set -euo pipefail
           cd apps/desktop
-          ./ui/node_modules/.bin/tauri build --target x86_64-pc-windows-msvc --no-bundle
+          ./ui/node_modules/.bin/tauri build --target x86_64-pc-windows-msvc --no-bundle -- --features store
 
       - name: 渲染包清单 + 备料
         shell: bash

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { BROWSER_ONLY_SOURCE_KINDS, isStoreBuild } from '../api/build-flavor';
 import { Alert, App, Button, Card, Col, Row, Typography } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -13,6 +14,7 @@ import {
   SEARCH_QUERY_CSV_HEADER,
 } from '../api/constants';
 import { describeIpcError } from '../api/errors';
+import { runtime } from '../api/runtime';
 import { catalogEntryOf, renderableCatalog, searchSecretRef } from '../api/search-catalog';
 import {
   defaultSearchFilter,
@@ -158,7 +160,14 @@ export default function WebmasterDataPage() {
   );
   const pivotRows = useMemo(() => pivotMetrics(metrics, filter), [metrics, filter]);
   /** 平台筛选器与两个导入弹窗的可选集：一期源（二期源一个入口都不给，DR-92）。 */
-  const platformOptions = useMemo(() => renderableCatalog().map((entry) => entry.kind), []);
+  // 2026-11-13 裁定 B8：Store 版不提供更依赖浏览器取数的数据源新建入口
+  const platformOptions = useMemo(
+    () =>
+      renderableCatalog()
+        .filter((entry) => !isStoreBuild() || !BROWSER_ONLY_SOURCE_KINDS.includes(entry.kind))
+        .map((entry) => entry.kind),
+    [],
+  );
   const suggestions = useMemo(() => suggestSources(trafficSplit), [trafficSplit]);
 
   const refresh = () => {
@@ -221,6 +230,7 @@ export default function WebmasterDataPage() {
         `search-template-${template}.csv`,
         `${TEMPLATES[template].join(',')}\n`,
         true,
+        t('common.exportDialogTitle'),
       );
       if (saved !== null) message.success(saved);
     } catch (error) {
@@ -256,7 +266,12 @@ export default function WebmasterDataPage() {
       />
 
       {/* 🔴 常驻说明①（DR-99）：演示模式不联网、OAuth 一条都没实现。 */}
-      <Alert type="warning" showIcon style={{ marginBottom: 8 }} message={t('webmasterData.demoBody')} />
+      <Alert
+        type="warning"
+        showIcon
+        style={{ marginBottom: 8 }}
+        message={t(runtime === 'demo' ? 'webmasterData.demoBody' : 'webmasterData.liveBody')}
+      />
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
         {t('webmasterData.trademarkNote')}
       </Typography.Paragraph>
@@ -318,12 +333,16 @@ export default function WebmasterDataPage() {
           </Typography.Text>
         }
       >
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          {t('webmasterData.staticNote')}
-        </Typography.Paragraph>
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          {t('webmasterData.opportunity.demoStatic')}
-        </Typography.Paragraph>
+        {runtime === 'demo' && (
+          <>
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+              {t('webmasterData.staticNote')}
+            </Typography.Paragraph>
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+              {t('webmasterData.opportunity.demoStatic')}
+            </Typography.Paragraph>
+          </>
+        )}
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           {t('webmasterData.opportunity.sampleGate', { min: MINIMUM_SAMPLE_SIZE })}
         </Typography.Paragraph>
@@ -351,6 +370,7 @@ export default function WebmasterDataPage() {
       {configuringSource === null ? null : (
         <SearchSourceDrawer
           source={configuringSource}
+          asOf={asOf}
           busy={busyKind === configuringSource.kind}
           onClose={() => setConfiguring(null)}
           onSave={(binding, note) =>

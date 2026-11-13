@@ -3,9 +3,12 @@
 //! 六条命令：`collection_board` / `collection_round_get` / `collection_record_list` /
 //! `collection_record_get` / `collection_start` / `collection_task_retry`。
 //!
-//! 🔴 只走官方 API（AGENTS 规则 11）：豆包 / DeepSeek / Kimi / 千问 / 百度五家复用
-//! 「模型服务商」里已填的 Key；元宝与秘塔没有公开对话 API，任务直接 `Skipped`
-//! （引擎汇总里计为 failed，界面上看得出来）。**不碰浏览器自动化 / 模拟登录**。
+//! 🔴 只走官方搜索 / 官方 API（AGENTS 规则 11）：
+//! - Kimi / 百度 / 豆包：官方搜索接口取结果，再用本家对话模型基于结果回答；
+//! - 千问：Chat Completions `enable_search` 单次调用；
+//! - DeepSeek：无官方搜索接口，借用 Kimi/百度搜索（通道记 `gateway`）；
+//! - 秘塔：官方搜索接口 + 用户当前对话模型（通道记 `gateway`）；
+//! - 元宝：本地 Chrome 浏览器自动化，用户自己扫码登录；不代登录、不绕验证码。
 //!
 //! 🔴 采集只落原始回答：`mentioned` / `rank` / `sentiment` 留给 M4 解析，
 //! 本层一律 `false` / `None`，不在这里发明提及判定。
@@ -23,11 +26,15 @@ use geo_domain::{
     FailureReason, GeoError, ProjectId, PromptSetId, RecordFilter, RoundStatus, UsageBoard,
     UsageRow,
 };
-use geo_llm::{ChatMessage, ChatRequest, LlmClient, LlmError, LlmProvider};
+use geo_llm::{
+    ChatMessage, ChatRequest, LlmClient, LlmError, LlmProvider, SearchClient, SearchEngine,
+    SearchHit,
+};
 use geo_store::{
     CollectionRepo, ProjectRepo, PromptSetRepo, SecretStore, SettingsRepo, StoreError,
 };
 use serde::Deserialize;
+use serde_json::json;
 use sqlx::SqlitePool;
 
 use crate::error::IpcError;
@@ -46,24 +53,63 @@ pub struct CollectionStartOptions {
 /// 重复采样上限（产品定义 §3.5：1/2/3）。
 const REPEAT_LIMIT: i32 = 3;
 
-/// 采集只问一句：模型直接回答用户问题，不加任何引导。
+/// 没有搜索结果时的兜底：模型直接回答。
 const COLLECTION_SYSTEM_PROMPT: &str =
     "你是一个中文 AI 搜索助手。请直接、完整地回答用户问题，必要时列出要点。";
+
+/// 有搜索结果时：只允许基于给定结果回答，并用角标标注来源。
+const GROUNDED_SYSTEM_PROMPT: &str = "你是中文 AI 搜索助手。请只依据用户给出的搜索结果作答；\
+每条关键结论后用 [1]、[2] 这样的角标标注来源编号；搜索结果不足以回答时直接说明，不要编造。";
+
+/// 单次采样送给模型的搜索结果条数上限。
+const MAX_SEARCH_HITS: usize = 10;
+/// 每条搜索结果的正文截断长度（字符），避免把整页塞爆上下文。
+const MAX_HIT_TEXT_CHARS: usize = 1200;
+
+/// 一个引擎本次执行需要的客户端。
+struct EngineBundle {
+    answer: LlmClient,
+    search: Option<SearchClient>,
+    /// Qwen 走 `enable_search` 单次调用；其余引擎先搜后答。
+    direct_search: bool,
+    channel: EngineChannel,
+}
 
 #[derive(Clone)]
 pub struct CollectionService {
     pool: SqlitePool,
     llm: Arc<LlmFactory>,
     secrets: Arc<dyn SecretStore>,
+    screenshots_dir: std::path::PathBuf,
+    /// 元宝浏览器通道的 profile 基目录：一律取自 `AppState::browser_profile_dir`
+    /// （app data dir 下），服务内部不再自己拼临时目录（P3-06b）。
+    browser_profile_dir: std::path::PathBuf,
 }
 
 impl CollectionService {
-    pub fn new(pool: SqlitePool, llm: Arc<LlmFactory>, secrets: Arc<dyn SecretStore>) -> Self {
-        Self { pool, llm, secrets }
+    pub fn new(
+        pool: SqlitePool,
+        llm: Arc<LlmFactory>,
+        secrets: Arc<dyn SecretStore>,
+        browser_profile_dir: std::path::PathBuf,
+    ) -> Self {
+        Self {
+            pool,
+            llm,
+            secrets,
+            screenshots_dir: std::env::temp_dir().join("gdk-geo").join("screenshots"),
+            browser_profile_dir,
+        }
     }
 
     pub fn from_state(state: &AppState) -> Self {
-        Self::new(state.pool.clone(), state.llm.clone(), state.secrets.clone())
+        Self {
+            pool: state.pool.clone(),
+            llm: state.llm.clone(),
+            secrets: state.secrets.clone(),
+            screenshots_dir: state.screenshots_dir.clone(),
+            browser_profile_dir: state.browser_profile_dir.clone(),
+        }
     }
 
     fn collection(&self) -> CollectionRepo {
@@ -175,7 +221,7 @@ impl CollectionService {
                     &round.id,
                     &EngineRun {
                         engine: *engine,
-                        channel: EngineChannel::OfficialApi,
+                        channel: engine_channel(*engine),
                         model: String::new(),
                         planned: i32::try_from(
                             set.items.len() * usize::try_from(options.repeat_count).unwrap_or(1),
@@ -200,7 +246,7 @@ impl CollectionService {
                         prompt_text: item.text.clone(),
                         intent: item.intent,
                         engine: *engine,
-                        channel: EngineChannel::OfficialApi,
+                        channel: engine_channel(*engine),
                         status: CollectionStatus::Queued,
                         attempt: 1,
                         failure_reason: None,
@@ -233,23 +279,32 @@ impl CollectionService {
         self.collection().update_round(&round).await?;
 
         let settings = SettingsRepo::new(self.pool.clone()).get().await?;
+        let project_website = self.round_project_website(&round).await.ok().flatten();
         let tasks = self.collection().tasks(round_id).await?;
         for engine in round.engine_scope.clone() {
-            let client = self.engine_client(&settings, engine).await;
+            if engine == EngineId::Yuanbao {
+                self.execute_yuanbao_round(round_id, &tasks, project_website.as_deref())
+                    .await?;
+                continue;
+            }
+            let bundle = self.engine_bundle(&settings, engine).await;
+            let interval = std::time::Duration::from_millis(settings.rate_limit.min_interval_ms);
+            let mut first_task = true;
             for mut task in tasks.iter().filter(|task| task.engine == engine).cloned() {
+                if !first_task && !interval.is_zero() {
+                    tokio::time::sleep(interval).await;
+                }
+                first_task = false;
                 if !matches!(
                     task.status,
                     CollectionStatus::Queued | CollectionStatus::Running
                 ) {
                     continue;
                 }
-                if engine_provider(engine).is_none() {
-                    self.skip_task(&mut task).await?;
-                    continue;
-                }
-                match &client {
-                    Ok(client) => {
-                        self.execute_task(round_id, &mut task, client).await?;
+                match &bundle {
+                    Ok(bundle) => {
+                        self.execute_task(round_id, &mut task, bundle, project_website.as_deref())
+                            .await?;
                     }
                     Err(reason) => {
                         self.fail_task(&mut task, *reason).await?;
@@ -298,17 +353,26 @@ impl CollectionService {
                 .with_param("value", status_str(task.status))
                 .into());
         }
-        if engine_provider(task.engine).is_none() {
-            return Err(GeoError::conflict("not_allowed")
-                .with_param("value", "unsupported_engine")
-                .into());
-        }
         let settings = SettingsRepo::new(self.pool.clone()).get().await?;
+        let round = self.require_round(&task.round_id).await?;
+        let project_website = self.round_project_website(&round).await.ok().flatten();
         task.attempt += 1;
-        match self.engine_client(&settings, task.engine).await {
-            Ok(client) => {
-                self.execute_task(&task.round_id.clone(), &mut task, &client)
-                    .await?
+        if task.engine == EngineId::Yuanbao {
+            self.execute_yuanbao_task(&mut task, project_website.as_deref())
+                .await?;
+            self.recompute_round(&task.round_id).await?;
+            self.parse_round_quietly(&task.round_id).await;
+            return Ok(task);
+        }
+        match self.engine_bundle(&settings, task.engine).await {
+            Ok(bundle) => {
+                self.execute_task(
+                    &task.round_id.clone(),
+                    &mut task,
+                    &bundle,
+                    project_website.as_deref(),
+                )
+                .await?
             }
             Err(reason) => self.fail_task(&mut task, reason).await?,
         }
@@ -328,13 +392,141 @@ impl CollectionService {
         }
     }
 
-    /// 按引擎装配客户端：复用用户已填的「模型服务商」Key（产品负责人 2026-11-05 裁定）。
-    async fn engine_client(
+    /// 一轮所属项目的官网（用于把“自有页引用”识别出来）。
+    async fn round_project_website(
+        &self,
+        round: &CollectionRound,
+    ) -> Result<Option<String>, IpcError> {
+        let project_id = round
+            .project_id
+            .parse()
+            .map_err(|_| GeoError::validation("project_id", "invalid_id"))?;
+        let project = self.projects().get(project_id).await?;
+        Ok(project.website)
+    }
+
+    /// 取某个 provider 的 Key。找不到就回 `LoginRequired`，不把 Key 带进错误。
+    async fn secret_for_provider(&self, provider: LlmProvider) -> Result<String, FailureReason> {
+        let reference = geo_store::secret_ref("llm", provider.as_str());
+        self.secrets
+            .get(&reference)
+            .await
+            .map_err(|_| FailureReason::LoginRequired)?
+            .filter(|key| !key.trim().is_empty())
+            .ok_or(FailureReason::LoginRequired)
+    }
+
+    async fn secret_for_name(&self, name: &str) -> Result<String, FailureReason> {
+        let reference = geo_store::secret_ref("llm", name);
+        self.secrets
+            .get(&reference)
+            .await
+            .map_err(|_| FailureReason::LoginRequired)?
+            .filter(|key| !key.trim().is_empty())
+            .ok_or(FailureReason::LoginRequired)
+    }
+
+    /// 按引擎装配「搜索 + 回答」两只客户端。
+    ///
+    /// - Kimi / 豆包 / 百度：官方搜索接口 + 本家对话模型；
+    /// - 千问：`enable_search` 单次调用（平台直接返回 search_info）；
+    /// - DeepSeek：没有官方搜索接口，借用 Kimi/百度搜索作 L1 检索层（channel=Gateway）；
+    /// - 秘塔：官方搜索接口 + 用户当前配置的对话模型（channel=Gateway）；
+    /// - 元宝：浏览器自动化（`services::browser`，另行装配）。
+    async fn engine_bundle(
         &self,
         settings: &geo_store::AppSettings,
         engine: EngineId,
-    ) -> Result<LlmClient, FailureReason> {
+    ) -> Result<EngineBundle, FailureReason> {
+        if engine == EngineId::Yuanbao {
+            // 元宝走浏览器自动化，由 `execute_yuanbao_*` 单独处理；这里只用于类型穷尽。
+            return Err(FailureReason::LoginRequired);
+        }
+        if engine == EngineId::Metaso {
+            let main_provider =
+                LlmProvider::parse(&settings.model.provider).ok_or(FailureReason::LoginRequired)?;
+            let answer = self.answer_client(settings, main_provider).await?;
+            let key = self.secret_for_name("metaso").await?;
+            return Ok(EngineBundle {
+                answer,
+                search: Some(SearchClient::new(
+                    SearchEngine::Metaso,
+                    key,
+                    self.llm.transport(),
+                )),
+                direct_search: false,
+                channel: EngineChannel::Gateway,
+            });
+        }
         let provider = engine_provider(engine).ok_or(FailureReason::LoginRequired)?;
+        let answer = self.answer_client(settings, provider).await?;
+        match engine {
+            EngineId::Qwen => Ok(EngineBundle {
+                answer,
+                search: None,
+                direct_search: true,
+                channel: EngineChannel::OfficialApi,
+            }),
+            EngineId::Kimi => Ok(self
+                .search_bundle(answer, SearchEngine::Kimi, provider)
+                .await?),
+            EngineId::Doubao => Ok(self
+                .search_bundle(answer, SearchEngine::Doubao, provider)
+                .await?),
+            EngineId::BaiduAi => Ok(self
+                .search_bundle(answer, SearchEngine::Baidu, provider)
+                .await?),
+            EngineId::Deepseek => {
+                // DeepSeek 没有官方搜索接口：优先借 Kimi，其次百度；都没有就退回纯对话。
+                for (candidate, search_engine) in [
+                    (LlmProvider::Moonshot, SearchEngine::Kimi),
+                    (LlmProvider::BaiduQianfan, SearchEngine::Baidu),
+                ] {
+                    if let Ok(key) = self.secret_for_provider(candidate).await {
+                        return Ok(EngineBundle {
+                            answer,
+                            search: Some(SearchClient::new(
+                                search_engine,
+                                key,
+                                self.llm.transport(),
+                            )),
+                            direct_search: false,
+                            channel: EngineChannel::Gateway,
+                        });
+                    }
+                }
+                Ok(EngineBundle {
+                    answer,
+                    search: None,
+                    direct_search: false,
+                    channel: EngineChannel::OfficialApi,
+                })
+            }
+            EngineId::Yuanbao | EngineId::Metaso => unreachable!("已在前面的分支处理"),
+        }
+    }
+
+    async fn search_bundle(
+        &self,
+        answer: LlmClient,
+        search_engine: SearchEngine,
+        provider: LlmProvider,
+    ) -> Result<EngineBundle, FailureReason> {
+        let key = self.secret_for_provider(provider).await?;
+        Ok(EngineBundle {
+            answer,
+            search: Some(SearchClient::new(search_engine, key, self.llm.transport())),
+            direct_search: false,
+            channel: EngineChannel::OfficialApi,
+        })
+    }
+
+    /// 对话客户端：目标 provider 与用户当前配置一致时沿用其模型名；否则用该 provider 默认。
+    async fn answer_client(
+        &self,
+        settings: &geo_store::AppSettings,
+        provider: LlmProvider,
+    ) -> Result<LlmClient, FailureReason> {
         let mut settings = settings.clone();
         let configured = LlmProvider::parse(&settings.model.provider) == Some(provider);
         settings.model.provider = provider.as_str().to_string();
@@ -343,15 +535,10 @@ impl CollectionService {
             // 用户为别家填的 base_url 不能带到这家来。
             settings.model.base_url = None;
         }
-        let config = LlmFactory::config_from_settings(&settings)
+        let mut config = LlmFactory::config_from_settings(&settings)
             .map_err(|_| FailureReason::LoginRequired)?;
-        let api_key = self
-            .secrets
-            .get(&config.secret_ref)
-            .await
-            .map_err(|_| FailureReason::LoginRequired)?
-            .filter(|key| !key.trim().is_empty())
-            .ok_or(FailureReason::LoginRequired)?;
+        config.max_retries = u32::from(settings.rate_limit.retry_max);
+        let api_key = self.secret_for_provider(provider).await?;
         Ok(self.llm.client(config, &api_key))
     }
 
@@ -359,38 +546,85 @@ impl CollectionService {
         &self,
         round_id: &str,
         task: &mut CollectionTask,
-        client: &LlmClient,
+        bundle: &EngineBundle,
+        project_website: Option<&str>,
     ) -> Result<(), IpcError> {
         let started = Instant::now();
-        let request = ChatRequest::new(vec![
-            ChatMessage::system(COLLECTION_SYSTEM_PROMPT),
-            ChatMessage::user(task.prompt_text.clone()),
-        ]);
         let now = Utc::now();
         let attempt_index = self
             .collection()
             .count_records_for(round_id, &task.prompt_id, task.engine)
             .await?;
         let repeat_index = i32::try_from(attempt_index + 1).unwrap_or(i32::MAX);
-        let (status, failure_reason, answer, model, prompt_tokens, completion_tokens) =
-            match client.chat(&request).await {
-                Ok(response) => (
-                    CollectionStatus::Succeeded,
-                    None,
-                    response.content,
-                    response.model,
-                    i64::from(response.usage.prompt_tokens),
-                    i64::from(response.usage.completion_tokens),
-                ),
-                Err(error) => (
-                    CollectionStatus::Failed,
-                    Some(failure_reason(&error)),
-                    String::new(),
-                    client.config().model.clone(),
-                    0,
-                    0,
-                ),
+
+        let mut citations = Vec::new();
+        let mut answer = String::new();
+        let mut model = bundle.answer.config().model.clone();
+        let mut prompt_tokens = 0;
+        let mut completion_tokens = 0;
+        let mut status = CollectionStatus::Succeeded;
+        let mut failure = None;
+
+        if bundle.direct_search {
+            let request = ChatRequest::new(vec![
+                ChatMessage::system(COLLECTION_SYSTEM_PROMPT),
+                ChatMessage::user(task.prompt_text.clone()),
+            ])
+            .with_extra("enable_search", json!(true))
+            .with_extra(
+                "search_options",
+                json!({ "search_strategy": "max", "enable_source": true, "enable_citation": true }),
+            );
+            match bundle.answer.chat(&request).await {
+                Ok(response) => {
+                    answer = response.content;
+                    model = response.model;
+                    prompt_tokens = i64::from(response.usage.prompt_tokens);
+                    completion_tokens = i64::from(response.usage.completion_tokens);
+                    citations = response
+                        .citations
+                        .iter()
+                        .map(|hit| citation_from_hit(hit, project_website))
+                        .collect();
+                }
+                Err(error) => {
+                    status = CollectionStatus::Failed;
+                    failure = Some(failure_reason(&error));
+                }
+            }
+        } else {
+            let hits = match &bundle.search {
+                Some(search) => match search.search(&task.prompt_text, MAX_SEARCH_HITS).await {
+                    Ok(hits) => hits,
+                    Err(error) => {
+                        status = CollectionStatus::Failed;
+                        failure = Some(failure_reason(&error));
+                        Vec::new()
+                    }
+                },
+                None => Vec::new(),
             };
+            if status == CollectionStatus::Succeeded {
+                let request = grounded_request(&task.prompt_text, &hits);
+                match bundle.answer.chat(&request).await {
+                    Ok(response) => {
+                        answer = response.content;
+                        model = response.model;
+                        prompt_tokens = i64::from(response.usage.prompt_tokens);
+                        completion_tokens = i64::from(response.usage.completion_tokens);
+                        citations = hits
+                            .iter()
+                            .map(|hit| citation_from_hit(hit, project_website))
+                            .collect();
+                    }
+                    Err(error) => {
+                        status = CollectionStatus::Failed;
+                        failure = Some(failure_reason(&error));
+                    }
+                }
+            }
+        }
+
         let latency_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
         let record = CollectionRecord {
             id: uuid::Uuid::new_v4().to_string(),
@@ -400,13 +634,13 @@ impl CollectionService {
             intent: task.intent,
             engine: task.engine,
             model,
-            channel: EngineChannel::OfficialApi,
+            channel: bundle.channel,
             status,
-            failure_reason,
+            failure_reason: failure,
             mentioned: false,
             rank: None,
             sentiment: None,
-            citation_count: 0,
+            citation_count: i32::try_from(citations.len()).unwrap_or(i32::MAX),
             collected_at: now,
             latency_ms,
             prompt_tokens,
@@ -417,12 +651,12 @@ impl CollectionService {
             .insert_record(&CollectionRecordDetail {
                 record: record.clone(),
                 answer_text: answer,
-                citations: Vec::new(),
+                citations,
                 screenshot_path: None,
             })
             .await?;
         task.status = status;
-        task.failure_reason = failure_reason;
+        task.failure_reason = failure;
         task.record_id = Some(record.id);
         task.finished_at = Some(now);
         task.latency_ms = Some(latency_ms);
@@ -430,12 +664,107 @@ impl CollectionService {
         Ok(())
     }
 
-    async fn skip_task(&self, task: &mut CollectionTask) -> Result<(), IpcError> {
+    async fn execute_yuanbao_round(
+        &self,
+        round_id: &str,
+        tasks: &[CollectionTask],
+        project_website: Option<&str>,
+    ) -> Result<(), IpcError> {
+        crate::build_flavor::reject_in_store_build("yuanbao")?;
+        for mut task in tasks
+            .iter()
+            .filter(|task| task.engine == EngineId::Yuanbao)
+            .cloned()
+        {
+            if !matches!(
+                task.status,
+                CollectionStatus::Queued | CollectionStatus::Running
+            ) {
+                continue;
+            }
+            self.execute_yuanbao_task(&mut task, project_website)
+                .await?;
+        }
+        let _ = round_id;
+        Ok(())
+    }
+
+    async fn execute_yuanbao_task(
+        &self,
+        task: &mut CollectionTask,
+        project_website: Option<&str>,
+    ) -> Result<(), IpcError> {
+        crate::build_flavor::reject_in_store_build("yuanbao")?;
+        let started = Instant::now();
         let now = Utc::now();
-        task.status = CollectionStatus::Skipped;
-        task.failure_reason = None;
+        let attempt_index = self
+            .collection()
+            .count_records_for(&task.round_id, &task.prompt_id, task.engine)
+            .await?;
+        let repeat_index = i32::try_from(attempt_index + 1).unwrap_or(i32::MAX);
+        let outcome = crate::services::browser::ask_yuanbao(
+            &task.prompt_text,
+            &self.screenshots_dir,
+            &self.browser_profile_dir,
+        )
+        .await;
+        let latency_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
+        let (status, failure, answer, model, screenshot_path, citations) = match outcome {
+            Ok(answer) => (
+                CollectionStatus::Succeeded,
+                None,
+                answer.answer,
+                answer.model,
+                answer.screenshot_path,
+                answer.citations,
+            ),
+            Err(error) => (
+                CollectionStatus::Failed,
+                Some(browser_failure(&error)),
+                String::new(),
+                "yuanbao-web".to_string(),
+                None,
+                Vec::new(),
+            ),
+        };
+        let citations: Vec<geo_domain::Citation> = citations
+            .iter()
+            .map(|hit| citation_from_hit(hit, project_website))
+            .collect();
+        let record = CollectionRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            round_id: task.round_id.clone(),
+            prompt_id: task.prompt_id.clone(),
+            prompt_text: task.prompt_text.clone(),
+            intent: task.intent,
+            engine: task.engine,
+            model,
+            channel: EngineChannel::BrowserAutomation,
+            status,
+            failure_reason: failure,
+            mentioned: false,
+            rank: None,
+            sentiment: None,
+            citation_count: i32::try_from(citations.len()).unwrap_or(i32::MAX),
+            collected_at: now,
+            latency_ms,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            repeat_index,
+        };
+        self.collection()
+            .insert_record(&CollectionRecordDetail {
+                record: record.clone(),
+                answer_text: answer,
+                citations,
+                screenshot_path,
+            })
+            .await?;
+        task.status = status;
+        task.failure_reason = failure;
+        task.record_id = Some(record.id);
         task.finished_at = Some(now);
-        task.latency_ms = Some(0);
+        task.latency_ms = Some(latency_ms);
         self.collection().update_task(task).await?;
         Ok(())
     }
@@ -556,7 +885,10 @@ impl CollectionService {
                     round_id,
                     &EngineRun {
                         engine: *engine,
-                        channel: EngineChannel::OfficialApi,
+                        channel: engine_records
+                            .first()
+                            .map(|record| record.channel)
+                            .unwrap_or_else(|| engine_channel(*engine)),
                         model,
                         planned: i32::try_from(engine_tasks.len()).unwrap_or(i32::MAX),
                         succeeded: i32::try_from(succeeded).unwrap_or(i32::MAX),
@@ -641,7 +973,122 @@ impl CollectionService {
     }
 }
 
-/// 引擎 → 模型服务商（官方 API 兼容的那五家）。元宝 / 秘塔没有公开对话 API。
+/// 有搜索结果时的提问模板：把标题/URL/摘要作为唯一事实来源。
+fn grounded_request(prompt: &str, hits: &[SearchHit]) -> ChatRequest {
+    let mut sources = String::new();
+    for (index, hit) in hits.iter().take(MAX_SEARCH_HITS).enumerate() {
+        let text = hit.content.as_deref().unwrap_or(&hit.snippet);
+        let text: String = text.chars().take(MAX_HIT_TEXT_CHARS).collect();
+        sources.push_str(&format!(
+            "[{}] {}\n{}\n{}\n\n",
+            index + 1,
+            hit.title,
+            hit.url,
+            text
+        ));
+    }
+    let user = if sources.is_empty() {
+        prompt.to_string()
+    } else {
+        format!(
+            "用户问题：{prompt}\n\n搜索结果：\n{sources}\n请只基于以上搜索结果回答；关键结论后用 [1]、[2] 标注来源编号。"
+        )
+    };
+    let system = if sources.is_empty() {
+        COLLECTION_SYSTEM_PROMPT
+    } else {
+        GROUNDED_SYSTEM_PROMPT
+    };
+    ChatRequest::new(vec![ChatMessage::system(system), ChatMessage::user(user)])
+}
+
+fn citation_from_hit(hit: &SearchHit, project_website: Option<&str>) -> geo_domain::Citation {
+    let domain = url::Url::parse(&hit.url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or_default()
+        .trim_start_matches("www.")
+        .to_string();
+    let source_type = classify_source(&domain, project_website);
+    geo_domain::Citation {
+        url: hit.url.clone(),
+        domain,
+        title: Some(hit.title.clone()),
+        source_type,
+    }
+}
+
+fn classify_source(domain: &str, project_website: Option<&str>) -> geo_domain::SourceType {
+    use geo_domain::SourceType;
+    let project_host = project_website
+        .and_then(|raw| url::Url::parse(raw).ok())
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or_default()
+        .trim_start_matches("www.")
+        .to_string();
+    if !project_host.is_empty() && domain == project_host {
+        return SourceType::OwnedPage;
+    }
+    let lower = domain.to_ascii_lowercase();
+    if lower.contains("baike") {
+        SourceType::Baike
+    } else if lower.contains("zhihu") {
+        SourceType::Zhihu
+    } else if lower.contains("xiaohongshu") || lower.contains("xhslink") {
+        SourceType::Xiaohongshu
+    } else if ["taobao", "tmall", "jd.com", "1688", "pinduoduo", "amazon"]
+        .iter()
+        .any(|needle| lower.contains(needle))
+    {
+        SourceType::Ecommerce
+    } else if lower.ends_with(".gov.cn")
+        || lower.ends_with(".edu.cn")
+        || lower.contains("gov")
+        || lower.contains("edu")
+        || lower.contains("standard")
+        || lower.contains("iso.org")
+    {
+        SourceType::OfficialDoc
+    } else if [
+        "news", "sina", "sohu", "163.com", "qq.com", "people", "xinhua", "36kr", "ifeng",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+    {
+        SourceType::NewsMedia
+    } else if ["tieba", "forum", "bbs", "discuz"]
+        .iter()
+        .any(|needle| lower.contains(needle))
+    {
+        SourceType::Forum
+    } else {
+        SourceType::Other
+    }
+}
+
+/// 引擎的默认采集通道：元宝浏览器、DeepSeek/秘塔网关、其余官方 API。
+fn engine_channel(engine: EngineId) -> EngineChannel {
+    match engine {
+        EngineId::Yuanbao => EngineChannel::BrowserAutomation,
+        EngineId::Deepseek | EngineId::Metaso => EngineChannel::Gateway,
+        EngineId::Doubao | EngineId::Kimi | EngineId::Qwen | EngineId::BaiduAi => {
+            EngineChannel::OfficialApi
+        }
+    }
+}
+
+fn browser_failure(error: &crate::services::browser::BrowserError) -> FailureReason {
+    use crate::services::browser::BrowserError;
+    match error {
+        BrowserError::LoginRequired => FailureReason::LoginRequired,
+        BrowserError::Timeout => FailureReason::Timeout,
+        BrowserError::Blocked => FailureReason::Blocked,
+        BrowserError::EmptyAnswer => FailureReason::EmptyAnswer,
+        BrowserError::Unavailable | BrowserError::Other => FailureReason::Transport,
+    }
+}
+
+/// 引擎 → 对话模型服务商。元宝走浏览器、秘塔用当前主模型，均不走这里。
 fn engine_provider(engine: EngineId) -> Option<LlmProvider> {
     match engine {
         EngineId::Doubao => Some(LlmProvider::VolcengineArk),
@@ -677,5 +1124,44 @@ fn status_str(status: CollectionStatus) -> &'static str {
         CollectionStatus::Succeeded => "succeeded",
         CollectionStatus::Failed => "failed",
         CollectionStatus::Skipped => "skipped",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    /// P3-06b：元宝通道的 profile 必须挂在 `AppState::browser_profile_dir`（app data dir）
+    /// 之下，不能是服务内部随手拼的临时目录。
+    #[tokio::test]
+    async fn from_state_wires_the_app_data_browser_profile_dir() {
+        let state = AppState::for_test(
+            geo_store::open_in_memory().await.expect("内存库可用"),
+            Arc::new(geo_store::MemorySecretStore::default()),
+            Arc::new(LlmFactory::fixture_map(BTreeMap::new())),
+            Arc::new(
+                geo_crawler::SiteFetcher::new(
+                    geo_crawler::FetchLimits::default(),
+                    crate::state::USER_AGENT,
+                    None,
+                )
+                .expect("抓取器可构造"),
+            ),
+        );
+
+        let service = CollectionService::from_state(&state);
+        assert_eq!(service.browser_profile_dir, state.browser_profile_dir);
+
+        let profile = crate::services::browser::profile_dir(&service.browser_profile_dir);
+        assert!(
+            profile.starts_with(&state.browser_profile_dir),
+            "元宝 profile 必须在 app data dir 之下：{profile:?}"
+        );
+        assert_eq!(
+            profile.file_name().and_then(|value| value.to_str()),
+            Some("yuanbao"),
+            "子目录名沿用 `yuanbao`：{profile:?}"
+        );
     }
 }

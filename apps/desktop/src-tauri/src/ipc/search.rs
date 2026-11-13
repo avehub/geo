@@ -11,7 +11,10 @@ use geo_domain::{
 use tauri::State;
 
 use crate::error::IpcError;
-use crate::services::{SearchBoardResult, SearchMetricImportResult, SearchService};
+use crate::services::{
+    browser_capture, browser_open, SearchBoardResult, SearchBrowserSession,
+    SearchMetricImportResult, SearchOAuthStart, SearchService,
+};
 use crate::state::AppState;
 
 #[tauri::command(rename_all = "snake_case")]
@@ -20,6 +23,17 @@ pub async fn search_board(
     project_id: ProjectId,
 ) -> Result<SearchBoardResult, IpcError> {
     SearchService::from_state(&state).board(project_id).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn search_oauth_begin(
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+    kind: SearchSourceKind,
+) -> Result<SearchOAuthStart, IpcError> {
+    SearchService::from_state(&state)
+        .oauth_begin(project_id, kind)
+        .await
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -87,4 +101,43 @@ pub async fn search_metric_import_csv(
             Utc::now(),
         )
         .await
+}
+
+/// 打开系统 Chrome/Edge（独立 profile）并返回 CDP 地址。
+///
+/// 🔴 只支持百度站长两个面；不代登录、不注入账号密码、不绕验证码。
+/// 返回后 Chrome **保持运行**：用户要继续在同一个窗口里操作。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn search_browser_open(
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+    kind: SearchSourceKind,
+) -> Result<SearchBrowserSession, IpcError> {
+    crate::build_flavor::reject_in_store_build("search_browser")?;
+    browser_open(&state, project_id, kind).await
+}
+
+/// 连接已打开的系统 Chrome，把当前可见表格交给既有导入管线。
+///
+/// 只读 DOM（`Runtime.evaluate` 之外的私有接口一概不碰），不读 cookie / localStorage。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn search_browser_capture(
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+    kind: SearchSourceKind,
+    ws_url: String,
+    period_start: String,
+    period_end: String,
+) -> Result<SearchMetricImportResult, IpcError> {
+    crate::build_flavor::reject_in_store_build("search_browser")?;
+    browser_capture(
+        &state,
+        project_id,
+        kind,
+        ws_url,
+        period_start,
+        period_end,
+        Utc::now(),
+    )
+    .await
 }

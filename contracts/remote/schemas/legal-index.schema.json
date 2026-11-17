@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo_api.gaodekuai.com/schemas/legal-index.schema.json",
+  "title": "LegalIndexV1",
+  "description": "法务文档当前生效版本清单。客户端\"关于\"页与设置页的隐私文案**从这里取**，以实现发布规格 §5 要求的「隐私政策链接必须与安装包内展示的文本同源」。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "version",
+    "docs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "🔴 schema_version 只增不改语义；破坏性变更 = 新版本号 + 双跑期"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "docs": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "privacy_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "patternProperties": {
+            "^(zh-CN|en-US)$": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "path",
+                "sha256",
+                "effective_at",
+                "title"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$",
+                  "description": "SHA-256 十六进制小写"
+                },
+                "effective_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "requires_new_consent": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "🔴 true 时客户端必须弹窗要求用户重新确认后才继续（B-3 政策先行）"
+                }
+              }
+            }
+          },
+          "description": "语言代码 → 生效版本。🔴 additionalProperties:false 配合 patternProperties，只放行 zh-CN/en-US（AGENTS 规则 7）"
+        },
+        "terms_of_service": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "patternProperties": {
+            "^(zh-CN|en-US)$": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "path",
+                "sha256",
+                "effective_at",
+                "title"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$",
+                  "description": "SHA-256 十六进制小写"
+                },
+                "effective_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "requires_new_consent": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "🔴 true 时客户端必须弹窗要求用户重新确认后才继续（B-3 政策先行）"
+                }
+              }
+            }
+          },
+          "description": "语言代码 → 生效版本。🔴 additionalProperties:false 配合 patternProperties，只放行 zh-CN/en-US（AGENTS 规则 7）"
+        },
+        "eula": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "patternProperties": {
+            "^(zh-CN|en-US)$": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "path",
+                "sha256",
+                "effective_at",
+                "title"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$",
+                  "description": "SHA-256 十六进制小写"
+                },
+                "effective_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "requires_new_consent": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "🔴 true 时客户端必须弹窗要求用户重新确认后才继续（B-3 政策先行）"
+                }
+              }
+            }
+          },
+          "description": "语言代码 → 生效版本。🔴 additionalProperties:false 配合 patternProperties，只放行 zh-CN/en-US（AGENTS 规则 7）"
+        },
+        "third_party_notices": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "patternProperties": {
+            "^(zh-CN|en-US)$": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "path",
+                "sha256",
+                "effective_at",
+                "title"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$",
+                  "description": "SHA-256 十六进制小写"
+                },
+                "effective_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "requires_new_consent": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "🔴 true 时客户端必须弹窗要求用户重新确认后才继续（B-3 政策先行）"
+                }
+              }
+            }
+          },
+          "description": "语言代码 → 生效版本。🔴 additionalProperties:false 配合 patternProperties，只放行 zh-CN/en-US（AGENTS 规则 7）"
+        },
+        "dpa": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "patternProperties": {
+            "^(zh-CN|en-US)$": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "path",
+                "sha256",
+                "effective_at",
+                "title"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$",
+                  "description": "SHA-256 十六进制小写"
+                },
+                "effective_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "requires_new_consent": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "🔴 true 时客户端必须弹窗要求用户重新确认后才继续（B-3 政策先行）"
+                }
+              }
+            }
+          },
+          "description": "语言代码 → 生效版本。🔴 additionalProperties:false 配合 patternProperties，只放行 zh-CN/en-US（AGENTS 规则 7）"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "version": 1794899741443,
+  "generated_at": "2026-11-17T07:15:41.443Z",
+  "note_zh": "建议值，客户端本地设置优先",
+  "baselines": [
+    {
+      "engine_code": "baidu_ziyan",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_74685",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_74835",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_74916",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_75108",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_89099",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_89107",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_89115",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_90113",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_91361",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_91375",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_91389",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_91423",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_91567",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_91572",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_97556",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    },
+    {
+      "engine_code": "e2e_engine_99740",
+      "requests_per_minute": 10,
+      "min_interval_ms": 3000,
+      "retry_max": 3
+    }
+  ]
+}

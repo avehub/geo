@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "version": 1794897557765,
+  "generated_at": "2026-11-17T06:39:17.765Z",
+  "packs": [
+    {
+      "pack_code": "e2e_mfg_prompts",
+      "name_zh": "制造业 Prompt 模板包",
+      "industry": "manufacturing",
+      "kind": "prompt",
+      "version": 1,
+      "path": "templates/e2e_mfg_prompts@1.json",
+      "sha256": "8bf8ecab138517b33de4b800b57898c2a7e2e81f6c7ab8235fdb8422ff89b628",
+      "license_tier_scope": []
+    },
+    {
+      "pack_code": "e2e_mfg_81037",
+      "name_zh": "制造业 Prompt 模板包",
+      "industry": "manufacturing",
+      "kind": "prompt",
+      "version": 1,
+      "path": "templates/e2e_mfg_81037@1.json",
+      "sha256": "8bf8ecab138517b33de4b800b57898c2a7e2e81f6c7ab8235fdb8422ff89b628",
+      "license_tier_scope": []
+    },
+    {
+      "pack_code": "e2e_mfg_81187",
+      "name_zh": "制造业 Prompt 模板包",
+      "industry": "manufacturing",
+      "kind": "prompt",
+      "version": 1,
+      "path": "templates/e2e_mfg_81187@1.json",
+      "sha256": "8bf8ecab138517b33de4b800b57898c2a7e2e81f6c7ab8235fdb8422ff89b628",
+      "license_tier_scope": []
+    },
+    {
+      "pack_code": "e2e_mfg_89125",
+      "name_zh": "制造业 Prompt 模板包",
+      "industry": "manufacturing",
+      "kind": "prompt",
+      "version": 1,
+      "path": "templates/e2e_mfg_89125@1.json",
+      "sha256": "8bf8ecab138517b33de4b800b57898c2a7e2e81f6c7ab8235fdb8422ff89b628",
+      "license_tier_scope": []
+    },
+    {
+      "pack_code": "e2e_mfg_91362",
+      "name_zh": "制造业 Prompt 模板包",
+      "industry": "manufacturing",
+      "kind": "prompt",
+      "version": 1,
+      "path": "templates/e2e_mfg_91362@1.json",
+      "sha256": "8bf8ecab138517b33de4b800b57898c2a7e2e81f6c7ab8235fdb8422ff89b628",
+      "license_tier_scope": []
+    },
+    {
+      "pack_code": "e2e_mfg_91376",
+      "name_zh": "制造业 Prompt 模板包",
+      "industry": "manufacturing",
+      "kind": "prompt",
+      "version": 1,
+      "path": "templates/e2e_mfg_91376@1.json",
+      "sha256": "8bf8ecab138517b33de4b800b57898c2a7e2e81f6c7ab8235fdb8422ff89b628",
+      "license_tier_scope": []
+    },
+    {
+      "pack_code": "e2e_mfg_91390",
+      "name_zh": "制造业 Prompt 模板包",
+      "industry": "manufacturing",
+      "kind": "prompt",
+      "version": 1,
+      "path": "templates/e2e_mfg_91390@1.json",
+      "sha256": "8bf8ecab138517b33de4b800b57898c2a7e2e81f6c7ab8235fdb8422ff89b628",
+      "license_tier_scope": []
+    },
+    {
+      "pack_code": "e2e_mfg_91424",
+      "name_zh": "制造业 Prompt 模板包",
+      "industry": "manufacturing",
+      "kind": "prompt",
+      "version": 1,
+      "path": "templates/e2e_mfg_91424@1.json",
+      "sha256": "8bf8ecab138517b33de4b800b57898c2a7e2e81f6c7ab8235fdb8422ff89b628",
+      "license_tier_scope": []
+    },
+    {
+      "pack_code": "e2e_mfg_91568",
+      "name_zh": "制造业 Prompt 模板包",
+      "industry": "manufacturing",
+      "kind": "prompt",
+      "version": 1,
+      "path": "templates/e2e_mfg_91568@1.json",
+      "sha256": "8bf8ecab138517b33de4b800b57898c2a7e2e81f6c7ab8235fdb8422ff89b628",
+      "license_tier_scope": []
+    },
+    {
+      "pack_code": "e2e_mfg_91573",
+      "name_zh": "制造业 Prompt 模板包",
+      "industry": "manufacturing",
+      "kind": "prompt",
+      "version": 1,
+      "path": "templates/e2e_mfg_91573@1.json",
+      "sha256": "8bf8ecab138517b33de4b800b57898c2a7e2e81f6c7ab8235fdb8422ff89b628",
+      "license_tier_scope": []
+    },
+    {
+      "pack_code": "e2e_mfg_97557",
+      "name_zh": "制造业 Prompt 模板包",
+      "industry": "manufacturing",
+      "kind": "prompt",
+      "version": 1,
+      "path": "templates/e2e_mfg_97557@1.json",
+      "sha256": "8bf8ecab138517b33de4b800b57898c2a7e2e81f6c7ab8235fdb8422ff89b628",
+      "license_tier_scope": []
+    }
+  ]
+}

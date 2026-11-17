@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "version": 1794899741151,
+  "generated_at": "2026-11-17T07:15:41.151Z",
+  "packs": [
+    {
+      "engine_code": "e2e_engine_99740",
+      "version": 1,
+      "path": "rulepacks/e2e_engine_99740@1.json",
+      "sha256": "06d8fe509edcea0720480635b632b2ee865500b74362a8f5214de28c1fceb894",
+      "min_app_version": "0.2.0",
+      "max_app_version": null
+    }
+  ]
+}

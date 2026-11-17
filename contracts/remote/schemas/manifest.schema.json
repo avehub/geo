@@ -1,0 +1,352 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo_api.gaodekuai.com/schemas/manifest.schema.json",
+  "title": "ManifestV1",
+  "description": "数据面入口清单。🔴 这是数据面**唯一可变**的对象（其余产物带 @version 后缀、永不覆盖）；回滚 = 把它 rename 回旧快照。客户端流程：取本文件 → 比对本地版本 → 只拉变化项 → 逐项验 sha256+signature → 全部通过才生效。 🔴 新增 item key 属\"可选字段新增\"，前向兼容（老客户端遇到未知 key 只忽略并告警，不报错），因此 schema_version 保持 1；改已有字段语义才需要升版本 + 双跑期。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "items"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "🔴 schema_version 只增不改语义；破坏性变更 = 新版本号 + 双跑期"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "description": "至少含 release；其余按需。未列出的项客户端视为「无远程更新，用内置版本」",
+      "properties": {
+        "release": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "version",
+            "sha256",
+            "signature"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "相对 /client/v1/ 的路径"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "**发布序号**（单调递增整数），不是语义化版本。客户端据此判断是否需要重新拉取，并**拒绝比本地已接受序号更低的产物**（防回滚）。🔴 刻意不用 string|integer 联合类型：混合类型会让防回滚比较出现歧义；语义化版本（0.2.0 这种）属于 release 产物**内部**，见 release-latest.schema.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 十六进制小写"
+            },
+            "signature": {
+              "type": "string",
+              "minLength": 10,
+              "description": "minisign 签名（base64），公钥内置于客户端"
+            }
+          }
+        },
+        "engines": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "version",
+            "sha256",
+            "signature"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "相对 /client/v1/ 的路径"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "**发布序号**（单调递增整数），不是语义化版本。客户端据此判断是否需要重新拉取，并**拒绝比本地已接受序号更低的产物**（防回滚）。🔴 刻意不用 string|integer 联合类型：混合类型会让防回滚比较出现歧义；语义化版本（0.2.0 这种）属于 release 产物**内部**，见 release-latest.schema.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 十六进制小写"
+            },
+            "signature": {
+              "type": "string",
+              "minLength": 10,
+              "description": "minisign 签名（base64），公钥内置于客户端"
+            }
+          }
+        },
+        "providers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "version",
+            "sha256",
+            "signature"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "相对 /client/v1/ 的路径"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "**发布序号**（单调递增整数），不是语义化版本。客户端据此判断是否需要重新拉取，并**拒绝比本地已接受序号更低的产物**（防回滚）。🔴 刻意不用 string|integer 联合类型：混合类型会让防回滚比较出现歧义；语义化版本（0.2.0 这种）属于 release 产物**内部**，见 release-latest.schema.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 十六进制小写"
+            },
+            "signature": {
+              "type": "string",
+              "minLength": 10,
+              "description": "minisign 签名（base64），公钥内置于客户端"
+            }
+          }
+        },
+        "rate_limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "version",
+            "sha256",
+            "signature"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "相对 /client/v1/ 的路径"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "**发布序号**（单调递增整数），不是语义化版本。客户端据此判断是否需要重新拉取，并**拒绝比本地已接受序号更低的产物**（防回滚）。🔴 刻意不用 string|integer 联合类型：混合类型会让防回滚比较出现歧义；语义化版本（0.2.0 这种）属于 release 产物**内部**，见 release-latest.schema.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 十六进制小写"
+            },
+            "signature": {
+              "type": "string",
+              "minLength": 10,
+              "description": "minisign 签名（base64），公钥内置于客户端"
+            }
+          },
+          "description": "频控基线（模块 B7）。🔴 产物内的数值是**建议值**，客户端本地设置优先：频控直接关系用户在第三方平台上的账号安全，只有用户自己知道当前风控松紧，后台不应也不能强制覆盖。"
+        },
+        "rulepacks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "version",
+            "sha256",
+            "signature"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "相对 /client/v1/ 的路径"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "**发布序号**（单调递增整数），不是语义化版本。客户端据此判断是否需要重新拉取，并**拒绝比本地已接受序号更低的产物**（防回滚）。🔴 刻意不用 string|integer 联合类型：混合类型会让防回滚比较出现歧义；语义化版本（0.2.0 这种）属于 release 产物**内部**，见 release-latest.schema.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 十六进制小写"
+            },
+            "signature": {
+              "type": "string",
+              "minLength": 10,
+              "description": "minisign 签名（base64），公钥内置于客户端"
+            }
+          }
+        },
+        "templates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "version",
+            "sha256",
+            "signature"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "相对 /client/v1/ 的路径"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "**发布序号**（单调递增整数），不是语义化版本。客户端据此判断是否需要重新拉取，并**拒绝比本地已接受序号更低的产物**（防回滚）。🔴 刻意不用 string|integer 联合类型：混合类型会让防回滚比较出现歧义；语义化版本（0.2.0 这种）属于 release 产物**内部**，见 release-latest.schema.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 十六进制小写"
+            },
+            "signature": {
+              "type": "string",
+              "minLength": 10,
+              "description": "minisign 签名（base64），公钥内置于客户端"
+            }
+          }
+        },
+        "compliance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "version",
+            "sha256",
+            "signature"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "相对 /client/v1/ 的路径"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "**发布序号**（单调递增整数），不是语义化版本。客户端据此判断是否需要重新拉取，并**拒绝比本地已接受序号更低的产物**（防回滚）。🔴 刻意不用 string|integer 联合类型：混合类型会让防回滚比较出现歧义；语义化版本（0.2.0 这种）属于 release 产物**内部**，见 release-latest.schema.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 十六进制小写"
+            },
+            "signature": {
+              "type": "string",
+              "minLength": 10,
+              "description": "minisign 签名（base64），公钥内置于客户端"
+            }
+          }
+        },
+        "legal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "version",
+            "sha256",
+            "signature"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "相对 /client/v1/ 的路径"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "**发布序号**（单调递增整数），不是语义化版本。客户端据此判断是否需要重新拉取，并**拒绝比本地已接受序号更低的产物**（防回滚）。🔴 刻意不用 string|integer 联合类型：混合类型会让防回滚比较出现歧义；语义化版本（0.2.0 这种）属于 release 产物**内部**，见 release-latest.schema.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 十六进制小写"
+            },
+            "signature": {
+              "type": "string",
+              "minLength": 10,
+              "description": "minisign 签名（base64），公钥内置于客户端"
+            }
+          }
+        },
+        "privacy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "version",
+            "sha256",
+            "signature"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "相对 /client/v1/ 的路径"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "**发布序号**（单调递增整数），不是语义化版本。客户端据此判断是否需要重新拉取，并**拒绝比本地已接受序号更低的产物**（防回滚）。🔴 刻意不用 string|integer 联合类型：混合类型会让防回滚比较出现歧义；语义化版本（0.2.0 这种）属于 release 产物**内部**，见 release-latest.schema.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 十六进制小写"
+            },
+            "signature": {
+              "type": "string",
+              "minLength": 10,
+              "description": "minisign 签名（base64），公钥内置于客户端"
+            }
+          }
+        },
+        "notices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "version",
+            "sha256",
+            "signature"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "相对 /client/v1/ 的路径"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "**发布序号**（单调递增整数），不是语义化版本。客户端据此判断是否需要重新拉取，并**拒绝比本地已接受序号更低的产物**（防回滚）。🔴 刻意不用 string|integer 联合类型：混合类型会让防回滚比较出现歧义；语义化版本（0.2.0 这种）属于 release 产物**内部**，见 release-latest.schema.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 十六进制小写"
+            },
+            "signature": {
+              "type": "string",
+              "minLength": 10,
+              "description": "minisign 签名（base64），公钥内置于客户端"
+            }
+          }
+        }
+      }
+    }
+  }
+}

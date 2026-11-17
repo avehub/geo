@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo_api.gaodekuai.com/schemas/provider-preset.schema.json",
+  "title": "ProviderPresetV1",
+  "description": "模型服务商预设种子（产品定义 §3.10：用户可自由增删改的服务商档案的内置种子）。\n🔴🔴 **本 schema 不允许出现任何密钥字段**：additionalProperties:false 已从结构上禁止；tests/no-key-fields.test.mjs 另有一道测试扫描 schema 本身的属性名，防止有人日后往 schema 里加 api_key（AGENTS 不变量 6：密钥永不落库/落前端/入仓）。API Key 只存客户端的系统钥匙串，后台连\"代填\"的入口都不该有。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "version",
+    "presets"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "🔴 schema_version 只增不改语义；破坏性变更 = 新版本号 + 双跑期"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "presets": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "display_name",
+          "protocol",
+          "base_url"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "小写下划线蛇形，全局唯一且稳定"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "protocol": {
+            "enum": [
+              "openai_compat",
+              "anthropic"
+            ],
+            "description": "本轮覆盖 OpenAI 兼容与 Anthropic（产品定义 §3.10）"
+          },
+          "base_url": {
+            "type": "string",
+            "pattern": "^https://",
+            "description": "🔴 只允许 https（桌面仓隐私政策 §7.1）"
+          },
+          "default_model": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 600000,
+            "default": 60000
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "note_zh": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "如「企业内网网关 / 自建代理」"
+          },
+          "sort": {
+            "type": "integer",
+            "default": 0
+          }
+        }
+      }
+    }
+  }
+}

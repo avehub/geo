@@ -1,0 +1,15 @@
+{
+  "version": "9.9.9738",
+  "notes": "修复若干问题",
+  "pub_date": "2026-11-17T07:15:39.642Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "untrusted comment: signature from minisign secret key\nRUStyVfs0+NP6QdFjhN+GXfQ1/4HZVcvKxXjFGE1mEyWf5eoEd07O9ZqKH7O5oRHaW0D3lwJgDB/65+rEOh45m+4zp0DsWtXrg0=\ntrusted comment: timestamp:1794899739\tfile:gdk-geo_9.9.9738_aarch64.dmg\thashed\n3uJTZIb5L5Rv4kDzpQNVNWe9waJzks6/4nlaOwku5pNW2z8aOIMjTgFSPDpm8uSQG7uB+MRYGR3xwiXNPuqNCQ==",
+      "url": "https://geo_api.gaodekuai.com/releases/9.9.9738/gdk-geo_9.9.9738_aarch64.dmg"
+    },
+    "windows-x86_64": {
+      "signature": "untrusted comment: signature from minisign secret key\nRUStyVfs0+NP6fHl/Gh4hZf1HJzOyFKMgGdv/027nD1FWsfRnPmB8FkjP9LVucD19oj3VJdJ20hZ9pnJ+wjjYRKNtafyGm6wFQk=\ntrusted comment: timestamp:1794899739\tfile:gdk-geo_9.9.9738_x64-setup.exe\thashed\nBYtdGNn4eSstE48OGMCBnx5DVKAx6MYwR5TcQcQl8zc4Xy7fyzk02PpAhJpeMejXLiLZmCscZeozPRhaOzOaAQ==",
+      "url": "https://geo_api.gaodekuai.com/releases/9.9.9738/gdk-geo_9.9.9738_x64-setup.exe"
+    }
+  }
+}

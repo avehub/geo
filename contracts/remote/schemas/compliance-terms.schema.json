@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo_api.gaodekuai.com/schemas/compliance-terms.schema.json",
+  "title": "ComplianceTermsV1",
+  "description": "广告法绝对化用语词库。🔴 客户端取「编译期内置 ∪ 远程」的**并集**：远程只能加严，**不能删除或放宽**内置词（防后台被攻破后放开红线）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "version",
+    "terms"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "🔴 schema_version 只增不改语义；破坏性变更 = 新版本号 + 双跑期"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "terms": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term"
+        ],
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "如 absolute/medical/financial"
+          },
+          "severity": {
+            "enum": [
+              "block",
+              "warn"
+            ],
+            "default": "block"
+          },
+          "locale": {
+            "enum": [
+              "zh-CN",
+              "en-US"
+            ],
+            "description": "对齐桌面仓 AGENTS 规则 7（默认 zh-CN，支持 en-US）"
+          }
+        }
+      }
+    }
+  }
+}

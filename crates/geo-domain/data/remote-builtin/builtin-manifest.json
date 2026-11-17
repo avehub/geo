@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-17T07:15:41.568Z",
+  "note": "🔴 编译期内置兜底快照（I-1/I-3）：断网或服务端全挂时用这份，应用照常工作。内容由 CI 从已发布数据面复制而来，随客户端版本一起冻结。不含 signature —— 内置内容的可信度等同于二进制本身，验签无意义且会带来自伤风险。",
+  "items": {
+    "compliance": {
+      "file": "compliance.json",
+      "version": 12,
+      "sha256": "2d1d251e38197772fb1e6c214bc685d8db7bb61484c8ffc5aa8596f009e3b1d9",
+      "source_path": "compliance/terms.json",
+      "bytes": 5458
+    },
+    "engines": {
+      "file": "engines.json",
+      "version": 19,
+      "sha256": "eb5af87f990963828fb1459afe6deb2e753531d3ad61f5180511b47e462713ef",
+      "source_path": "catalog/engines.json",
+      "bytes": 11483
+    },
+    "privacy": {
+      "file": "privacy.json",
+      "version": 11,
+      "sha256": "0df8ab12f6552d4444c115805d5917e2d31f3a65c114e87ddbf5feb6534459c0",
+      "source_path": "privacy/facts.json",
+      "bytes": 10703
+    },
+    "providers": {
+      "file": "providers.json",
+      "version": 19,
+      "sha256": "219312ced47fdbab611d3b264efb4983c6197d245a58789607b700e5cfc620fd",
+      "source_path": "catalog/providers.json",
+      "bytes": 4322
+    },
+    "rate_limits": {
+      "file": "rate_limits.json",
+      "version": 19,
+      "sha256": "c32a7595871d454862e5e94490c3d1c25882ef7ffc06c721dfe597c57b7b1105",
+      "source_path": "catalog/rate-limits.json",
+      "bytes": 2535
+    },
+    "release": {
+      "file": "release.json",
+      "version": 9,
+      "sha256": "ae6e5a5592b0aac662f6fcc0b22867c0665b6678209ff1f5c16635b037b16665",
+      "source_path": "releases/latest.json",
+      "bytes": 1074
+    },
+    "rulepacks": {
+      "file": "rulepacks.json",
+      "version": 16,
+      "sha256": "66b2e060cdfaefd80f8175b1550b246ab0806546d32ac2955bc1400cf7d20591",
+      "source_path": "rulepacks/index.json",
+      "bytes": 390
+    },
+    "templates": {
+      "file": "templates.json",
+      "version": 11,
+      "sha256": "3be50bc51268d48dbb49e7bf5e001b4ac798496f59eecc7db8e5e218f2a31ee8",
+      "source_path": "templates/index.json",
+      "bytes": 3839
+    }
+  }
+}

@@ -1,0 +1,357 @@
+{
+  "schema_version": 1,
+  "version": 1794897558860,
+  "generated_at": "2026-11-17T06:39:18.860Z",
+  "facts": [
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "新建项目 → 自动建档",
+      "action_en": null,
+      "data_leaving_zh": "HTTP GET 到您的官网",
+      "recipient_zh": "您的官网服务器",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 10
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "自动建档 / 生成实体卡",
+      "action_en": null,
+      "data_leaving_zh": "官网正文（上限约 12,000 字符）+ 抽取提示词",
+      "recipient_zh": "您配置的模型服务商",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 20
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "生成题库 / 关键词 / FAQ / 知识库条目 / 文章 / 补丁草案",
+      "action_en": null,
+      "data_leaving_zh": "提示词 + 相关品牌资料与知识库片段",
+      "recipient_zh": "您配置的模型服务商",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 30
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "启动一轮多引擎采集",
+      "action_en": null,
+      "data_leaving_zh": "题库中的问题文本",
+      "recipient_zh": "相应搜索接口与模型服务商",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 40
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "采集（元宝一路）",
+      "action_en": null,
+      "data_leaving_zh": "问题文本；页面截图保存在本机",
+      "recipient_zh": "元宝网页版（经您自己登录的浏览器窗口）",
+      "periodic": 0,
+      "channel_scope": "direct_download_only",
+      "sort": 50
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "事实核查 / 解析",
+      "action_en": null,
+      "data_leaving_zh": "AI 回答正文 + 官网口径",
+      "recipient_zh": "您配置的模型服务商",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 60
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "站长数据 → GSC 授权 / 取数",
+      "action_en": null,
+      "data_leaving_zh": "站点 URL、数据区间",
+      "recipient_zh": "Google",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 70
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "站长数据 → Bing 取数",
+      "action_en": null,
+      "data_leaving_zh": "站点 URL、数据区间、Bing API Key",
+      "recipient_zh": "Bing",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 80
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "站长数据 → 百度站长浏览器取数",
+      "action_en": null,
+      "data_leaving_zh": "无（只读回当前页面表格文本）",
+      "recipient_zh": "无（本机操作）",
+      "periodic": 0,
+      "channel_scope": "direct_download_only",
+      "sort": 90
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "站点接入 → 边缘函数通道自检",
+      "action_en": null,
+      "data_leaving_zh": "HTTP GET",
+      "recipient_zh": "您填写的端点",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 100
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "导出报告 / 题库 / 交接单",
+      "action_en": null,
+      "data_leaving_zh": "无（写本地文件）",
+      "recipient_zh": "无",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 110
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "启动应用（已保存 GSC / Bing 凭据时）",
+      "action_en": null,
+      "data_leaving_zh": "站点 URL、数据区间",
+      "recipient_zh": "Google / Bing",
+      "periodic": 1,
+      "channel_scope": "all",
+      "sort": 120
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "检查更新（若开启）",
+      "action_en": null,
+      "data_leaving_zh": "应用版本号、操作系统与架构",
+      "recipient_zh": "我们的更新端点 geo_api.gaodekuai.com",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 130
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "同步远程内容（引擎规则 / 模板 / 法务文档 / 合规词库）",
+      "action_en": null,
+      "data_leaving_zh": "当前应用版本、已缓存产物版本",
+      "recipient_zh": "我们的内容分发端点 geo_api.gaodekuai.com",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 140
+    },
+    {
+      "kind": "third_party",
+      "action_zh": "大语言模型接口（使用您自己的 API Key）",
+      "action_en": null,
+      "data_leaving_zh": null,
+      "recipient_zh": "您配置的模型服务商",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 210
+    },
+    {
+      "kind": "third_party",
+      "action_zh": "官方搜索接口（多引擎采集，使用您自己的 API Key）",
+      "action_en": null,
+      "data_leaving_zh": null,
+      "recipient_zh": "各引擎官方 API",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 220
+    },
+    {
+      "kind": "third_party",
+      "action_zh": "站长平台（使用您自己的授权）",
+      "action_en": null,
+      "data_leaving_zh": null,
+      "recipient_zh": "Google Search Console / Bing Webmaster / 百度站长",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 230
+    },
+    {
+      "kind": "third_party",
+      "action_zh": "浏览器自动化通道（由您自己登录，我们不接触凭据）",
+      "action_en": null,
+      "data_leaving_zh": null,
+      "recipient_zh": "元宝网页版 / 百度站长平台",
+      "periodic": 0,
+      "channel_scope": "direct_download_only",
+      "sort": 240
+    },
+    {
+      "kind": "third_party",
+      "action_zh": "我们不使用的第三方",
+      "action_en": null,
+      "data_leaving_zh": "无",
+      "recipient_zh": "不含遥测 SDK、埋点、广告 SDK、崩溃上报、第三方分析服务",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 250
+    },
+    {
+      "kind": "data_location",
+      "action_zh": "本地 SQLite 数据库",
+      "action_en": null,
+      "data_leaving_zh": "项目、竞品、实体卡、题库、采集记录、诊断、文章等全部业务数据",
+      "recipient_zh": "仅在您的本机（未加密，见隐私政策 §7.3）",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 310
+    },
+    {
+      "kind": "data_location",
+      "action_zh": "系统钥匙串 / Windows 凭据管理器",
+      "action_en": null,
+      "data_leaving_zh": "各类 API Key 与 OAuth 凭据",
+      "recipient_zh": "仅在您的本机；数据库只存 secret_ref",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 320
+    },
+    {
+      "kind": "data_location",
+      "action_zh": "我们不运营数据接收服务器",
+      "action_en": null,
+      "data_leaving_zh": "无",
+      "recipient_zh": "内容分发与（0.2 起）授权校验端点均**不接收**您的业务数据",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 330
+    },
+    {
+      "kind": "right",
+      "action_zh": "在应用内删除项目（级联删除全部子数据）",
+      "action_en": null,
+      "data_leaving_zh": null,
+      "recipient_zh": null,
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 410
+    },
+    {
+      "kind": "right",
+      "action_zh": "彻底删除本机数据（见隐私政策 §8.3）",
+      "action_en": null,
+      "data_leaving_zh": null,
+      "recipient_zh": null,
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 420
+    },
+    {
+      "kind": "right",
+      "action_zh": "向我们提出查询 / 更正 / 删除 / 注销请求",
+      "action_en": null,
+      "data_leaving_zh": null,
+      "recipient_zh": "见隐私政策 §12 联系方式",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 430
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "e2e 新增的外发触发点",
+      "action_en": null,
+      "data_leaving_zh": "无（测试用）",
+      "recipient_zh": "无",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 999
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "e2e 新增的外发触发点",
+      "action_en": null,
+      "data_leaving_zh": "无（测试用）",
+      "recipient_zh": "无",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 999
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "e2e 新增的外发触发点",
+      "action_en": null,
+      "data_leaving_zh": "无（测试用）",
+      "recipient_zh": "无",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 999
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "e2e 新增的外发触发点",
+      "action_en": null,
+      "data_leaving_zh": "无（测试用）",
+      "recipient_zh": "无",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 999
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "e2e 新增的外发触发点",
+      "action_en": null,
+      "data_leaving_zh": "无（测试用）",
+      "recipient_zh": "无",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 999
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "e2e 新增的外发触发点",
+      "action_en": null,
+      "data_leaving_zh": "无（测试用）",
+      "recipient_zh": "无",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 999
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "e2e 新增的外发触发点",
+      "action_en": null,
+      "data_leaving_zh": "无（测试用）",
+      "recipient_zh": "无",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 999
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "e2e 新增的外发触发点",
+      "action_en": null,
+      "data_leaving_zh": "无（测试用）",
+      "recipient_zh": "无",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 999
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "e2e 新增的外发触发点",
+      "action_en": null,
+      "data_leaving_zh": "无（测试用）",
+      "recipient_zh": "无",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 999
+    },
+    {
+      "kind": "outbound_trigger",
+      "action_zh": "e2e 新增的外发触发点",
+      "action_en": null,
+      "data_leaving_zh": "无（测试用）",
+      "recipient_zh": "无",
+      "periodic": 0,
+      "channel_scope": "all",
+      "sort": 999
+    }
+  ]
+}

@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "version": 1794899741530,
+  "generated_at": "2026-11-17T07:15:41.530Z",
+  "presets": [
+    {
+      "code": "deepseek",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_75108_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_89099_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_89107_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_89115_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_90113_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_91361_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_91375_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_91389_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_91423_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_91567_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_91572_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_97556_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    },
+    {
+      "code": "e2e_engine_99740_ds",
+      "display_name": "DeepSeek",
+      "protocol": "openai_compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "default_model": "deepseek-chat",
+      "timeout_ms": 60000,
+      "temperature": null,
+      "note_zh": null,
+      "sort": 1
+    }
+  ]
+}

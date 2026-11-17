@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo_api.gaodekuai.com/schemas/notices.schema.json",
+  "title": "NoticesV1",
+  "description": "应用内公告。🔴 客户端只读展示，**不做已读回执**（做了就是埋点，违反 DR-A1）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "version",
+    "notices"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "🔴 schema_version 只增不改语义；破坏性变更 = 新版本号 + 双跑期"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notices": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "title_zh",
+          "body_zh",
+          "effective_from"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "kind": {
+            "enum": [
+              "maintenance",
+              "engine_change",
+              "policy_change",
+              "feature",
+              "recall"
+            ]
+          },
+          "title_zh": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "title_en": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "body_zh": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "body_en": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "effective_to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "app_version_range": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "min": {
+                "type": "string",
+                "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$"
+              },
+              "max": {
+                "type": "string",
+                "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$"
+              }
+            }
+          },
+          "channel_scope": {
+            "enum": [
+              "all",
+              "direct_download_only",
+              "msix_only"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

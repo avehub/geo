@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo_api.gaodekuai.com/schemas/template-pack.schema.json",
+  "title": "TemplatePackV1",
+  "description": "模板包（prompt / 文章 / 关键词 / FAQ / 知识库 / 实体卡 / 报告白标）。按行业组织（产品定义 §5.3：制造、教培、法律、跨境电商）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "version",
+    "pack_code",
+    "name_zh",
+    "industry",
+    "kind",
+    "items"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "🔴 schema_version 只增不改语义；破坏性变更 = 新版本号 + 双跑期"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "pack_code": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,63}$",
+      "description": "小写下划线蛇形，全局唯一且稳定"
+    },
+    "name_zh": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "industry": {
+      "enum": [
+        "manufacturing",
+        "education",
+        "legal",
+        "cross_border_ecommerce",
+        "medical",
+        "finance",
+        "generic"
+      ]
+    },
+    "kind": {
+      "enum": [
+        "prompt",
+        "article",
+        "article_direction",
+        "keyword",
+        "faq",
+        "kb",
+        "entity_card",
+        "report_skin"
+      ]
+    },
+    "license_tier_scope": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "enum": [
+          "trial",
+          "pro",
+          "agency",
+          "perpetual"
+        ]
+      },
+      "description": "空数组 = 全套餐可见；白标(report_skin)通常限 agency/perpetual"
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 2000
+    }
+  },
+  "$defs": {
+    "promptItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "name_zh",
+        "template_zh",
+        "slots"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,63}$",
+          "description": "小写下划线蛇形，全局唯一且稳定"
+        },
+        "name_zh": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "name_en": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "intent_category": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "意图分类，如「价格与方案」"
+        },
+        "template_zh": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "template_en": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "slots": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^{}]+$"
+          },
+          "description": "模板里 `{…}` 占位符的**字面名**。🔴 不限定 snake_case：客户端既有模板用的是中文占位符（如 `{品类}一般怎么收费？`，见桌面仓产品定义附录 B），改成英文标识符会与`geo_domain::article::render_prompt` 的既有替换逻辑不兼容。只禁止 `{`/`}` 本身，避免嵌套占位符产生解析歧义。「每个 slot 必须真的出现在 template_zh 里」是语义约束，由后端校验，schema 表达不了。"
+        },
+        "applicable_engines": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "小写下划线蛇形，全局唯一且稳定"
+          }
+        },
+        "example_output": {
+          "type": "string",
+          "maxLength": 8000
+        }
+      }
+    },
+    "reportSkin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "name_zh"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,63}$",
+          "description": "小写下划线蛇形，全局唯一且稳定"
+        },
+        "name_zh": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "primary_color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "header_text": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "footer_text": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "disclaimer_zh": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "🔴 免责声明不得含绝对化用语，且不得承诺排名"
+        },
+        "brand_name": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "logo_path": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "相对数据面的路径；🔴 客户端仍须验签"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "prompt"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "name_zh",
+                "template_zh",
+                "slots"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{1,63}$",
+                  "description": "小写下划线蛇形，全局唯一且稳定"
+                },
+                "name_zh": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "name_en": {
+                  "type": "string",
+                  "maxLength": 120
+                },
+                "intent_category": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "description": "意图分类，如「价格与方案」"
+                },
+                "template_zh": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "template_en": {
+                  "type": "string",
+                  "maxLength": 4000
+                },
+                "slots": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[^{}]+$"
+                  },
+                  "description": "模板里 `{…}` 占位符的**字面名**。🔴 不限定 snake_case：客户端既有模板用的是中文占位符（如 `{品类}一般怎么收费？`，见桌面仓产品定义附录 B），改成英文标识符会与`geo_domain::article::render_prompt` 的既有替换逻辑不兼容。只禁止 `{`/`}` 本身，避免嵌套占位符产生解析歧义。「每个 slot 必须真的出现在 template_zh 里」是语义约束，由后端校验，schema 表达不了。"
+                },
+                "applicable_engines": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,63}$",
+                    "description": "小写下划线蛇形，全局唯一且稳定"
+                  }
+                },
+                "example_output": {
+                  "type": "string",
+                  "maxLength": 8000
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "report_skin"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "name_zh"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{1,63}$",
+                  "description": "小写下划线蛇形，全局唯一且稳定"
+                },
+                "name_zh": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "primary_color": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$"
+                },
+                "header_text": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "footer_text": {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                "disclaimer_zh": {
+                  "type": "string",
+                  "maxLength": 2000,
+                  "description": "🔴 免责声明不得含绝对化用语，且不得承诺排名"
+                },
+                "brand_name": {
+                  "type": "string",
+                  "maxLength": 120
+                },
+                "logo_path": {
+                  "type": "string",
+                  "maxLength": 300,
+                  "description": "相对数据面的路径；🔴 客户端仍须验签"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

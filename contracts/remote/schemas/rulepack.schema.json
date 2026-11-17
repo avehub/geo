@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo_api.gaodekuai.com/schemas/rulepack.schema.json",
+  "title": "RulepackV1",
+  "description": "🔴🔴 引擎取数规则包 —— **只允许声明式数据，禁止任何形式的可执行内容**（裁定 DR-A4）。\n理由：客户端的浏览器自动化通道运行在**用户自己已登录的第三方平台会话**里（如百度站长）。远程下发脚本 == 把客户的第三方账号交给任何能篡改我方服务器/CDN/发布流程的人；同时违反隐私政策 §3.7（不读 Cookie、不调私有接口）与桌面仓 AGENTS 规则 11。\n三道门禁：① 本 schema 逐层 additionalProperties:false 且不存在任何脚本字段；② 后端 validate 用 FORBIDDEN_SCRIPT_PATTERNS 扫全文；③ 客户端解释器没有脚本执行入口。\n规则以**数据参数**传给编译期固化的通用提取器，绝不字符串拼接进脚本源码。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "engine_code",
+    "version",
+    "start_url",
+    "table_rules",
+    "pagination"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "🔴 schema_version 只增不改语义；破坏性变更 = 新版本号 + 双跑期"
+    },
+    "engine_code": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,63}$",
+      "description": "小写下划线蛇形，全局唯一且稳定"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "min_app_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "低于此版本的客户端忽略本规则包（前向兼容）"
+    },
+    "max_app_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "start_url": {
+      "allOf": [
+        {
+          "type": "string",
+          "pattern": "^https://",
+          "description": "🔴 只允许 https（桌面仓隐私政策 §7.1）"
+        }
+      ],
+      "description": "起始页；必须是该平台的**官方域名**"
+    },
+    "page_classifiers": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "match"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "小写下划线蛇形，全局唯一且稳定"
+          },
+          "match": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "title_contains": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "url_contains": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "header_contains": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "table_rules": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "columns"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "小写下划线蛇形，全局唯一且稳定"
+          },
+          "columns": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "header_match",
+                "field",
+                "type"
+              ],
+              "properties": {
+                "header_match": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "表头别名，任一命中即认为是本列（如 [\"点击率\",\"CTR\"]）"
+                },
+                "field": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                  "description": "归一后的字段名"
+                },
+                "type": {
+                  "enum": [
+                    "text",
+                    "integer",
+                    "decimal",
+                    "percent",
+                    "date"
+                  ],
+                  "description": "percent 去 % 转小数；integer 去千分位；date 解析为 RFC3339"
+                }
+              }
+            }
+          },
+          "empty_when": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "all_cells_blank": {
+                "type": "boolean"
+              }
+            }
+          },
+          "visibility": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "require_bounding_box_nonzero": {
+                "type": "boolean"
+              },
+              "require_computed_visible": {
+                "type": "boolean"
+              }
+            },
+            "description": "可见性判据：只读**当前可见页面**的表格文本（隐私政策 §3.7）"
+          },
+          "max_rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          }
+        }
+      }
+    },
+    "pagination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "none",
+            "next_button",
+            "page_param"
+          ]
+        },
+        "max_pages": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "param_name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,31}$"
+        }
+      }
+    },
+    "notes_zh": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "notes_en": {
+      "type": "string",
+      "maxLength": 2000
+    }
+  }
+}

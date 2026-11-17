@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo_api.gaodekuai.com/schemas/privacy-facts.schema.json",
+  "title": "PrivacyFactsV1",
+  "description": "隐私政策 §5（第三方清单）与 §6（数据外发触发条件）的**机器可读版**，供客户端\"权限与隐私\"页与官网同源渲染。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "version",
+    "facts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "🔴 schema_version 只增不改语义；破坏性变更 = 新版本号 + 双跑期"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "facts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "action_zh",
+          "channel_scope",
+          "sort"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "outbound_trigger",
+              "third_party",
+              "data_location",
+              "right"
+            ]
+          },
+          "action_zh": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "action_en": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "data_leaving_zh": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "会离开本机的数据；🔴 不得出现业务数据字段"
+          },
+          "recipient_zh": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "periodic": {
+            "type": "boolean",
+            "default": false
+          },
+          "channel_scope": {
+            "enum": [
+              "all",
+              "direct_download_only",
+              "msix_only"
+            ],
+            "description": "🔴 元宝网页采集与百度站长浏览器取数**仅**官网直下载版适用，MSIX 版不含（发布规格裁定 B8）"
+          },
+          "sort": {
+            "type": "integer"
+          },
+          "citation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "organization",
+              "year",
+              "url"
+            ],
+            "properties": {
+              "organization": {
+                "type": "string",
+                "minLength": 1
+              },
+              "year": {
+                "type": "integer",
+                "minimum": 1990,
+                "maximum": 2100
+              },
+              "url": {
+                "type": "string",
+                "pattern": "^https://",
+                "description": "🔴 只允许 https（桌面仓隐私政策 §7.1）"
+              }
+            },
+            "description": "🔴 引用外部研究数据必须标机构名+年份+链接，且默认不参与判定（桌面仓 AGENTS 规则 11）"
+          }
+        }
+      }
+    }
+  }
+}

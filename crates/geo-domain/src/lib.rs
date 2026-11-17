@@ -24,6 +24,7 @@ pub mod kb;
 pub mod keyword;
 pub mod project;
 pub mod prompt;
+pub mod remote;
 pub mod report;
 pub mod search;
 pub mod search_import;

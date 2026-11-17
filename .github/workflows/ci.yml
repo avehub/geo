@@ -31,6 +31,15 @@ jobs:
           bash -n scripts/record-fixtures.sh
           python3 -c "import ast,sys; ast.parse(open('scripts/make-icon.py').read())"
 
+      # 🔴 远程契约快照（contracts/remote/）自洽性门禁。
+      #    客户端把 schema include_str! 编译进二进制，这份 vendor 快照就是
+      #    "数据面长什么样"的唯一依据；同步只做了一半（例如只拷 schema 没拷
+      #    digests.json）会让客户端按错误的契约校验，进而**整份 manifest 拒收**、
+      #    回落内置版本 —— 远程更新静默失效，且两侧日志都看不出异常。
+      #    放在最前面跑：它只需要 python3，几秒出结果，比等 docker 镜像便宜得多。
+      - name: 校验远程契约快照自洽
+        run: bash scripts/check-remote-contracts.sh
+
       - uses: docker/setup-buildx-action@v3
 
       - name: 构建一致性镜像

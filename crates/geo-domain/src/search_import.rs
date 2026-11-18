@@ -93,10 +93,38 @@ fn parse_int(cell: &str) -> Result<Option<i64>, ()> {
     text.parse::<i64>().map(Some).map_err(|_| ())
 }
 
-fn parse_float(cell: &str) -> Result<Option<f64>, ()> {
+/// 解析「点击率」单元格。
+///
+/// 🔴 必须认 `%`：2026-11-18 的真机录制样本（`fixtures/search-browser/`）确认，
+/// 百度站长页面上的点击率是 **`44.20%` / `0.00%`** 这种带百分号的文本。
+/// 而内部口径一律是**小数**（`ratio()` 算出来的就是 0.4420），两者要能直接比较。
+/// 原来只 strip 逗号不认 `%`，导致 `44.20%` 解析失败 ——
+/// 实测「流量与关键词」页 **10 行全部 `invalid_format`、metrics=0**，
+/// 也就是说浏览器取数在真实数据上一直是坏的（不是因为规则包）。
+///
+/// 语义：带 `%` → 去号后除以 100；不带 `%` → 按小数原样接受
+/// （部分导出/接口给的就是 0.4420，两种形态都要能吃）。
+///
+/// 🔴 它**取代**了原来的 `parse_float`：后者唯一的调用点就是这两处 CtrCheck，
+///    换成百分比感知的版本后就成了死代码，已删除（不留 `#[allow(dead_code)]`——
+///    留着只会让下一个人以为它还有用）。
+fn parse_percent(cell: &str) -> Result<Option<f64>, ()> {
     let text = cell.trim().replace(',', "");
     if text.is_empty() {
         return Ok(None);
+    }
+    // 🔴 真实导出里"无数据"常用占位符表示。2026-11-18 录制样本里
+    //    「索引量」表就出现过 `--`（`变化情况` 列）。这些必须当作 None，
+    //    而不是 invalid_format —— 否则一行里只要有一个空指标，整行就被丢掉。
+    if matches!(text.as_str(), "-" | "--" | "—" | "N/A" | "n/a") {
+        return Ok(None);
+    }
+    if let Some(number) = text.strip_suffix('%') {
+        return number
+            .trim()
+            .parse::<f64>()
+            .map(|v| Some(v / 100.0))
+            .map_err(|_| ());
     }
     text.parse::<f64>().map(Some).map_err(|_| ())
 }
@@ -227,7 +255,7 @@ fn parse_summary(
     let impressions = number(Column::Impressions, "impressions");
     let ai_clicks = number(Column::AiClicks, "ai_clicks");
     let cited_pages = number(Column::CitedPages, "cited_pages");
-    let given = match parse_float(cell(Column::CtrCheck)) {
+    let given = match parse_percent(cell(Column::CtrCheck)) {
         Ok(value) => value,
         Err(()) => {
             errors.push(SearchTableError {
@@ -359,7 +387,7 @@ fn parse_rows(
         let impressions = number(Column::Impressions, "impressions", &mut errors);
         let clicks = number(Column::Clicks, "clicks", &mut errors);
         let citations = number(Column::Citations, "citations", &mut errors);
-        let given = match parse_float(cell(Column::CtrCheck)) {
+        let given = match parse_percent(cell(Column::CtrCheck)) {
             Ok(value) => value,
             Err(()) => {
                 errors.push(SearchTableError {
@@ -513,6 +541,120 @@ mod tests {
         assert_eq!(parsed.metrics.len(), 1);
         assert_eq!(parsed.warnings.len(), 1);
         assert_eq!(parsed.warnings[0].kind, "ctr_mismatch");
+    }
+}
+
+#[cfg(test)]
+mod percent_cell_tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    /// 🔴 2026-11-18 真机录制确认：百度站长页面上的点击率是 `44.20%` 这种文本。
+    ///    而 `ratio()` 算出来的是小数 0.4420，两者必须能直接比较。
+    #[test]
+    fn percent_sign_is_stripped_and_scaled_to_fraction() {
+        assert_eq!(parse_percent("44.20%").unwrap(), Some(0.442));
+        assert_eq!(parse_percent("0.00%").unwrap(), Some(0.0));
+        assert_eq!(parse_percent("100%").unwrap(), Some(1.0));
+        // 带空白/千分位也要吃
+        assert_eq!(parse_percent(" 1,234.50% ").unwrap(), Some(12.345));
+    }
+
+    /// 部分导出/接口给的就是小数，两种形态都要能吃（否则一半样本解析不了）。
+    #[test]
+    fn plain_decimal_is_accepted_unchanged() {
+        assert_eq!(parse_percent("0.0067").unwrap(), Some(0.0067));
+        assert_eq!(parse_percent("0.442").unwrap(), Some(0.442));
+        assert_eq!(parse_percent("").unwrap(), None);
+        assert!(parse_percent("abc").is_err());
+    }
+
+    /// 🔴 真实导出用占位符表示"无数据"（录制样本的「索引量」表里出现过 `--`）。
+    ///    必须当 None，而不是 invalid_format —— 否则一行里只要有一个空指标整行就被丢。
+    #[test]
+    fn missing_value_placeholders_are_none_not_errors() {
+        for placeholder in ["-", "--", "—", "N/A", "n/a"] {
+            assert_eq!(
+                parse_percent(placeholder).unwrap(),
+                None,
+                "占位符 {placeholder:?}"
+            );
+        }
+    }
+
+    /// 🔴 真实样本端到端回归：「流量与关键词」页 10 行。
+    ///    修复前实测 **metrics=0 / errors=10**（每行都因 `44.20%` 解析失败），
+    ///    也就是说浏览器取数在真实数据上一直是坏的 —— 不是因为规则包。
+    #[test]
+    fn real_captured_keywords_page_parses_all_ten_rows() {
+        const CAPTURE: &str = include_str!(
+            "../../../fixtures/search-browser/baidu-ziyuan-keywords-with-data-2026-11-18.json"
+        );
+        let doc: serde_json::Value = serde_json::from_str(CAPTURE).expect("样本是合法 JSON");
+        let table = doc["tables_tsv"][0].as_str().expect("取第一张表");
+
+        let parsed = parse_search_table(ParseInput {
+            payload: table,
+            project_id: ProjectId::new(),
+            kind: SearchSourceKind::BaiduZiyuan,
+            period_start: "2026-11-01",
+            period_end: "2026-11-30",
+            data_through: "2026-11-18",
+            imported_at: Utc.with_ymd_and_hms(2026, 11, 18, 12, 0, 0).unwrap(),
+        })
+        .expect("真实样本必须可解析");
+
+        assert_eq!(parsed.metrics.len(), 10, "10 个关键词都应解析出来");
+        assert_eq!(parsed.errors.len(), 0, "不应有任何行级错误");
+        // 44.20% 的点击率要与 179/405 对得上 → 无 ctr_mismatch 警告
+        assert!(
+            parsed.warnings.is_empty(),
+            "点击率与点击量/展现量应自洽，实际警告：{:?}",
+            parsed
+                .warnings
+                .iter()
+                .map(|w| w.kind.clone())
+                .collect::<Vec<_>>()
+        );
+        let first = &parsed.metrics[0];
+        // 🔴 ctr 是**重算**的（clicks / impressions），不是直接采用页面显示的 44.20%。
+        //    页面显示值只做交叉校验（两者差 > 0.01 才告警）—— 显示值是四舍五入过的，
+        //    直接存它会引入舍入误差。所以这里与 179/405 比，而不是与 0.442 比。
+        let expected = 179.0 / 405.0;
+        assert!(
+            (first.ctr.unwrap_or_default() - expected).abs() < 1e-9,
+            "ctr 应为重算值 {expected}，实际 {:?}",
+            first.ctr
+        );
+        // 顺带确认它四舍五入到 2 位后就是页面显示的 44.20%
+        assert_eq!(
+            format!("{:.2}%", first.ctr.unwrap_or_default() * 100.0),
+            "44.20%"
+        );
+        assert_eq!(first.clicks, Some(179));
+        assert_eq!(first.impressions, Some(405));
+    }
+
+    /// 真实的「索引量」表（`索引量|变化情况|日期`）不是搜索关键词表 ——
+    /// 明确报 missing_header 而不是被误当成关键词数据（否则会把索引量当曝光量统计）。
+    #[test]
+    fn real_captured_index_table_is_rejected_as_not_a_keyword_table() {
+        const CAPTURE: &str = include_str!(
+            "../../../fixtures/search-browser/baidu-ziyuan-indexs-with-data-2026-11-18.json"
+        );
+        let doc: serde_json::Value = serde_json::from_str(CAPTURE).expect("样本是合法 JSON");
+        let table = doc["tables_tsv"][0].as_str().expect("取第一张表");
+        let err = parse_search_table(ParseInput {
+            payload: table,
+            project_id: ProjectId::new(),
+            kind: SearchSourceKind::BaiduZiyuan,
+            period_start: "2026-11-01",
+            period_end: "2026-11-30",
+            data_through: "2026-11-18",
+            imported_at: Utc.with_ymd_and_hms(2026, 11, 18, 12, 0, 0).unwrap(),
+        })
+        .expect_err("索引量表不该被当成关键词表");
+        assert_eq!(err.params()["reason"], "missing_header");
     }
 }
 

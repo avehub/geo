@@ -3,7 +3,7 @@
  *
  * # 为什么骨架不含数据获取
  * 数据（`settings_get` / `llm_providers`）与草稿、保存态全部由 `pages/SettingsPage.tsx` 持有，
- * 这里只做**布局与分段分派**。理由：五个分段共享同一份草稿，把 query 放进分段就会变成
+ * 这里只做**布局与分段分派**。理由：各分段共享同一份草稿，把 query 放进分段就会变成
  * "切一段重新拉一次"，而 `settings_update` 是整包写——两份并存的草稿必然互相冲掉。
  *
  * # 菜单是 `<nav>` 里的普通 `Menu`，不是路由嵌套
@@ -21,6 +21,7 @@ import AboutSection from './AboutSection';
 import CollectionSection from './CollectionSection';
 import GeneralSection from './GeneralSection';
 import ModelsSection from './ModelsSection';
+import RemoteSection from './RemoteSection';
 import StorageSection from './StorageSection';
 import {
   SECTION_LABEL_KEYS,
@@ -35,6 +36,7 @@ const SECTION_COMPONENTS: Record<SettingsSection, ComponentType<SectionProps>> =
   models: ModelsSection,
   collection: CollectionSection,
   storage: StorageSection,
+  remote: RemoteSection,
   about: AboutSection,
 };
 

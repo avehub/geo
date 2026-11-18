@@ -629,9 +629,9 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     expect(paths).toContain('../components/AggregateSummaryBar.tsx');
   });
 
-  // 裁定 B-1 要求的那条点名断言：抽取面里 `pages/` 恰好是 5 个页面文件。
+  // 裁定 B-1 要求的那条点名断言：抽取面里 `pages/` 恰好是这 29 个文件。
   // 用 `toEqual` 而不是 `toHaveLength`：多一个页面（或 glob 意外把测试文件放进来）同样要报。
-  it('B-1 · pages/ 下扫到的恰好是这 28 个文件（把 pages 从抽取面拿掉，这条必须红）', () => {
+  it('B-1 · pages/ 下扫到的恰好是这 29 个文件（把 pages 从抽取面拿掉，这条必须红）', () => {
     expect(Object.keys(PAGE_SOURCES).sort()).toEqual([
       // 断言的是 `.sort()` 之后的顺序，所以这里按文件名字典序排（M1/M2 与 M3–M7 交错）：
       // Action / Collection / Diagnosis / Insight / Report 是 M3–M7 那 5 个页面。
@@ -671,15 +671,17 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
       '../pages/settings/CollectionSection.tsx',
       '../pages/settings/GeneralSection.tsx',
       '../pages/settings/ModelsSection.tsx',
+      // Task 11：远程内容与更新段（同步按钮 + 版本来源表）。
+      '../pages/settings/RemoteSection.tsx',
       '../pages/settings/SettingsLayout.tsx',
       '../pages/settings/StorageSection.tsx',
       '../pages/settings/sections.ts',
     ]);
   });
 
-  it('B-1 · 抽取面 = components(111) + pages(28) + App.tsx + main.tsx，且不含 api/', () => {
+  it('B-1 · 抽取面 = components(111) + pages(29) + App.tsx + main.tsx，且不含 api/', () => {
     const paths = Object.keys(EXTRACTION_SOURCES);
-    expect(paths).toHaveLength(141);
+    expect(paths).toHaveLength(142);
     expect(paths.filter((path) => path.startsWith('../api/'))).toEqual([]);
     expect(paths.filter((path) => EXTRACTION_ROOTS.some((root) => !path.startsWith(root))).length)
       .toBeGreaterThan(0);

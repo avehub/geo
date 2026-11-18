@@ -25,10 +25,16 @@ export const SETTINGS_SECTIONS = [
   'models',
   'collection',
   'storage',
+  'remote',
   'about',
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+/**
+ * 自动保存只覆盖三段（见 `isAutoSaveSection`）：`remote` 与 `about` 是**只读**段
+ * （远程同步走显式按钮），没有草稿可存。
+ */
 
 /** `/settings` 与不认识的 `:section` 都回落到这一段（不白屏、不 404）。 */
 export const DEFAULT_SETTINGS_SECTION: SettingsSection = 'general';
@@ -37,12 +43,13 @@ export function isSettingsSection(value: unknown): value is SettingsSection {
   return typeof value === 'string' && (SETTINGS_SECTIONS as readonly string[]).includes(value);
 }
 
-/** 分段名 → 词典键（zh：通用 / 模型服务商 / 采集与频控 / 数据与存储 / 关于）。 */
+/** 分段名 → 词典键（zh：通用 / 模型服务商 / 采集与频控 / 数据与存储 / 远程内容与更新 / 关于）。 */
 export const SECTION_LABEL_KEYS: Record<SettingsSection, TranslationKey> = {
   general: 'settings.sections.general',
   models: 'settings.sections.models',
   collection: 'settings.sections.collection',
   storage: 'settings.sections.storage',
+  remote: 'settings.sections.remote',
   about: 'settings.sections.about',
 };
 
@@ -75,7 +82,7 @@ export interface SaveState {
   discard: () => void;
 }
 
-/** 五个分段组件的统一入参：数据、厂商预设、改草稿的入口、保存态。 */
+/** 六个分段组件的统一入参：数据、厂商预设、改草稿的入口、保存态。 */
 export interface SectionProps {
   settings: AppSettings;
   providers: ProviderInfo[];

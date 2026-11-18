@@ -165,6 +165,7 @@ const settings = {
     models: '模型服务商',
     collection: '采集与频控',
     storage: '数据与存储',
+    remote: '远程内容与更新',
     about: '关于',
   },
 
@@ -291,6 +292,47 @@ const settings = {
    * `AppSettings.language`（**生成内容的语言**，P0-A 只有 `zh_cn` 一档）的唯一选项，
    * 后者是建项向导第 4 步的项目语言字段。两个字段将来会各自演化。
    */
+  /**
+   * 远程内容与更新段（Task 11）。
+   *
+   * 🔴 文案纪律：不写「已是最新」「保证」这类无法自证的断言。
+   * 客户端只知道自己拿到了什么版本，不知道服务端"最新"是什么。
+   */
+  remote: {
+    desc: '版本信息、引擎规则、模板与法务文档由官方服务端下发；取不到时自动使用安装包内置的版本，应用照常工作。',
+    syncNow: '立即同步',
+    syncing: '同步中…',
+    syncHint: '只在启动时与你点这个按钮时同步，不做后台轮询。',
+    syncResult: '同步结束：{{status}}，{{changed}} 项已更新，{{failed}} 项未通过',
+    lastSync: '上次同步',
+    never: '尚未同步',
+    unknown: '未知',
+    endpoint: '数据面地址',
+    publicKey: '内容签名公钥',
+    keyConfigured: '已配置',
+    keyMissing: '未配置：远程内容一律不采用，全部使用内置版本',
+    degraded: '当前使用内置版本，远程内容不可用。功能不受影响，但规则可能落后于官方发布。',
+    healthy: '已在使用远程发布版本。',
+    itemKey: '产物',
+    itemVersion: '版本',
+    itemSource: '来源',
+    source: {
+      remote: '远程',
+      builtin: '内置',
+      none: '无',
+    },
+  },
+
+  /** 关于段补充（Task 11）：规则包 / 法务文档 / 上次同步。 */
+  aboutExtra: {
+    remote: '远程内容',
+    rulepack: '规则包版本',
+    legal: '法务文档版本',
+    lastSync: '上次同步',
+    openPrivacy: '打开隐私政策',
+    unavailable: '暂时无法获取最新政策，请稍后重试。',
+  },
+
   page: {
     title: '设置',
     loadFailed: '读取设置失败',

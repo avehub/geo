@@ -6,6 +6,7 @@
 use tauri::State;
 
 use crate::error::IpcError;
+use crate::services::settings_service::parse_remote_presets;
 use crate::services::{LlmTestResult, ProviderInfo, SecretStatus, SettingsService};
 use crate::state::AppState;
 
@@ -47,7 +48,18 @@ pub async fn llm_provider_test(
         .await
 }
 
+/// 服务商预设 = **内置 ∪ 远程目录**。
+///
+/// 🔴 远程取不到（断网 / 验签失败 / 这一项没发布）就静默回落内置：
+/// 服务商下拉框是"配模型"的入口，不能因为数据面挂了就变空。
 #[tauri::command(rename_all = "snake_case")]
 pub async fn llm_providers(state: State<'_, AppState>) -> Result<Vec<ProviderInfo>, IpcError> {
-    Ok(SettingsService::from_state(&state).providers())
+    let remote = state
+        .remote
+        .get_json(geo_domain::remote::ItemKey::Providers)
+        .await
+        .ok()
+        .and_then(|item| item.value);
+    let presets = parse_remote_presets(remote.as_ref());
+    Ok(SettingsService::from_state(&state).providers_with(&presets))
 }

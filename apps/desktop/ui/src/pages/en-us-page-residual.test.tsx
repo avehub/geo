@@ -397,8 +397,15 @@ const MESSAGE =
   '后端散文行直接上屏）。迁进 `i18n/locales/**`（zh/en 同批），🔴 不许把数据串加进 DATA_STRINGS 来让它变绿';
 
 describe('常驻守卫（第 9 条）· 每个页面/分段在 en-US 下整页无非数据 CJK', () => {
-  it('防空跑：设置页的分段清单与 `pages/settings/sections.ts` 逐字相等（5 段，没有「扩展」）', () => {
-    expect([...SETTINGS_SECTIONS]).toEqual(['general', 'models', 'collection', 'storage', 'about']);
+  it('防空跑：设置页的分段清单与 `pages/settings/sections.ts` 逐字相等（6 段，没有「扩展」）', () => {
+    expect([...SETTINGS_SECTIONS]).toEqual([
+      'general',
+      'models',
+      'collection',
+      'storage',
+      'remote',
+      'about',
+    ]);
   });
 
   it('防空跑：数据清单非空、真的从种子里数得出中文，且减法只对数据串生效', () => {
@@ -529,17 +536,14 @@ describe('常驻守卫（第 9 条）· 每个页面/分段在 en-US 下整页�
     );
     await screen.findByRole('heading', { name: 'Knowledge base' });
     await expectDataLanded();
-    // 🔴 点名扫这五处：模块名（动态 key）、演示模式提示（漏了就成了"假素材"）、
+    // 🔴 点名扫这五处：模块名（动态 key）、演示模式提示（本文件 mock 的是 demo 运行时，
+    // 2026-11-06 产品确认后它只在 demo 出现，漏翻就成了"假素材"）、
     // 职责说明条（DR-73：同步横幅退役之后由它承担"实体卡与知识库不互相同步、导入是一次性复制"
     // 的口径告知，漏了用户会以为改一处另一处跟着变）、统计条新加的那一格（`kb.stats.scripts`）、
     // 与工具条上的导入入口（DR-81）。
     expectRendered('New entry');
     expect(screen.getAllByText(/Brand overview/).length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(
-        'Demo mode: sample data only; AI generation does not call a model; images and videos are not fetched.',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Demo mode: sample data only/)).toBeInTheDocument();
     // ⚠ 用正则而不是整串相等：说明条里带破折号与弯引号，逐字抄一遍等于把词典值抄进测试
     // （词典改一个标点这里就假红，而这条判据要管的是"有没有翻"，不是"标点长什么样"）。
     expect(screen.getAllByText(/They do not sync with each other/).length).toBeGreaterThan(0);

@@ -526,6 +526,13 @@ export interface ProviderInfo {
   default_model: string;
   input_per_mtok: number;
   output_per_mtok: number;
+  /**
+   * 远程目录条目的稳定 code（内置预设没有这个字段）。
+   *
+   * 🔴 远程条目一律 `provider: 'custom'`（后端只认内置枚举 + custom），
+   * `preset_code` 才是它们在界面上的稳定身份。
+   */
+  preset_code?: string;
 }
 
 export interface SecretStatus {

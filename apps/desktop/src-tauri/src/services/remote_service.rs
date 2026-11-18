@@ -339,6 +339,13 @@ impl RemoteService {
             }
         }
 
+        // 🔴 同步结束后把合规词库（内置 ∪ 远程）灌进进程内缓存：
+        // 运营新加的红线词必须立刻对生成/编辑/导入生效，不需要重启客户端。
+        // 取不到远程时这里拿到的是内置快照，并集结果与之前一致（无害）。
+        if let Ok(item) = self.get_json(ItemKey::Compliance).await {
+            apply_compliance_terms(item.value.as_ref());
+        }
+
         let finished_at = Utc::now().to_rfc3339();
         let degraded = status != SyncStatus::Ok;
         let changed_items = serde_json::to_string(&changed).unwrap_or_else(|_| "[]".to_string());
@@ -623,6 +630,24 @@ impl RemoteService {
     }
 }
 
+/// 从 `compliance.json` 抽出词条并灌进 `geo_domain::compliance` 的进程内附加词表。
+///
+/// 只取 `terms[].term`；形状不对一律当作"没有远程词"（内置词仍在）。
+fn apply_compliance_terms(value: Option<&Value>) {
+    let terms: Vec<String> = value
+        .and_then(|v| v.get("terms"))
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("term").and_then(|t| t.as_str()))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    geo_domain::compliance::set_extra_terms(terms);
+}
+
 /// 全失败时的定性：signature > digest > 其余。
 fn first_failure_status(failed: &[FailedItem]) -> SyncStatus {
     if failed.iter().any(|f| f.reason == "signature") {
@@ -691,4 +716,25 @@ fn build_http_client(proxy: Option<String>) -> reqwest::Client {
         builder = builder.no_proxy();
     }
     builder.build().unwrap_or_else(|_| reqwest::Client::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compliance_terms_are_extracted_and_applied_as_a_union() {
+        let value = serde_json::json!({
+            "schema_version": 1,
+            "version": 1,
+            "terms": [{ "term": "远程新词" }, { "term": "  " }]
+        });
+        apply_compliance_terms(Some(&value));
+        assert!(geo_domain::compliance::check("这里出现远程新词").is_err());
+        // 内置词不会被远程覆盖掉
+        assert!(geo_domain::compliance::check("保证排名").is_err());
+
+        apply_compliance_terms(None);
+        assert!(geo_domain::compliance::check("这里出现远程新词").is_ok());
+    }
 }

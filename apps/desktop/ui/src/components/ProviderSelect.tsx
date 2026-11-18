@@ -1,40 +1,33 @@
-import { Input, Radio, Select, Space, Typography } from 'antd';
+import { Input, Select, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 import type { ModelProtocol, ProviderInfo } from '../api/types';
 import { MODEL_PROTOCOL_VALUES } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
+import FormField from './ui/FormField';
 
 /**
  * 后端 `LlmProvider::Custom.as_str()`，选中它时接口地址与**模型协议**都必须由用户给。
  *
  * 🔴 Plan B Task 4 起厂商清单一共 **12** 项：这 7 个 Rust 稳定 id 之外还有 5 家 demo 独有的
  * 中转站（`openrouter` / `siliconflow` / `302ai` / `yunwu` / `deepbricks`，DR-33）。
- * 本组件不区分两者——它只按 `providers` 数组渲染，"只有 custom 需要填地址与选协议"这条
- * 判据用的是**稳定 id**而不是"第几项"，所以加厂商不会改变行为。
+ * 本组件不区分两者——它只按 `providers` 数组渲染，"只有 custom 需要选协议"这条判据用的是
+ * **稳定 id**而不是"第几项"，所以加厂商不会改变行为。
  */
 const CUSTOM_PROVIDER = 'custom';
-
-/**
- * provider 稳定 id → 展示名：走全仓**唯一**那份查表机制 `i18n/enum-label.ts` 的 `enumLabel`
- * （`settings.providers.<id>`；前 7 个 id 逐字取自 `crates/geo-llm/src/provider.rs` 的 `as_str()`，
- * 另 5 个中转站是 demo 独有，见下面 `CUSTOM_PROVIDER` 那段说明）。
- *
- * 这里原先自带一份同形的本地 `providerLabel`，现已收掉：机制细节（为什么必须 `nsSeparator: false`、
- * 为什么查不到时**回退 id 本身而绝不回退 `label_zh`**）只写在 `enum-label.ts` 一处，
- * 「不许再长回第二份」的判据在 `ProviderSelect.test.tsx`（命中清单恰好是 enum-label + 一处已认领例外）。
- *
- * 为什么不能直接渲染后端给的 `ProviderInfo.label_zh`：那是后端产出的自然语言，英文 locale 下
- * 仍是中文，而组件扫描只查 CJK **字面量**、抓不到它。该字段本身**不删**（删它要连带改 demo 种子、
- * `src/test/fixtures.ts` 与多条命令的返回契约），Park 到 Plan B/C；但 UI 侧任何代码都不再读它。
- */
 
 export interface ProviderSelectProps {
   providers: ProviderInfo[];
   value: string;
   onChange: (provider: string) => void;
-  /** 用户填写的接口地址覆盖值；预设服务商为空即用后端预设地址。 */
-  baseUrl: string;
+  /**
+   * 接口地址覆盖值：`null` = 尚未覆盖，输入框显示该服务商的官方默认地址；空串 = 用户主动清空。
+   *
+   * 2026-11-06 用户裁定：**所有服务商**的接口地址都改成可编辑输入框（不再只读展示预设值），
+   * 预设值只是预填，用户可改成企业网关或代理。因此这里不能再用「空串即预设」的旧语义，
+   * 否则用户清空输入框时会被受控值立刻填回默认地址。
+   */
+  baseUrl: string | null;
   onBaseUrlChange: (baseUrl: string) => void;
   /**
    * 模型协议（Plan B Task 4 · DR-34）。🔴 **只在 `custom` 下渲染控件**：
@@ -46,12 +39,12 @@ export interface ProviderSelectProps {
 }
 
 /**
- * 模型服务商选择。
+ * 模型服务商选择（2026-11-06 飞书式重排）。
  *
- * 预设服务商的 `base_url` 与默认模型都是**只读**的：地址写死在后端
- * `geo-llm::provider`，前端只展示，避免用户改出连不上的地址。
- * 选「自定义」时接口地址变成必填输入框（spec FR-L1），空值由后端
- * `config_from_settings` 拦下，文案经词典按当前语言渲染。
+ * 形态：单列「模型服务商下拉 → 模型协议（仅自定义）→ 接口地址输入框」。
+ * 接口地址对**所有**服务商都是可编辑的，官方默认值由 `ProviderInfo.base_url` 预填；
+ * `custom` 没有预设值，所以是空输入框 + 必填说明。默认模型不再单独占一个只读输入框，
+ * 改由页面在「模型名」下方用一句说明展示（见 `pages/settings/ModelsSection.tsx`）。
  */
 export default function ProviderSelect({
   providers,
@@ -63,28 +56,48 @@ export default function ProviderSelect({
   onProtocolChange,
 }: ProviderSelectProps) {
   const { t } = useTranslation();
-  const current = providers.find((provider) => provider.provider === value) ?? null;
+  /**
+   * 🔴 按 `provider` 去重（先到先得）。
+   *
+   * 远程目录条目与内置「自定义」共用 `provider: 'custom'`（后端 `LlmProvider::parse`
+   * 只认 7 个内置 id + custom），不去重会在下拉里出现两个 value 相同的选项：
+   * 选中哪个都只会把 `custom` 传出去，`base_url` 填不上，用户看到的是"点了没反应"。
+   * 去重后下拉仍是内置 7 项；远程中转站改由「远程内容与更新」段展示。
+   */
+  const optionsSource = providers.filter(
+    (provider, index, all) => all.findIndex((item) => item.provider === provider.provider) === index,
+  );
+  const current = optionsSource.find((provider) => provider.provider === value) ?? null;
   const presetUrl = current?.base_url ?? '';
   const isCustom = value === CUSTOM_PROVIDER;
+  const baseUrlValue = baseUrl ?? presetUrl;
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Radio.Group value={value} onChange={(event) => onChange(String(event.target.value))}>
-        <Space direction="vertical" size={4}>
-          {providers.map((provider) => (
-            <Radio key={provider.provider} value={provider.provider}>
-              {enumLabel(t, 'settings.providers', provider.provider)}
-            </Radio>
-          ))}
-        </Space>
-      </Radio.Group>
+    <Space direction="vertical" size={20} style={{ width: '100%' }}>
+      <FormField label={t('settings.providerForm.provider')} htmlFor="settings-provider">
+        <Select
+          id="settings-provider"
+          style={{ width: '100%', maxWidth: 520 }}
+          value={value}
+          onChange={(provider: string) => onChange(provider)}
+          options={optionsSource.map((provider) => ({
+            value: provider.provider,
+            label: enumLabel(t, 'settings.providers', provider.provider),
+          }))}
+          showSearch
+          optionFilterProp="label"
+          // 12 项在测试与真实下拉里都能一次渲染完，避免虚拟滚动把选项顺序断言变成抽奖。
+          virtual={false}
+        />
+      </FormField>
 
       {isCustom ? (
         // 顺序照 spec §6：协议 → 接口地址（先说"按哪种协议说话"，再填"跟谁说"）。
-        <div>
-          <label htmlFor="settings-protocol" style={{ marginRight: 8 }}>
-            {t('settings.providerForm.protocol')}
-          </label>
+        <FormField
+          label={t('settings.providerForm.protocol')}
+          htmlFor="settings-protocol"
+          hint={t('settings.providerForm.protocolHint')}
+        >
           <Select<ModelProtocol>
             id="settings-protocol"
             style={{ width: 200 }}
@@ -95,50 +108,26 @@ export default function ProviderSelect({
             }))}
             onChange={onProtocolChange}
           />
-          <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-            {t('settings.providerForm.protocolHint')}
-          </Typography.Text>
-        </div>
+        </FormField>
       ) : null}
 
-      {isCustom ? (
-        <div>
-          <label htmlFor="settings-base-url" style={{ marginRight: 8 }}>
-            {t('settings.providerForm.baseUrl')}
-          </label>
-          <Input
-            id="settings-base-url"
-            style={{ maxWidth: 420 }}
-            value={baseUrl}
-            // 占位提示也会上屏 ⇒ 走词典（值逐字搬过去、不改文案；判据在 no-hardcoded-strings.test.ts）
-            placeholder={t('settings.providerForm.baseUrlPlaceholder')}
-            onChange={(event) => onBaseUrlChange(event.target.value)}
-          />
-          <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-            {t('settings.providerForm.baseUrlHint')}
-          </Typography.Text>
-        </div>
-      ) : (
-        <Space size={8} wrap>
-          <Typography.Text type="secondary">{t('settings.providerForm.baseUrlReadonly')}</Typography.Text>
-          <Typography.Text>{presetUrl}</Typography.Text>
-        </Space>
-      )}
-
-      <div>
-        <label htmlFor="settings-default-model" style={{ marginRight: 8 }}>
-          {t('settings.providerForm.defaultModel')}
-        </label>
+      <FormField
+        label={t('settings.providerForm.baseUrl')}
+        htmlFor="settings-base-url"
+        hint={
+          isCustom
+            ? t('settings.providerForm.baseUrlCustomHint')
+            : t('settings.providerForm.baseUrlHint')
+        }
+      >
         <Input
-          id="settings-default-model"
-          style={{ maxWidth: 320 }}
-          value={current?.default_model ?? ''}
-          disabled
+          id="settings-base-url"
+          style={{ width: '100%', maxWidth: 520 }}
+          value={baseUrlValue}
+          placeholder={isCustom ? t('settings.providerForm.baseUrlPlaceholder') : undefined}
+          onChange={(event) => onBaseUrlChange(event.target.value)}
         />
-        <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-          {t('settings.providerForm.defaultModelHint')}
-        </Typography.Text>
-      </div>
+      </FormField>
     </Space>
   );
 }

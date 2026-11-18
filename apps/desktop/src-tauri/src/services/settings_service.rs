@@ -89,6 +89,14 @@ pub struct ProviderInfo {
     pub default_model: String,
     pub input_per_mtok: f64,
     pub output_per_mtok: f64,
+    /// 远程目录条目的稳定 code（内置预设为 `None`，字段直接不出现在 JSON 里）。
+    ///
+    /// 🔴 为什么需要它：远程条目按计划一律 `provider = "custom"`（后端 `LlmConfig`
+    /// 只认内置枚举 + custom），但界面上可能同时存在多个中转站 —— 只靠 `provider`
+    /// 无法区分它们，选中哪一个都只会把 `custom` 填进去，地址与模型填不上。
+    /// `preset_code` 让 `<ProviderSelect>` 能回填 `base_url` / `default_model`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset_code: Option<String>,
 }
 
 impl From<LlmProvider> for ProviderInfo {
@@ -101,8 +109,76 @@ impl From<LlmProvider> for ProviderInfo {
             default_model: provider.default_model().to_string(),
             input_per_mtok: pricing.input_per_mtok,
             output_per_mtok: pricing.output_per_mtok,
+            preset_code: None,
         }
     }
+}
+
+/// 远程目录里的一个服务商条目。
+///
+/// 🔴 只反序列化**白名单字段**：`api_key` / `token` 之类就算服务端塞了也进不来
+/// （`deny_unknown_fields` 会整条拒收，比"静默忽略"更容易发现后台发错了字段）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemotePreset {
+    pub code: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub protocol: String,
+    pub base_url: String,
+    pub default_model: String,
+}
+
+/// 内置 7 个预设 ∪ 远程目录。
+///
+/// 三条硬规则（每条都防一种真实的翻车）：
+/// 1. `code` 与内置 provider 撞名 → **忽略**：远程不能"重定义"内置厂商的地址
+///    （否则篡改服务端即可把用户 Key 引到自家网关）。
+/// 2. `base_url` 必须是 `https://`：数据面是明文的攻击面已经够大，
+///    再让远程把 API Key 指到 http 端点上等于双重失守。
+/// 3. 远程条目的 `protocol` 只用于展示；真正落库的 `provider` 恒为 `custom`，
+///    因为后端只认内置枚举 + custom（见 `LlmProvider::parse`）。
+pub fn providers_with_remote(remote: &[RemotePreset]) -> Vec<ProviderInfo> {
+    let mut out: Vec<ProviderInfo> = LlmProvider::all()
+        .into_iter()
+        .map(ProviderInfo::from)
+        .collect();
+    for preset in remote {
+        if LlmProvider::parse(&preset.code).is_some() {
+            continue;
+        }
+        let base_url = preset.base_url.trim();
+        if !base_url.starts_with("https://") {
+            continue;
+        }
+        out.push(ProviderInfo {
+            provider: LlmProvider::Custom.as_str().to_string(),
+            label_zh: preset.display_name.trim().to_string(),
+            base_url: base_url.to_string(),
+            default_model: preset.default_model.trim().to_string(),
+            input_per_mtok: 0.0,
+            output_per_mtok: 0.0,
+            preset_code: Some(preset.code.clone()),
+        });
+    }
+    out
+}
+
+/// 从 `providers.json` 的 `presets` 数组解析远程目录。
+///
+/// 任何单条形状不对就**跳过那一条**，不影响其余项与内置预设：
+/// 一个后台手滑写错字段，不该让所有用户的服务商下拉框变空。
+pub fn parse_remote_presets(value: Option<&serde_json::Value>) -> Vec<RemotePreset> {
+    let Some(items) = value
+        .and_then(|v| v.get("presets"))
+        .and_then(|v| v.as_array())
+    else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|item| serde_json::from_value::<RemotePreset>(item.clone()).ok())
+        .collect()
 }
 
 /// `llm_models_list` 的入参 = **界面上的草稿配置**（DR-34），不是已落库那份。
@@ -191,6 +267,11 @@ impl SettingsService {
             .into_iter()
             .map(ProviderInfo::from)
             .collect()
+    }
+
+    /// 内置 ∪ 远程目录（远程不可用时就是内置）。
+    pub fn providers_with(&self, remote: &[RemotePreset]) -> Vec<ProviderInfo> {
+        providers_with_remote(remote)
     }
 
     /// 写入 API Key。只进钥匙串；库里不存、日志不打。
@@ -667,6 +748,84 @@ mod tests {
                 assert!(!info.default_model.is_empty());
             }
         }
+    }
+
+    fn preset(code: &str, base_url: &str) -> RemotePreset {
+        RemotePreset {
+            code: code.to_string(),
+            display_name: "中转站".to_string(),
+            protocol: "openai_compat".to_string(),
+            base_url: base_url.to_string(),
+            default_model: "relay-model".to_string(),
+        }
+    }
+
+    #[test]
+    fn remote_presets_are_appended_as_custom_with_their_base_url() {
+        let merged = providers_with_remote(&[preset("relay_a", "https://relay.example/v1")]);
+        assert_eq!(
+            merged.len(),
+            LlmProvider::all().len() + 1,
+            "内置预设一个都不能少，远程条目追加在后"
+        );
+        let remote = merged.last().unwrap();
+        // 后端只认内置枚举 + custom：远程条目必须落成 custom，否则 LlmConfig 会拒绝
+        assert_eq!(remote.provider, LlmProvider::Custom.as_str());
+        assert_eq!(remote.preset_code.as_deref(), Some("relay_a"));
+        assert_eq!(remote.base_url, "https://relay.example/v1");
+        assert_eq!(remote.default_model, "relay-model");
+        // 内置条目不携带 preset_code（序列化时字段整个不出现）
+        assert!(merged[0].preset_code.is_none());
+    }
+
+    #[test]
+    fn remote_preset_cannot_shadow_a_builtin_provider_or_use_plain_http() {
+        let merged = providers_with_remote(&[
+            // 🔴 与内置撞名：必须被忽略，否则远程能把用户 Key 引到自家网关
+            preset("deep_seek", "https://evil.example/v1"),
+            // 🔴 明文 http：API Key 会裸奔
+            preset("relay_http", "http://relay.example/v1"),
+            preset("relay_ok", "https://relay.example/v1"),
+        ]);
+        let codes: Vec<&str> = merged
+            .iter()
+            .filter_map(|p| p.preset_code.as_deref())
+            .collect();
+        assert_eq!(codes, vec!["relay_ok"]);
+        // 撞名条目与 http 条目都不得出现在结果里（地址一个都不许漏进来）
+        assert!(merged.iter().all(|p| !p.base_url.contains("evil.example")));
+        assert!(merged.iter().all(|p| !p.base_url.starts_with("http://")));
+    }
+
+    #[test]
+    fn remote_preset_parsing_skips_bad_rows_and_ignores_secrets() {
+        let value = serde_json::json!({
+            "presets": [
+                {
+                    "code": "relay_a",
+                    "display_name": "中转 A",
+                    "protocol": "openai_compat",
+                    "base_url": "https://relay.example/v1",
+                    "default_model": "m1"
+                },
+                // 带 api_key：deny_unknown_fields 整条拒收，密钥不可能被误存
+                {
+                    "code": "relay_b",
+                    "display_name": "中转 B",
+                    "base_url": "https://relay.example/v1",
+                    "default_model": "m2",
+                    "api_key": "sk-should-never-arrive"
+                },
+                // 缺 base_url：跳过
+                { "code": "relay_c", "display_name": "中转 C", "default_model": "m3" }
+            ]
+        });
+        let parsed = parse_remote_presets(Some(&value));
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].code, "relay_a");
+        // 损坏/缺失的输入一律空集（调用方只剩内置预设）
+        assert!(parse_remote_presets(None).is_empty());
+        assert!(parse_remote_presets(Some(&serde_json::json!({"presets": "nope"}))).is_empty());
     }
 
     #[test]

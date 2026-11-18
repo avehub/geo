@@ -8,7 +8,8 @@
  *    更容易被走查的人当成缺陷）。中英两侧各扫一遍。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import SettingsPage from '../SettingsPage';
 import { mockInvoke, type StubValue } from '../../test/invoke-mock';
@@ -35,7 +36,41 @@ const ENVIRONMENT: AppEnvironment = {
   },
 };
 
+function stubRemote() {
+  mockInvoke.stubAlways('remote_status', () => ({
+    base_url: 'https://geo_api.gaodekuai.com/client/v1',
+    public_key_configured: true,
+    last_sync: null,
+    items: [
+      {
+        key: 'rulepacks',
+        version: 424242,
+        sha256: '',
+        source: 'remote',
+        accepted_at: '2026-11-18T00:00:00Z',
+      },
+    ],
+    builtin_versions: [],
+    degraded: false,
+  }));
+  mockInvoke.stubAlways('remote_legal_index', () => ({
+    key: 'legal',
+    version: 7,
+    sha256: '',
+    source: 'remote',
+    accepted_at: '2026-11-18T00:00:00Z',
+    degraded: false,
+    value: {
+      schema_version: 1,
+      version: 7,
+      docs: { privacy_policy: { 'zh-CN': { version: 3, title: '隐私政策', path: 'legal/x.md', sha256: '' } } },
+    },
+  }));
+  // `remote_legal_get` 由各用例自己 stub：默认注册一条会让"点按钮"的用例拿到错误的一条。
+}
+
 function stub(environmentError?: StubValue) {
+  stubRemote();
   mockInvoke.stubAlways('llm_providers', () => PROVIDERS);
   mockInvoke.stubAlways('settings_get', () => makeAppSettings());
   mockInvoke.stubAlways('settings_update', (args) => args.settings);
@@ -69,6 +104,9 @@ describe('设置 · 关于段', () => {
     expect(screen.getByText('stub-build-42')).toBeInTheDocument();
     expect(screen.getByText('版本')).toBeInTheDocument();
     expect(screen.getByText('构建号')).toBeInTheDocument();
+    expect(
+      screen.queryByText('本轮为演示版本；桌面端专属能力与后续功能会在正式版本中提供。'),
+    ).toBeNull();
     expect(mockInvoke.callsOf('app_environment').length).toBeGreaterThan(0);
   });
 
@@ -103,6 +141,55 @@ describe('设置 · 关于段', () => {
     for (const banned of ['Extension', 'extension', 'skill', 'Skill', 'support bot', 'Support bot']) {
       expect(body, `${banned} should not appear in About`).not.toContain(banned);
     }
+  });
+
+  it('显示规则包与法务文档版本（来自 remote_status / remote_legal_index）', async () => {
+    stub();
+    renderAbout();
+    await screen.findByText('9.9.9');
+
+    expect(screen.getByText('规则包版本')).toBeInTheDocument();
+    expect(await screen.findByText('424242')).toBeInTheDocument();
+    expect(screen.getByText('法务文档版本')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+  });
+
+  it('🔴 隐私政策取不到正文时如实说取不到，绝不显示旧文本', async () => {
+    stub();
+    mockInvoke.stubAlways('remote_legal_get', () => ({
+      key: 'legal:privacy_policy:zh-CN',
+      version: 0,
+      sha256: '',
+      source: 'none',
+      accepted_at: null,
+      degraded: true,
+      title: null,
+      text: null,
+    }));
+    renderAbout();
+    await screen.findByText('9.9.9');
+
+    await userEvent.click(screen.getByRole('button', { name: '打开隐私政策' }));
+    await waitFor(() => expect(screen.getByText(/暂时无法获取最新政策/)).toBeInTheDocument());
+  });
+
+  it('打开隐私政策会展示远程正文（与安装包内文本同源）', async () => {
+    stub();
+    mockInvoke.stubAlways('remote_legal_get', () => ({
+      key: 'legal:privacy_policy:zh-CN',
+      version: 3,
+      sha256: '',
+      source: 'remote',
+      accepted_at: '2026-11-18T00:00:00Z',
+      degraded: false,
+      title: '隐私政策',
+      text: '这是远程发布的正文。',
+    }));
+    renderAbout();
+    await screen.findByText('9.9.9');
+
+    await userEvent.click(screen.getByRole('button', { name: '打开隐私政策' }));
+    expect(await screen.findByText('这是远程发布的正文。')).toBeInTheDocument();
   });
 
   it('en-US 下骨架文案都是英文', async () => {

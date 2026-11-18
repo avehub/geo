@@ -122,6 +122,7 @@ const settings: ResourceBundle['settings'] = {
     models: 'Model providers',
     collection: 'Collection and rate limits',
     storage: 'Data and storage',
+    remote: 'Remote content and updates',
     about: 'About',
   },
 
@@ -224,6 +225,42 @@ const settings: ResourceBundle['settings'] = {
     licenses: 'Open-source licenses',
     licensesValue: 'React · Ant Design · Tauri · SQLite (sqlx) · reqwest · i18next',
     phase2: 'This is a demo build. Desktop-only capabilities and later features ship in the full release.',
+  },
+
+  /** Remote content section (Task 11). No unverifiable claims such as "up to date". */
+  remote: {
+    desc: 'Version info, engine rules, templates and legal documents are delivered by the official server. When unavailable, the built-in snapshot that ships with the installer is used and the app keeps working.',
+    syncNow: 'Sync now',
+    syncing: 'Syncing…',
+    syncHint: 'Syncs only at startup and when you press this button. No background polling.',
+    syncResult: 'Sync finished: {{status}}; {{changed}} updated, {{failed}} failed',
+    lastSync: 'Last sync',
+    never: 'Never synced',
+    unknown: 'Unknown',
+    endpoint: 'Data plane endpoint',
+    publicKey: 'Content signing key',
+    keyConfigured: 'Configured',
+    keyMissing: 'Not configured: remote content is always rejected; the built-in snapshot is used',
+    degraded: 'Built-in snapshot in use; remote content is unavailable. Features still work, but rules may lag behind official releases.',
+    healthy: 'Remote published version in use.',
+    itemKey: 'Artifact',
+    itemVersion: 'Version',
+    itemSource: 'Source',
+    source: {
+      remote: 'Remote',
+      builtin: 'Built-in',
+      none: 'None',
+    },
+  },
+
+  /** About section additions (Task 11). */
+  aboutExtra: {
+    remote: 'Remote content',
+    rulepack: 'Rulepack version',
+    legal: 'Legal document version',
+    lastSync: 'Last sync',
+    openPrivacy: 'Open privacy policy',
+    unavailable: 'The current policy is temporarily unavailable. Please try again later.',
   },
 
   page: {

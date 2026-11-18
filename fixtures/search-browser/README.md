@@ -129,11 +129,23 @@ node --check scripts/capture-search-tables.js  # 语法
    `page_classifiers[0].match.title_contains: ["AI 流量"]` **永远匹配不上**
    （靠 `url_contains: ["aiflow"]` 单独命中，且分类器用的是 AND 语义）。
 
-6. 🔴 **待确认：真实页面的表头与数据行是否分处两个 `<table>`**。
-   本次录制里 AI 页出现「表0 只有表头、表1 只有 1 行数据」的形态。
-   可能是页面未完全加载（该次录制 title 也是通用标题），也可能是真实 DOM 结构
-   （某些表格组件会把 thead/tbody 拆成两个 table）。
-   **这条决定 Task 10 的提取器要不要做"跨相邻表格合并表头"**，所以需要复采确认。
+6. 🔴🔴 **已确认：AI 流量页的数据行根本不在 `<table>` 里。**
+   用户第二次录制 + Console 诊断确认：
+
+   ```
+   表0: rows=1 first="关键词 AI引用量 AI曝光量 AI点击量 AI点击率 操作"
+   表1: rows=0 first=""
+   ```
+
+   整页只有 **1 个 `<table>`，且只有表头行**（`table_count = 1`）。
+   数据行由非 table 的网格容器渲染（`scripts/diagnose-ai-dom.js` 用来确认具体结构）。
+
+   **这意味着**：`extract_visible_tables_script()` 只遍历 `table → th/td`，
+   因此对真实的 AI 流量页**永远只能拿到 0 行** —— 这不是解析 bug，
+   是**结构性不匹配**。Task 10 计划里"遍历 table → 读 th/td 文本"的假设
+   对 AI 页不成立，提取器必须能处理非 `<table>` 的网格。
+   也因此：AI 页**没有有意义的"改造前 parity 基线"**（当前输出恒为 0 行）。
+   基线只能取「人工按可见页面核对出的期望行」，不能取"现有实现的输出"。
 
 ## 复采时需要确认的动作
 

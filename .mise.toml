@@ -52,6 +52,9 @@ run = [
   "pnpm --dir apps/desktop/ui run test",
   "scripts/tests/msix-manifest.test.sh",
   "scripts/tests/release-dmg.test.sh",
+  # 🔴 生产浏览器提取 JS 的离线测试：那段脚本只在真实浏览器里跑（需要登录百度站长），
+  #    线下只能靠假 DOM 跑真实源码，至少把"el-table 表头/表体分处两个 table"这条钉住。
+  "node scripts/tests/browser-extract.test.mjs",
 ]
 
 [tasks.lint]

@@ -658,6 +658,103 @@ mod percent_cell_tests {
     }
 }
 
+/// 🔴 AI 流量页的 el-table 拆分结构（2026-11-18 真实录制）：
+/// 表头与表体是两个独立 `<table>`，提取器必须合并后才能被解析器接受。
+#[cfg(test)]
+mod ai_table_split_structure_tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    const CAPTURE: &str = include_str!(
+        "../../../fixtures/search-browser/baidu-ziyuan-aiflow-with-data-2026-11-18.json"
+    );
+
+    fn tables() -> Vec<String> {
+        let doc: serde_json::Value = serde_json::from_str(CAPTURE).expect("样本是合法 JSON");
+        doc["tables_tsv"]
+            .as_array()
+            .expect("tables_tsv 是数组")
+            .iter()
+            .map(|t| t.as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    fn parse(payload: &str) -> Result<ParsedSearchImport, GeoError> {
+        parse_search_table(ParseInput {
+            payload,
+            project_id: ProjectId::new(),
+            kind: SearchSourceKind::BaiduZiyuanAi,
+            period_start: "2026-11-01",
+            period_end: "2026-11-30",
+            data_through: "2026-11-18",
+            imported_at: Utc.with_ymd_and_hms(2026, 11, 18, 12, 0, 0).unwrap(),
+        })
+    }
+
+    /// 样本本身必须是"表头一张表、数据行另一张表"——这是 el-table 的真实形态。
+    /// 若将来有人把 fixture 改成单表，这条会红，提醒"你在改的是真实结构的证据"。
+    #[test]
+    fn capture_really_has_header_and_body_in_separate_tables() {
+        let ts = tables();
+        assert_eq!(ts.len(), 2, "真实录制应有 2 张表（表头表 + 表体表）");
+        assert!(ts[0].starts_with("关键词\tAI引用量"), "表0 应是表头");
+        assert_eq!(ts[1].split('\n').count(), 1, "表1 应是纯数据行、不含表头");
+        assert!(
+            ts[1].starts_with("示例站点app大小\t"),
+            "表1 首行是数据不是表头"
+        );
+    }
+
+    /// 🔴 复现 bug：不合并时（现有提取器的输出），表头表解析出 0 行，
+    ///    表体表因首行被当成表头而 missing_header —— 两者都拿不到数据。
+    #[test]
+    fn unmerged_tables_yield_no_metrics_which_is_the_bug() {
+        let ts = tables();
+        // 表头表：能识别成关键词表，但没有数据行
+        let header_only = parse(&ts[0]).expect("表头表应可识别（只是没有数据行）");
+        assert!(header_only.metrics.is_empty(), "表头表不可能产出数据行");
+
+        // 表体表：首行被当成表头 → 认不出任何列 → missing_header
+        let err = parse(&ts[1]).expect_err("表体表缺少表头，必须被拒绝");
+        assert_eq!(err.params()["reason"], "missing_header");
+
+        // 合起来 = 0 行。这就是"AI 流量取数恒为 0"的机械原因。
+        assert_eq!(header_only.metrics.len(), 0);
+    }
+
+    /// 🔴 修复后：提取器把表头表与表体表合并成一张正规表，解析器就能正常工作。
+    #[test]
+    fn merged_table_yields_the_real_row() {
+        let ts = tables();
+        let merged = format!("{}\n{}", ts[0], ts[1]);
+        let parsed = parse(&merged).expect("合并后应可解析");
+
+        assert_eq!(parsed.metrics.len(), 1, "应解析出 1 行真实数据");
+        assert_eq!(parsed.errors.len(), 0);
+        let m = &parsed.metrics[0];
+        assert_eq!(m.query, "示例站点app大小");
+        assert_eq!(m.citations, Some(1));
+        assert_eq!(m.impressions, Some(0));
+        assert_eq!(m.clicks, Some(0));
+        // AI 表的 ctr 分母是 citations（见 parse_rows 的 denominator 分支）；
+        // citations=1、点击量=0 → 0.0，与页面显示的 0.00% 一致
+        assert_eq!(m.ctr, Some(0.0));
+    }
+
+    /// 合并后的表头比数据行多一个空 gutter 单元格（真实页 `操作` 后还有一个空 th），
+    /// 解析器应按列名匹配、不受多余列影响。
+    #[test]
+    fn extra_header_gutter_cell_does_not_shift_columns() {
+        let ts = tables();
+        // 表头有 6 列、数据行 6 列；再加一个尾部空列模拟 gutter 未裁掉的情形
+        let merged = format!("{}\t\n{}", ts[0], ts[1]);
+        let parsed = parse(&merged).expect("多余空列不该导致解析失败");
+        assert_eq!(parsed.metrics.len(), 1);
+        assert_eq!(parsed.metrics[0].query, "示例站点app大小");
+        assert_eq!(parsed.metrics[0].citations, Some(1));
+    }
+}
+
 #[cfg(test)]
 mod traditional_alias_tests {
     use super::*;

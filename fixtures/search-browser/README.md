@@ -192,3 +192,63 @@ node --check scripts/capture-search-tables.js  # 语法
 ```
 
 它会输出每张表的行数与首行文本，足以判断表头与数据行的归属。
+
+---
+
+# ✅ 2026-11-18 已修复：el-table 拆分结构的合并
+
+## 问题（已由真实录制证实）
+
+AI 流量页用 Element UI 的 `el-table`，它把表头与表体渲染成**两个独立的 `<table>`**：
+
+```
+表0（el-table__header）: 关键词 AI引用量 AI曝光量 AI点击量 AI点击率 操作        ← 只有 1 行 th
+表1（el-table__body）  : 示例站点app大小 1 0 0 0.00% 查看                      ← 只有 1 行 td
+```
+
+旧提取器"每张表各自取首行为表头" → 表0 解析出 0 行；表1 首行被当成表头 → `missing_header` 丢弃。
+**合起来 = 0 行**，这就是「AI 流量取数恒为 0」的机械原因。
+
+## 修复
+
+`extract_visible_tables_script()` 现在会识别并**合并同一容器内的表头表与表体表**：
+
+- 判据是**通用结构**，不含任何业务字符串，也不认 class 名（`el-table` / `ant-table` / `vxe-table` 通用）：
+  * **表头表** = 恰好 1 行，且该行 `th` 数 ≥ `td` 数
+  * **表体表** = 所有行都只有 `td`、没有 `th`
+  * 配对方式：沿表头表的祖先链向上找**最近的、包含另一张可见表**的容器，取其中第一张表体表
+- 合并结果 = 表头行 + 表体全部行，作为一张正规表交给 Rust 侧解析
+- 普通单表（表头与数据在同一 `<table>`）**行为不变**
+- 表头行末尾的空 gutter 单元格会被裁掉（真实页 `操作` 后还有一个空 `th`）
+
+## 验证
+
+| 层次 | 测试 | 结果 |
+|---|---|---|
+| 生产 JS（假 DOM 跑真实源码） | `scripts/tests/browser-extract.test.mjs` | **14/14**：合并、多行顺序、普通单表不变、隐藏表过滤、无业务字符串、返回值为字符串 |
+| Rust 端到端（真实录制样本） | `search_import::ai_table_split_structure_tests` | **4/4**：复现"未合并 → 0 行"的 bug；验证"合并 → 1 行真实数据" |
+| 采集器与源码一致性 | `scripts/refresh-capture-snippet.py` | 逐字一致（JS 主体 2866 字节） |
+
+`browser-extract.test.mjs` 已接进 `mise run test` —— 那段脚本只在真实浏览器里跑
+（需要登录百度站长），线下只能靠假 DOM 跑真实源码，至少把结构判据钉住。
+
+## 基线怎么取（🔴 重要）
+
+AI 页**不能用"现有实现的输出"当 baseline** —— 修复前它恒为 0 行，
+冻进去就等于把 bug 固化成黄金标准。正确做法：
+
+* 结构基线：`fixtures/search-browser/baidu-ziyuan-aiflow-with-data-2026-11-18.json`
+  里那两张表的**原样形态**（表头表 + 表体表分开），由
+  `capture_really_has_header_and_body_in_separate_tables` 守着 ——
+  谁把 fixture 改成单表，测试会红并提醒"你改的是真实结构的证据"。
+* 期望值基线：合并后应解析出 **1 行**，字段
+  `query=示例站点app大小 / citations=1 / impressions=0 / clicks=0 / ctr=0.0`
+  （AI 表的 ctr 分母是 citations，见 `parse_rows` 的 denominator 分支）。
+
+## 仍未覆盖
+
+* 该站点 AI 数据只有 **1 条**（`共 1 条`）。多行/分页/虚拟滚动的行为还没验过。
+* 「热门页面」tab 的页面级表（`页面 | AI引用量 | …`）尚未录制；
+  规则包里有个 `page_table` 分类但**没有对应的 table_rule**。
+* `table-footer` 有「下载表格」（xlsx）—— 用户已裁定**走浏览器抓表格**，
+  所以导出路径不作为主路径，但两者的列口径应保持一致（同一平台的两种呈现）。

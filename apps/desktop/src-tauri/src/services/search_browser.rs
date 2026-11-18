@@ -73,24 +73,74 @@ pub fn extract_visible_tables_script() -> &'static str {
       && style.visibility !== 'collapse'
       && style.opacity !== '0';
   };
-  const tables = Array.from(document.querySelectorAll('table'))
-    .filter(visible)
-    .map((table) => Array.from(table.querySelectorAll('tr'))
-      .filter((row) => row.getClientRects().length > 0)
-      .map((row) => {
-        const cells = Array.from(row.querySelectorAll('th, td'))
-          .map((cell) => clean(cell.innerText || cell.textContent));
-        while (cells.length > 0 && cells[cells.length - 1] === '') {
-          cells.pop();
-        }
-        return cells.join('\t');
-      })
-      .filter((line) => line.trim() !== '')
-      .join('\n'))
-    .filter((text) => text !== '');
+  const rowsOf = (table) => Array.from(table.querySelectorAll('tr'))
+    .filter((row) => row.getClientRects().length > 0);
+  const cellsOf = (row) => Array.from(row.querySelectorAll('th, td'))
+    .map((cell) => clean(cell.innerText || cell.textContent));
+  const tsvOf = (table) => rowsOf(table)
+    .map((row) => {
+      const cells = cellsOf(row);
+      while (cells.length > 0 && cells[cells.length - 1] === '') {
+        cells.pop();
+      }
+      return cells.join('\t');
+    })
+    .filter((line) => line.trim() !== '')
+    .join('\n');
+
+  // ── 表头表 / 表体表的识别（🔴 通用结构判据，不含任何业务字符串）──
+  // 某些 UI 组件库（如 Element UI 的 el-table）把表头与表体渲染成**两个独立的
+  // <table>**：一个只有一行 th，另一个只有若干行 td。若按"每张表各自取首行为表头"
+  // 处理，前者解析出 0 行、后者首行被当成表头直接丢弃 —— 数据就永远抓不到。
+  const isHeaderOnly = (table) => {
+    const rows = rowsOf(table);
+    if (rows.length !== 1) return false;
+    const th = rows[0].querySelectorAll('th').length;
+    const td = rows[0].querySelectorAll('td').length;
+    return th > 0 && th >= td;
+  };
+  const isDataOnly = (table) => {
+    const rows = rowsOf(table);
+    if (rows.length < 1) return false;
+    return rows.every((r) => r.querySelectorAll('th').length === 0
+      && r.querySelectorAll('td').length > 0);
+  };
+
+  // 在 header 表的祖先链里找"最近的、包含另一张可见表"的容器，
+  // 再在该容器内找第一张 data-only 表作为它的表体。
+  // 🔴 用 DOM 包含关系判断，不靠 class 名（el-table / ant-table / vxe-table 都适用）。
+  const findBody = (header, all, taken) => {
+    let node = header.parentElement;
+    for (let depth = 0; depth < 6 && node; depth++) {
+      const inside = all.filter((t) => t !== header && !taken.has(t) && node.contains(t));
+      const body = inside.find(isDataOnly);
+      if (body) return body;
+      node = node.parentElement;
+    }
+    return null;
+  };
+
+  const all = Array.from(document.querySelectorAll('table')).filter(visible);
+  const taken = new Set();
+  const merged = [];
+  for (const table of all) {
+    if (taken.has(table)) continue;
+    if (isHeaderOnly(table)) {
+      const body = findBody(table, all, taken);
+      if (body) {
+        taken.add(body);
+        // 表头一行 + 表体若干行 → 合成一张正规表
+        merged.push([tsvOf(table), tsvOf(body)].filter((s) => s !== '').join('\n'));
+        continue;
+      }
+    }
+    const text = tsvOf(table);
+    if (text !== '') merged.push(text);
+  }
+
   // 🔴 `Tab::evaluate` 固定 `return_by_value: false`：数组只会回 objectId。
   // 回一个字符串，`RemoteObject.value` 才拿得到内容。
-  return JSON.stringify(tables);
+  return JSON.stringify(merged);
 })()"#
 }
 

@@ -1,0 +1,32 @@
+{
+  "captured_at": "2026-11-18T07:59:29.668Z",
+  "url": "https://ziyuan.baidu.com/aiflow/index?site=https://example-manufacturing.com/",
+  "title": "百度搜索资源平台_共创共享鲜活搜索",
+  "extractor_fingerprint": "1272:2321740367",
+  "table_count": 2,
+  "headers": [
+    [
+      "关键词",
+      "AI引用量",
+      "AI曝光量",
+      "AI点击量",
+      "AI点击率",
+      "操作"
+    ],
+    [
+      "示例站点app大小",
+      "1",
+      "0",
+      "0",
+      "0.00%",
+      "查看"
+    ]
+  ],
+  "tables_tsv": [
+    "关键词\tAI引用量\tAI曝光量\tAI点击量\tAI点击率\t操作",
+    "示例站点app大小\t1\t0\t0\t0.00%\t查看"
+  ],
+  "desensitized": true,
+  "note": "🔴 已脱敏：域名/关键词替换为虚构值；表头与数值格式一字未改。本样本的特殊价值：这是**有数据**的一次录制（共 1 条），且 table_count=2 印证了 el-table 把表头与表体渲染成两个独立 <table>。",
+  "recorded_by": "产品负责人本机 Chrome（真实登录）"
+}

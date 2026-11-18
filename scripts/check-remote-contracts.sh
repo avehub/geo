@@ -9,6 +9,8 @@
 # 本脚本能在**只有本仓**的环境下跑（CI runner 通常拿不到兄弟仓），检查三件事：
 #   ① digests.json 里每份 schema 的 SHA-256 与实际文件一致
 #      —— 抓"部分同步"：只拷了 schema 没拷 digests，或反之
+#      🔴 只比 `schemas` 映射，不比整个文件的字节：无关字段
+#      （例如曾存在的 generated_at 日期戳）会让内容相同的文件天天报漂移。
 #   ② 没有 digests.json 未登记的孤儿 schema
 #      —— 抓"后台删了某个 schema，本仓还留着旧的"（客户端会 include_str! 到旧契约）
 #   ③ 🔴 manifest.schema.json 的 items.properties 必须含 `rate_limits`

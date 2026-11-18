@@ -214,6 +214,28 @@
       "note": "StoreError::NotFound { kind: prompt_set }（repo/prompt_set.rs）与 GeoError::not_found(prompt_set, …)。"
     },
     {
+      "code": "remote/not_found",
+      "params": [
+        "item"
+      ],
+      "note": "services/remote_service.rs：请求的远程条目不存在（规则包引擎码未在已验签的索引里、法务文档或语言不受支持）。item 是条目类别（rulepack / legal），不是用户输入原文。"
+    },
+    {
+      "code": "remote/rejected",
+      "params": [
+        "item",
+        "reason"
+      ],
+      "note": "services/remote_service.rs：产物被拒收。reason 恒为稳定 key（digest = SHA-256 与已验签清单不符；signature = minisign 验签失败）。🔴 不含响应体、签名或公钥。"
+    },
+    {
+      "code": "remote/unavailable",
+      "params": [
+        "reason"
+      ],
+      "note": "services/remote_service.rs：取不到远程内容。reason 是稳定 key（network / status / too_large / invalid_path / manifest_invalid / body_invalid / no_legal_index）。调用方通常无需展示——同步失败会静默回落内置并记入 remote_sync_log。"
+    },
+    {
       "code": "state/conflict",
       "params": [
         "reason",

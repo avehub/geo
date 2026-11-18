@@ -388,6 +388,7 @@ const DEMO_SEED_EXPECTED = [
   '../demo/seed/contents.ts',
   '../demo/seed/diagnosis.ts',
   '../demo/seed/insights.ts',
+  '../demo/seed/remote.ts',
   '../demo/seed/reports.ts',
   // Plan B Task 4 加的 1 个（每家厂商/中转站的预置模型清单；整份是 ASCII 机器记号）
   '../demo/seed/model-catalogs.ts',
@@ -571,7 +572,7 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
   it('扫到了 src 下全部生产源码，且排除了测试文件、词典与 resources.ts', () => {
     const paths = Object.keys(SOURCES);
     // 15b #51（15a 复审 N-1）：下界从 `>=38` 抬到 `>=60`。
-    // `>=38` 与 BASE 逐字相同、太松 —— 实测真值是 **63**（复审席用独立 `os.walk` 复刻 glob 数出，
+    // `>=38` 与 BASE 逐字相同、太松 —— 实测真值是 **253**（2026-11-07 审计独立计数；下界仍故意留松，防的是扫描面塌成零而不是精确钉死）（复审席用独立 `os.walk` 复刻 glob 数出，
     // 我这里复核一致：`src/**` 的 `.ts`/`.tsx` 共 84 个，减 `locales/**` 20 个、减 `resources.ts` 1 个
     // = 63），掉 25 个文件都不会红。抬到 60 ⇒ 掉 4 个就红。
     // 🔴 **63 不是断言值**：这里刻意保留下界形状（扫描面只会长不会缩，写死成 `toHaveLength(63)`
@@ -587,7 +588,7 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     expect(paths).toContain('../main.tsx');
   });
 
-  it('components/ 下扫到了 110 个文件（100 个 .tsx + 10 个非组件模块：entity-fields / wizard-steps / format / library-generate-defaults / kb-view / kb-import / kb-fields / site-patch-filters / article-slots / article-studio-view）', () => {
+  it('components/ 下扫到了 111 个文件（101 个 .tsx + 10 个非组件模块：entity-fields / wizard-steps / format / library-generate-defaults / kb-view / kb-import / kb-fields / site-patch-filters / article-slots / article-studio-view）', () => {
     const paths = Object.keys(COMPONENT_SOURCES);
     // Plan B Task 6 新增 `components/SideNav.tsx`（导航从 AppLayout 搬出来）⇒ 34 个 .tsx；
     // M1.5 素材层再加 8 个（关键词/FAQ 各一套表格 + 录入 + 生成弹窗，外加两个共用弹窗）⇒ 42 个。
@@ -616,8 +617,9 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     // 组装逻辑全在 `api/overview-compose.ts`（纯函数），视图里只有词典键与数据。
     // M9 组合总览再加 1 个 .tsx（分布卡），组装与筛选在 `api/portfolio-compose.ts`。
     // P1 站外对账 / 交付进度再加 2 个 .tsx（`OverviewStationCard` / `OverviewDeliveryCard`）。
-    expect(paths).toHaveLength(110);
-    expect(paths.filter((path) => path.endsWith('.tsx'))).toHaveLength(100);
+    // 2026-11-06 设置 · 模型服务商重排再加 1 个 .tsx（`ui/FormField.tsx`，飞书式纵向表单薄壳）。
+    expect(paths).toHaveLength(111);
+    expect(paths.filter((path) => path.endsWith('.tsx'))).toHaveLength(101);
     expect(paths).toContain('../components/SideNav.tsx');
     expect(paths).toContain('../components/LibraryReferenceModal.tsx');
     expect(paths).toContain('../components/KbModulePanels.tsx');
@@ -675,9 +677,9 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     ]);
   });
 
-  it('B-1 · 抽取面 = components(110) + pages(28) + App.tsx + main.tsx，且不含 api/', () => {
+  it('B-1 · 抽取面 = components(111) + pages(28) + App.tsx + main.tsx，且不含 api/', () => {
     const paths = Object.keys(EXTRACTION_SOURCES);
-    expect(paths).toHaveLength(140);
+    expect(paths).toHaveLength(141);
     expect(paths.filter((path) => path.startsWith('../api/'))).toEqual([]);
     expect(paths.filter((path) => EXTRACTION_ROOTS.some((root) => !path.startsWith(root))).length)
       .toBeGreaterThan(0);
@@ -686,7 +688,7 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
 
 describe('残留判据（Task 15a 第 6/7/8/15 条）：排除数据类之后的骨架无 CJK + 例外表', () => {
   /**
-   * 主判据。扫描面是**整张 glob 扫描面**（224 个生产文件），不再只是抽取面那 117 个：
+   * 主判据。扫描面是**整张 glob 扫描面**（2026-11-07 审计实测 253 个生产文件），不再只是抽取面那 141 个：
    * 台账 #02 #05 #12 #14 点名的是「残留」这件事本身，而 `src/api/`、`src/demo/`、`src/store/`、
    * `src/test/` 里的中文一样会上屏（`api/error-text.ts` 的诊断串只是恰好不上屏，那是**逐条认领**
    * 出来的结论，不是"这个目录不用扫"）。
@@ -721,12 +723,12 @@ describe('残留判据（Task 15a 第 6/7/8/15 条）：排除数据类之后的
     expect(skeleton.length, '骨架里的 CJK 残留数变了 ⇒ 例外表已过期（逐条重新认领）').toBe(37);
   });
 
-  it('语义类形状钉死（第 7 条）：「演示种子数据」恰好是 src/demo/seed/ 下这 21 个文件', () => {
+  it('语义类形状钉死（第 7 条）：「演示种子数据」恰好是 src/demo/seed/ 下这 22 个文件', () => {
     const inClass = Object.keys(SOURCES)
       .filter((path) => path.startsWith(DEMO_SEED_PREFIX))
       .sort();
     expect(inClass).toEqual([...DEMO_SEED_EXPECTED].sort());
-    expect(DEMO_SEED_EXPECTED).toHaveLength(21);
+    expect(DEMO_SEED_EXPECTED).toHaveLength(22);
 
     // 🔴 反向哨兵：形状**不许**被放宽成 `src/demo/`（台账 #14 原话）。
     // 这些是 demo 的骨架文件，必须留在扫描面里、且不属于任何数据类。
@@ -944,7 +946,7 @@ describe('B-1 · 字面量 i18n key 的拼写保护', () => {
    * 点名样本（一个具体的、可失败的断言）。
    *
    * 实测（Task 15a 第 12 条重跑探针，脚本与逐行输出见 task-15a-report.md）：
-   * glob 扫描面 **63** 个文件，其中 **21 个**抽出字面量 key，共 **279 个**
+   * glob 扫描面 **253** 个文件（2026-11-07 审计实测），其中抽取面 **141** 个抽出字面量 key，共 **279 个**
    * （`components/` 180 + `pages/` 99）。
    *
    * ⚠ 三个数字里**只有第一个是过期的**：Task 10 那次记的是「43 个文件」，Task 11–14 建 demo

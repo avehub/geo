@@ -263,6 +263,35 @@ pub fn digest_matches(bytes: &[u8], expected_sha256: &str) -> bool {
     hex.eq_ignore_ascii_case(expected_sha256.trim())
 }
 
+/// 用 minisign 公钥校验一段产物字节的签名。
+///
+/// 🔴 **fail closed**：公钥为空/解析不了、签名格式不认识、校验不过 —— 一律返回 `false`。
+/// 验不了就是不通过，绝不能"跳过验签当作通过"（这正是 2026-11-17 后台
+/// `_env.sh` 只读根 `.env` 导致 `MINISIGN_PUBLIC_KEY` 为空时暴露的那类缺陷）。
+///
+/// `public_key` 允许两种形态：单行 base64（环境变量里最自然的写法），
+/// 或 `minisign.pub` 那种两行文件（`untrusted comment: …` + base64）。
+///
+/// `allow_legacy = true`：兼容 minisign 0.5 之前生成的、未做 BLAKE2b 预哈希的
+/// `Ed` 签名。新签名是 `ED`（预哈希），两条路径都由上游库验证。
+pub fn verify_signature(public_key: &str, data: &[u8], signature: &str) -> bool {
+    let key_b64 = public_key
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with("untrusted comment:"))
+        .unwrap_or("");
+    if key_b64.is_empty() || signature.trim().is_empty() {
+        return false;
+    }
+    let Ok(key) = minisign_verify::PublicKey::from_base64(key_b64) else {
+        return false;
+    };
+    let Ok(sig) = minisign_verify::Signature::decode(signature.trim()) else {
+        return false;
+    };
+    key.verify(data, &sig, true).is_ok()
+}
+
 /// 内置兜底清单（编译期固化）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuiltinManifest {
@@ -597,5 +626,47 @@ mod tests {
                 "内置版本作为基线时，更旧的远程 release 必须被拒绝（防降级）"
             );
         }
+    }
+
+    // ------------------------------------------------------------------
+    // minisign 验签（真实夹具：用 minisign CLI 现签，私钥已销毁）
+    // ------------------------------------------------------------------
+
+    const FIXTURE_PUB: &str = include_str!("../tests/fixtures/minisign/fixture.pub");
+    const FIXTURE_SIG: &str = include_str!("../tests/fixtures/minisign/fixture.sig");
+    const FIXTURE_PAYLOAD: &str = include_str!("../tests/fixtures/minisign/payload.txt");
+
+    #[test]
+    fn real_minisign_signature_verifies() {
+        // 🔴 这条钉的是"真 CLI 产出的 4 行签名"能被我们解析并验过。
+        //    只测自己造的 base64 没有意义：minisign 的签名文件有
+        //    untrusted comment / trusted comment / global signature 三段，
+        //    解析错一处就会全线拒收，且症状是"发布正常、客户端全静默回落"。
+        assert!(verify_signature(
+            FIXTURE_PUB,
+            FIXTURE_PAYLOAD.as_bytes(),
+            FIXTURE_SIG
+        ));
+    }
+
+    #[test]
+    fn minisign_rejects_tampered_payload_and_bad_inputs() {
+        assert!(!verify_signature(
+            FIXTURE_PUB,
+            b"hello minisign fixture\ntampered",
+            FIXTURE_SIG
+        ));
+        // 公钥为空 → fail closed
+        assert!(!verify_signature(
+            "",
+            FIXTURE_PAYLOAD.as_bytes(),
+            FIXTURE_SIG
+        ));
+        // 签名不是 minisign 格式 → fail closed
+        assert!(!verify_signature(
+            FIXTURE_PUB,
+            FIXTURE_PAYLOAD.as_bytes(),
+            "not a signature"
+        ));
     }
 }

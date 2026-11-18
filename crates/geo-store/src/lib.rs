@@ -20,7 +20,8 @@ pub use error::StoreError;
 pub use repo::{
     ArticleRepo, AssetRepo, CollectionRepo, CompetitorRepo, DiagnosisRepo, EntityCardRepo, FaqRepo,
     InsightRepo, KbRepo, KeywordRepo, ProjectFilter, ProjectRepo, PromptSetRepo, PromptSetSummary,
-    SearchMetricRepo, SearchRepo, SitePatchRepo, SiteRepo,
+    RemoteCacheEntry, RemoteCacheRepo, RemoteSource, SearchMetricRepo, SearchRepo, SitePatchRepo,
+    SiteRepo, SyncLogEntry, SyncStatus,
 };
 pub use secret::{
     parse_secret_ref, secret_ref, KeyringSecretStore, MemorySecretStore, SecretStore,

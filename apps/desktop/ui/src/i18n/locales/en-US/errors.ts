@@ -32,7 +32,7 @@ const errors: ResourceBundle['errors'] = {
   'llm/bad_response': 'Unexpected model response: {{reason}}',
   'llm/config': 'There is a problem with the model provider configuration: {{reason}}',
   'llm/deserialize': 'The model output does not match the expected structure: {{reason}}',
-  'llm/missing_secret': 'No API key is configured yet. Add one under Settings and save it',
+  'llm/missing_secret': 'No API key is configured yet. Add one and save it first',
   'llm/rate_limited':
     'The upstream provider is rate limiting requests (429). Please retry later or lower the request rate',
   'llm/server': 'The upstream provider returned status {{status}}',
@@ -42,9 +42,28 @@ const errors: ResourceBundle['errors'] = {
   'prompt_set/empty_import':
     'The CSV has no valid rows to import, so the prompt set was left unchanged',
   'prompt_set/not_found': 'The {{kind}} was not found (ID: {{id}})',
+  'remote/not_found': 'The requested remote content was not found',
+  'remote/rejected':
+    'Remote content failed verification; the local version is still in use',
+  'remote/unavailable': 'Remote content is unavailable; the local version is still in use',
   'state/conflict': 'A data state conflict occurred: {{reason}}',
+  'browser/unavailable': 'System browser unavailable ({{reason}})',
   'validation/failed': '{{field}} {{reason}}',
 
+  browserReasons: {
+    chrome_not_found: 'Chrome or Edge was not found. Install one and try again.',
+    launch_failed: 'Could not start the system browser. Try again.',
+    debug_port_timeout: 'The browser started but its debug port did not become ready. Close that Chrome window and retry.',
+    debug_port_unavailable: 'Could not reach the local browser debug port.',
+    connect_failed: 'Could not connect to the browser debug port. Reopen the system Chrome.',
+    no_tab: 'No Baidu webmaster tab was found. Open the data page first.',
+    evaluate_failed: 'Could not read tables from the page. Make sure the data table is visible.',
+    no_table_found:
+      'The current page has no visible data table. Open a data list page in Baidu Webmaster first, then click "Read current page" again.',
+    invalid_ws_url: 'The browser session URL is invalid. Reopen the system Chrome.',
+    browser_disabled: 'Browser automation is disabled in this environment.',
+    browser_task_failed: 'Reading the page failed. Try again.',
+  },
   reasons: {
     required: 'is required',
     empty: 'is empty and needs at least one item',
@@ -72,7 +91,8 @@ const errors: ResourceBundle['errors'] = {
     unknown_field: 'points to an unknown field',
     validation_failed: 'failed field validation',
     write_failed: 'could not be written',
-    secret_unavailable: 'the system keychain could not be accessed',
+    secret_unavailable:
+      'the system keychain could not be accessed; re-enter and save the key (quit and restart first if you just rebuilt the app)',
   },
 
   transport: {

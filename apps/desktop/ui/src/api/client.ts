@@ -48,12 +48,20 @@ import type {
   SearchSourceKind,
   SecretStatus,
 } from './types';
+import type {
+  RemoteEndpointConfig,
+  RemoteJsonItem,
+  RemoteStatus,
+  RemoteSyncReport,
+  RemoteTextItem,
+} from './types-remote';
 import { isIpcErrorPayload } from './types';
 
 /**
- * 全部 IPC 命令名（**108** 条）。前后端漂移时这里先炸，便于排查。
+ * 全部 IPC 命令名（**120** 条）。前后端漂移时这里先炸，便于排查。
  *
- * 🔴 2026-11-06 核对为 **108 = 108 条 Rust + 0 条 demo-only**。M5.5 站长数据现在 9 条：
+ * 🔴 2026-11-18 核对为 **120 = 120 条 Rust + 0 条 demo-only**：Task 9 新增 12 条
+ * `remote_*`（远程内容读取与同步）。此前基线为 108 条。M5.5 站长数据现在 9 条：
  * 原有 6 条 + `search_oauth_begin`（GSC OAuth 起点）+ 系统 Chrome 取数两条
  * （`search_browser_open` / `search_browser_capture`，只支持百度站长两个面）。demo 后端对
  * OAuth 与浏览器三条命令明确回 `validation/failed`——演示模式不联网、不伪造授权与浏览器会话
@@ -190,6 +198,21 @@ export const IPC_COMMANDS = [
   'search_opportunity_update',
   'search_browser_open',
   'search_browser_capture',
+  // ---- 远程内容（数据面）12 条 ----
+  // 🔴 只 GET 匿名只读静态文件：无鉴权、无 Cookie、无查询参数（设计文档 §2.4）。
+  // 同步**只在启动与用户手动触发**时发生，没有定时轮询（I-3）。
+  'remote_status',
+  'remote_sync',
+  'remote_manifest_get',
+  'remote_rulepack_list',
+  'remote_rulepack_get',
+  'remote_provider_presets',
+  'remote_compliance_terms',
+  'remote_legal_index',
+  'remote_legal_get',
+  'remote_privacy_facts',
+  'remote_notice_list',
+  'remote_endpoint_config',
 ] as const;
 
 export type IpcCommand = (typeof IPC_COMMANDS)[number];
@@ -632,3 +655,41 @@ export const searchBrowserCapture = (
     period_start: periodStart,
     period_end: periodEnd,
   });
+
+// ---------------------------------------------------------------------------
+// 远程内容（数据面）—— 12 条
+//
+// 🔴 除 `remoteSync` 外全部只读本地缓存 + 内置兜底，**永不联网**；
+// 失败一律降级（`degraded: true`）而不是抛错——I-1「断网可用」。
+// ---------------------------------------------------------------------------
+
+/** 当前用的是远程还是内置、上次同步结果。设置页"远程内容"一节的唯一数据源。 */
+export const remoteStatus = () => call<RemoteStatus>('remote_status');
+
+/** 手动同步一次。失败**不抛错**：返回 `status` + `failed` 报告，由界面展示。 */
+export const remoteSync = () => call<RemoteSyncReport>('remote_sync');
+
+/** 客户端**实际生效**的清单（由本地缓存重建，不是服务器上那份原文）。 */
+export const remoteManifestGet = () => call<Record<string, unknown>>('remote_manifest_get');
+
+export const remoteRulepackList = () => call<RemoteJsonItem>('remote_rulepack_list');
+
+/** 取某个引擎的规则包正文（按已验签索引里的 digest 校验后返回）。 */
+export const remoteRulepackGet = (engineCode: string) =>
+  call<RemoteJsonItem>('remote_rulepack_get', { engine_code: engineCode });
+
+export const remoteProviderPresets = () => call<RemoteJsonItem>('remote_provider_presets');
+
+export const remoteComplianceTerms = () => call<RemoteJsonItem>('remote_compliance_terms');
+
+export const remoteLegalIndex = () => call<RemoteJsonItem>('remote_legal_index');
+
+/** 取一份法务文档正文。`docId` ∈ privacy_policy / terms_of_service / eula / third_party_notices / dpa。 */
+export const remoteLegalGet = (docId: string, locale = 'zh-CN') =>
+  call<RemoteTextItem>('remote_legal_get', { doc_id: docId, locale });
+
+export const remotePrivacyFacts = () => call<RemoteJsonItem>('remote_privacy_facts');
+
+export const remoteNoticeList = () => call<RemoteJsonItem>('remote_notice_list');
+
+export const remoteEndpointConfig = () => call<RemoteEndpointConfig>('remote_endpoint_config');

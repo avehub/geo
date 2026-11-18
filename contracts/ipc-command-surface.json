@@ -108,7 +108,19 @@
     "site_patch_transition",
     "site_patch_history",
     "site_patch_delete",
-    "site_patch_generate"
+    "site_patch_generate",
+    "remote_status",
+    "remote_sync",
+    "remote_manifest_get",
+    "remote_rulepack_list",
+    "remote_rulepack_get",
+    "remote_provider_presets",
+    "remote_compliance_terms",
+    "remote_legal_index",
+    "remote_legal_get",
+    "remote_privacy_facts",
+    "remote_notice_list",
+    "remote_endpoint_config"
   ],
   "pending": []
 }

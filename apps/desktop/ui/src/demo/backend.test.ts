@@ -221,7 +221,8 @@ const ARTICLE_COMMANDS: readonly IpcCommand[] = [
 ];
 
 /**
- * M5.5 站长数据 **6** 条（读出口 1 条 + 源 CRUD/自检 3 条 + 导入 1 条 + 机会处置 1 条；
+ * M5.5 站长数据 **7** 条（读出口 1 条 + 源 CRUD/自检 3 条 + 导入 1 条 + 机会处置 1 条
+ * + GSC OAuth 起点 1 条；
  * 数据层在 `handlers/search.ts`，导入/粘贴/xlsx 解析那一支拆到 `handlers/search-import.ts`
  * ——单文件约 400 行的软线，与 KB / 文章那两批的拆法对齐）。
  *
@@ -235,14 +236,33 @@ const ARTICLE_COMMANDS: readonly IpcCommand[] = [
  */
 const SEARCH_COMMANDS: readonly IpcCommand[] = [
   'search_board',
+  'search_oauth_begin',
   'search_source_upsert',
   'search_source_remove',
   'search_source_test',
   'search_metric_import_csv',
   'search_opportunity_update',
+  'search_browser_open',
+  'search_browser_capture',
 ];
 
-/** 已接线全集（② 的断言面）：**只增不减**；`IPC_COMMANDS` 全部接满之后就是 105 条全集。 */
+/** 远程内容 12 条（Task 9）。 */
+const REMOTE_COMMANDS: readonly IpcCommand[] = [
+  'remote_status',
+  'remote_sync',
+  'remote_manifest_get',
+  'remote_rulepack_list',
+  'remote_rulepack_get',
+  'remote_provider_presets',
+  'remote_compliance_terms',
+  'remote_legal_index',
+  'remote_legal_get',
+  'remote_privacy_facts',
+  'remote_notice_list',
+  'remote_endpoint_config',
+];
+
+/** 已接线全集（② 的断言面）：**只增不减**；`IPC_COMMANDS` 全部接满之后就是 120 条全集。 */
 const IMPLEMENTED_COMMANDS: readonly IpcCommand[] = [
   ...M1_COMMANDS,
   ...M2_COMMANDS,
@@ -258,6 +278,7 @@ const IMPLEMENTED_COMMANDS: readonly IpcCommand[] = [
   ...KB_COMMANDS,
   ...ARTICLE_COMMANDS,
   ...SEARCH_COMMANDS,
+  ...REMOTE_COMMANDS,
 ];
 
 /** 把「同步 throw」与「返回 rejected promise」两种 handler 形状收成同一个 catch。 */
@@ -276,16 +297,16 @@ afterEach(() => {
 });
 
 describe('demo/backend · 骨架契约', () => {
-  it('demoBackend 的键集合与 IPC_COMMANDS 完全相等（105 条，不多不少）', () => {
+  it('demoBackend 的键集合与 IPC_COMMANDS 完全相等（120 条，不多不少）', () => {
     const keys = Object.keys(demoBackend);
 
-    expect(IPC_COMMANDS).toHaveLength(105);
+    expect(IPC_COMMANDS).toHaveLength(120);
     expect(keys).toHaveLength(IPC_COMMANDS.length);
     expect([...keys].sort()).toEqual([...IPC_COMMANDS].sort());
   });
 
-  it('105 条全部脱离骨架：空入参调用不再抛「not implemented」（反向断言，强度只增不减）', async () => {
-    // 十四份账本各自的条数写死在这里：将来加一条命令必须同时改这个数，改不动就是没真的加。
+  it('120 条全部脱离骨架：空入参调用不再抛「not implemented」（反向断言，强度只增不减）', async () => {
+    // 十五份账本各自的条数写死在这里：将来加一条命令必须同时改这个数，改不动就是没真的加。
     expect(M1_COMMANDS).toHaveLength(21);
     expect(M2_COMMANDS).toHaveLength(11);
     expect(SETTINGS_COMMANDS).toHaveLength(8);
@@ -299,8 +320,9 @@ describe('demo/backend · 骨架契约', () => {
     expect(SITE_COMMANDS).toHaveLength(11);
     expect(KB_COMMANDS).toHaveLength(6);
     expect(ARTICLE_COMMANDS).toHaveLength(10);
-    expect(SEARCH_COMMANDS).toHaveLength(6);
-    expect(IMPLEMENTED_COMMANDS).toHaveLength(105);
+    expect(SEARCH_COMMANDS).toHaveLength(9);
+    expect(REMOTE_COMMANDS).toHaveLength(12);
+    expect(IMPLEMENTED_COMMANDS).toHaveLength(120);
     // 账本没有漏项：`IPC_COMMANDS` 里没有一条还挂在「待实现」上（清单接满后这个集合恒空）。
     expect(IPC_COMMANDS.filter((cmd) => !IMPLEMENTED_COMMANDS.includes(cmd))).toEqual([]);
 

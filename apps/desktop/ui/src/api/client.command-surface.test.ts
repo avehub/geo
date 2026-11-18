@@ -7,7 +7,7 @@
  *   `generate_handler![]` 相等（Rust 侧另有 `tests/contract_surface.rs` 逐条比对源码）；
  * - Rust 侧：`generate_handler![]` == `rust_registered`。
  *
- * 🔴 2026-11-05 起 `pending` 已清空（105 条全部落 Rust）。allowlist 仍保留：
+ * 🔴 2026-11-18 起 `pending` 仍为空（120 条全部落 Rust；Task 9 新增 12 条 `remote_*`）。allowlist 保留：
  * 将来 demo 先行的新命令继续按「只减不增」登记，转正一条删一条。
  */
 import { describe, expect, it } from 'vitest';
@@ -50,8 +50,8 @@ describe('contracts/ipc-command-surface.json', () => {
   it('两侧并集与 IPC_COMMANDS 完全相等（不多不少）', () => {
     const declared = [...surface.rust_registered, ...surface.pending.map((entry) => entry.command)];
     expect(new Set(IPC_COMMANDS), 'IPC_COMMANDS 与契约清单不一致').toEqual(new Set(declared));
-    expect(IPC_COMMANDS).toHaveLength(105);
-    expect(surface.rust_registered).toHaveLength(105);
+    expect(IPC_COMMANDS).toHaveLength(120);
+    expect(surface.rust_registered).toHaveLength(120);
     expect(surface.pending).toHaveLength(0);
   });
 

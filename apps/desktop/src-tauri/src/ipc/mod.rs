@@ -18,6 +18,7 @@ pub mod kb;
 pub mod keyword;
 pub mod project;
 pub mod prompt;
+pub mod remote;
 pub mod report;
 pub mod search;
 pub mod secret;
@@ -136,5 +137,17 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         site_patch::site_patch_history,
         site_patch::site_patch_delete,
         site_patch::site_patch_generate,
+        remote::remote_status,
+        remote::remote_sync,
+        remote::remote_manifest_get,
+        remote::remote_rulepack_list,
+        remote::remote_rulepack_get,
+        remote::remote_provider_presets,
+        remote::remote_compliance_terms,
+        remote::remote_legal_index,
+        remote::remote_legal_get,
+        remote::remote_privacy_facts,
+        remote::remote_notice_list,
+        remote::remote_endpoint_config,
     ]
 }

@@ -2,7 +2,8 @@
  * 词典完整性守卫（Plan A Task 7；裁定 B-1 / B-3 / B-5 / B-6 / B-11）。
  *
  * 一句话：**词典的键集不是人手维护的**，它被两份机器可读的真值源双向钉住——
- * `contracts/error-codes.json`（43 条 code + 各自 params，Task 1 起冻结）与
+ * `contracts/error-codes.json`（47 条 code + 各自 params，Task 1 起冻结，
+ * 2026-11-18 新增 3 条 `remote/*`）与
  * `crates/geo-domain/src/error.rs` 模块注释里的 reason key 目录表（B-1 要求运行时解析，
  * 不许手抄；Task 3 复审的 N-1 已实证人工同步会错）。
  *
@@ -40,6 +41,7 @@ import { describeIpcError } from '../api/errors';
 import { i18n } from './index';
 import enUS from './locales/en-US';
 import zhCN from './locales/zh-CN';
+import { readRepoFile } from '../test/repo-file';
 
 interface ErrorCodeEntry {
   code: string;
@@ -204,6 +206,7 @@ const declaredParams = (code: string) =>
  * `limit`/`expected`/`value`（按 reason 变）、`crawler/empty` 的 `skipped`（可为空串）。
  */
 const MINIMAL_PARAMS: Record<string, Record<string, string>> = {
+  'browser/unavailable': { reason: 'chrome_not_found' },
   'competitor/not_found': { kind: 'competitor', id: 'c-1' },
   'compliance/violation': { terms: '国家级' },
   'config/invalid': { reason: 'secret_unavailable', value: 'keyring_unavailable' },
@@ -236,6 +239,9 @@ const MINIMAL_PARAMS: Record<string, Record<string, string>> = {
   'prompt_item/not_found': { kind: 'prompt_item', id: 'i-1' },
   'prompt_set/empty_import': {},
   'prompt_set/not_found': { kind: 'prompt_set', id: 's-1' },
+  'remote/not_found': { item: 'rulepack' },
+  'remote/rejected': { item: 'legal', reason: 'digest' },
+  'remote/unavailable': { reason: 'network' },
   'state/conflict': { reason: 'duplicate', value: 'UNIQUE constraint failed: prompt_items.text' },
   'validation/failed': { field: 'brand_name', reason: 'required' },
 };
@@ -311,6 +317,7 @@ const FIELD_VALUES = [
   'content',
   'csv_header',
   'payload',
+  'browser',
   'format_version',
   'target_count',
   'repeat_count',
@@ -391,6 +398,9 @@ const FIELD_VALUES = [
   'monthly_volume',
   'difficulty',
   'note',
+  // M5.5 GSC OAuth：client_id 是目录表绑定字段，oauth 是 demo 的稳定拒绝字段。
+  'client_id',
+  'oauth',
   // M1.5 FAQ 库（Plan C 第二个纵向切片）
   'faq_id',
   'question',
@@ -443,8 +453,8 @@ describe('B-1 · reason 目录运行时解析（不手抄键集）', () => {
 });
 
 describe('B-11 · 每条 code 在两侧词典里都有条目', () => {
-  it('30 条非 upstream code 在 zh 与 en 都有非空模板', () => {
-    expect(PLAIN.length, '契约对账：43 = 30 非 upstream + 13 upstream').toBe(30);
+  it('34 条非 upstream code 在 zh 与 en 都有非空模板', () => {
+    expect(PLAIN.length, '契约对账：47 = 34 非 upstream + 13 upstream').toBe(34);
     expect(UPSTREAM.length).toBe(13);
 
     const missing: string[] = [];
@@ -581,6 +591,21 @@ describe('B-11 · 每条 code 在两侧词典里都有条目', () => {
     const kinds = new Set(NOT_FOUND_KINDS.map((kind) => `errors.kinds.${kind}`));
     const transport = new Set(TRANSPORT_REASONS.map((reason) => `errors.transport.${reason}`));
     const skipTokens = new Set(SKIP_TOKENS.map((token) => `errors.skip_tokens.${token}`));
+    const browserReasons = new Set(
+      [
+        'chrome_not_found',
+        'launch_failed',
+        'debug_port_timeout',
+        'debug_port_unavailable',
+        'connect_failed',
+        'no_tab',
+        'evaluate_failed',
+        'no_table_found',
+        'invalid_ws_url',
+        'browser_disabled',
+        'browser_task_failed',
+      ].map((reason) => `errors.browserReasons.${reason}`),
+    );
     const fragments = new Set(Object.keys(FRAGMENTS));
     const stray: string[] = [];
 
@@ -593,6 +618,7 @@ describe('B-11 · 每条 code 在两侧词典里都有条目', () => {
           transport.has(path) ||
           skipTokens.has(path) ||
           fragments.has(path) ||
+          browserReasons.has(path) ||
           path === 'errors.upstream.wrapper';
         if (!known) stray.push(`${side} ${path}`);
       }
@@ -602,7 +628,7 @@ describe('B-11 · 每条 code 在两侧词典里都有条目', () => {
     // 反向：这六类在两侧都必须齐全（kinds / transport / skip_tokens 少一个就会在界面露出裸记号）
     const missing: string[] = [];
     for (const side of SIDES) {
-      for (const path of [...kinds, ...transport, ...skipTokens, ...fragments]) {
+      for (const path of [...kinds, ...transport, ...skipTokens, ...fragments, ...browserReasons]) {
         const value = template(side, path);
         if (typeof value !== 'string' || value.trim() === '') missing.push(`${side} ${path}`);
       }
@@ -635,7 +661,7 @@ describe('B-1① · 判据本身（共享模块 `src/api/error-text.ts`）', () 
       '配置无效：系统钥匙串读写失败（keyring_unavailable）',
       '数据状态冲突：存在重复项（UNIQUE constraint failed: prompt_items.text）',
       '抓取 https://a.example/ 后没有得到任何可用页面；跳过的页面：https://a.example/news（总时长预算用尽）',
-      '还没有配置 API Key，请先在「设置」里填写并保存', // 引号括号里是真词
+      '还没有配置 API Key，请先填写并保存', // 引号括号里是真词
       '标签超出允许范围（<=20）（5）',
       '文件或数据库读写失败：Permission denied (os error 13)',
     ];
@@ -791,7 +817,7 @@ describe('B-1② · 第三轮：退化 params 一律被兜底挡住（裁定 B-1
     expect(warn).toHaveBeenCalledTimes(fallbacks);
   });
 
-  it('模板不含占位符的那 5 条 code，空 params 属正常输入，不许兜底', () => {
+  it('模板不含占位符的那 8 条 code，空 params 属正常输入，不许兜底', () => {
     const noPlaceholder = PLAIN.filter((entry) =>
       SIDES.every((side) => placeholdersOf(template(side, `errors.${entry.code}`) ?? '').length === 0),
     )
@@ -805,6 +831,9 @@ describe('B-1② · 第三轮：退化 params 一律被兜底挡住（裁定 B-1
         'llm/missing_secret',
         'llm/rate_limited',
         'prompt_set/empty_import',
+        'remote/not_found',
+        'remote/rejected',
+        'remote/unavailable',
       ].sort(),
     );
 
@@ -885,19 +914,57 @@ describe('AGENTS 规则 6 · 文案合规', () => {
    */
   const FIRST_RANKING_SUFFIXES = ['名', '位', '号', '军', '档', '梯队', '流', '品牌'] as const;
 
-  const bannedZh: readonly RegExp[] = [
-    /保证/,
-    /霸屏/,
-    // 由白名单**生成**（不手写第二份），下面对照组再把 `source` 逐字钉死 ⇒ 两边不许漂移。
+  /**
+   * P3-07（2026-11-07 测试报告）：词表**单一真值源** = Rust 的
+   * `crates/geo-domain/data/adlaw_terms.txt`（真后端 `compliance::scan` 用的同一份）。
+   * 原先前端手抄 9 支，比权威词表少 22 支（`最佳 / 唯一 / 顶级 / 永久 / 百分百 …`）——
+   * 往词典写「顶级方案」「永久有效」门禁全绿，而同样这些词进 Rust 生成路径会被拒。
+   * 运营增删词表无需改代码；本守卫自动跟上。
+   */
+  const ADLAW_TERMS: readonly string[] = readRepoFile(
+    'crates',
+    'geo-domain',
+    'data',
+    'adlaw_terms.txt',
+  )
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'));
+
+  /** 词表是运营可编辑的纯文本 ⇒ 进正则前必须转义（`100%` 之类不含元字符，但形状要钉死）。 */
+  function escapeTerm(term: string): string {
+    return term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * **值级**语境豁免（不是整条文案放行）：
+   * - `绝对` → 「绝对化用语」是**风险类别标签**（引用禁语来命名风险），不是效果承诺；
+   *   换成任何其它上下文（「绝对有效」）照旧判红，对照组钉住。
+   */
+  const CONTEXT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new Map([
+    ['绝对', ['绝对化用语']],
+  ]);
+
+  const ADLAW_PATTERNS: readonly RegExp[] = ADLAW_TERMS.map(
+    (term) => new RegExp(escapeTerm(term)),
+  );
+
+  /**
+   * 本仓比词表**更严**的两支（词表没有裸 `第一` 与 `最好`），保留为追加判据：
+   * 裸 `第一` 带序数负向前瞻（下面对照组把 `source` 逐字钉死），`最好` 是裸子串。
+   */
+  const REPO_EXTRA_ZH: readonly RegExp[] = [
     new RegExp(`第一(?!${FIRST_ORDINAL_BRANCHES.join('|')})`),
     /最好/,
-    /最强/,
-    /最优/,
-    /最先进/,
-    /国家级/,
-    /世界级/,
-    /独家/,
   ];
+
+  /** 与 `bannedZh` 按下标对齐的词条名（追加支为 `null`），供语境豁免与对照组定位。 */
+  const BANNED_ZH_TERMS: readonly (string | null)[] = [
+    ...ADLAW_TERMS,
+    ...REPO_EXTRA_ZH.map(() => null),
+  ];
+
+  const bannedZh: readonly RegExp[] = [...ADLAW_PATTERNS, ...REPO_EXTRA_ZH];
 
   /** en 侧同理（AGENTS 规则 6：禁 `guaranteed ranking` / `#1` / `best` / `100%`）。 */
   const bannedEn: readonly RegExp[] = [/guaranteed/i, /#1/, /\bbest\b/i, /100%/, /number one/i];
@@ -908,7 +975,12 @@ describe('AGENTS 规则 6 · 文案合规', () => {
   function scanCompliance(probe: readonly ComplianceEntry[]): string[] {
     const offenders: string[] = [];
     for (const [side, path, value] of probe) {
-      for (const pattern of bannedZh) if (pattern.test(value)) offenders.push(`${side} ${path} → ${pattern}`);
+      bannedZh.forEach((pattern, index) => {
+        if (!pattern.test(value)) return;
+        const term = BANNED_ZH_TERMS[index];
+        if (term !== null && (CONTEXT_EXCEPTIONS.get(term) ?? []).includes(value)) return;
+        offenders.push(`${side} ${path} → ${pattern}`);
+      });
       for (const pattern of bannedEn) if (pattern.test(value)) offenders.push(`${side} ${path} → ${pattern}`);
     }
     return offenders;
@@ -1001,7 +1073,7 @@ describe('AGENTS 规则 6 · 文案合规', () => {
     // （15c-1 的 #23/#47/#25 与 15c-2 的 #54 两侧同批各加 4 键）；M3–M7 又加了 5 个 namespace
     // 与 13 个 field 标签，所以今天的下界抬到 1800（写**下界**而不是精确值：新增一条文案不该打红门禁）。
     expect(probe.length, '合规扫描面塌了 ⇒ 判据已失效').toBeGreaterThanOrEqual(1800);
-    // 🔴 覆盖面自查（15b #49 的本体）：probe 里出现的 namespace 必须**恰好**是词典的全部 21 个。
+    // 🔴 覆盖面自查（15b #49 的本体）：probe 里出现的 namespace 必须**恰好**是词典的全部 22 个。
     // 少了 ⇒ 又回到 M-2 那个缺口；多了 ⇒ 说明 path 前缀被谁改坏了。
     expect(
       [...new Set(probe.map(([, path]) => path.split('.')[0]))].sort(),
@@ -1019,8 +1091,23 @@ describe('AGENTS 规则 6 · 文案合规', () => {
    * 对照组（第 10 条的硬要求）：证明加了负向前瞻之后判据**既不是永真也不是永假**。
    * 名次断言必须红、序数必须过，两个方向各钉一组；再端到端验一次 `scanCompliance`。
    */
+  it('自证（对照组）：bannedZh 覆盖 adlaw_terms.txt 全部词条，语境豁免只豁免那一个值（P3-07）', () => {
+    // 词表读空 ⇒ 下面全绿是假的
+    expect(ADLAW_TERMS.length, 'adlaw_terms.txt 读空了 ⇒ 判据已失效').toBeGreaterThanOrEqual(30);
+    for (const term of ADLAW_TERMS) {
+      const index = BANNED_ZH_TERMS.indexOf(term);
+      expect(index, `词表词条「${term}」没进 bannedZh`).toBeGreaterThanOrEqual(0);
+      expect(bannedZh[index].test(`文案里出现${term}就要判红`), term).toBe(true);
+    }
+    // 语境豁免是**值级**的：同一个词换个上下文照旧判红
+    expect(scanCompliance([['zh-CN', 'probe.absolute_claim', '绝对有效']]).length).toBeGreaterThan(0);
+    expect(scanCompliance([['zh-CN', 'probe.risk_label', '绝对化用语']])).toEqual([]);
+  });
+
   it('自证（对照组）：`第一` 的负向前瞻只放过序数，名次断言照旧判红', () => {
-    const first = bannedZh.find((pattern) => pattern.source.startsWith('第一'));
+    // P3-07 起 `bannedZh` 的前段是 adlaw_terms.txt 逐条生成的子串正则（含「第一品牌」等），
+    // 所以定位「序数负向前瞻」那一条必须用 `第一(?!` 起头，不能只写「第一」。
+    const first = bannedZh.find((pattern) => pattern.source.startsWith('第一(?!'));
     if (first === undefined) throw new Error('bannedZh 里必须有「第一」那一条');
     // 前瞻词表**逐字**钉死：多一支（放过一类名次断言）或少一支（误伤一类序数）都红。
     expect(first.source).toBe(
@@ -1055,19 +1142,34 @@ describe('AGENTS 规则 6 · 文案合规', () => {
     }
 
     // ④ 端到端：把一条名次断言塞进扫描面 ⇒ offenders 必须点名它
-    expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '排名第一']])).toEqual([
-      `zh-CN errors.reasons.probe → ${first}`,
-    ]);
+    // P3-07 起词表里的「排名第一」也会命中 ⇒ 探针同时点亮两条判据，逐条点名而不是数条数。
+    const probeOffenders = scanCompliance([['zh-CN', 'errors.reasons.probe', '排名第一']]);
+    expect(probeOffenders).toContain(`zh-CN errors.reasons.probe → ${first}`);
+    expect(probeOffenders).toContain('zh-CN errors.reasons.probe → /排名第一/');
     // 同一条判据喂序数 ⇒ 干净
     expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '第一条记录不合法']])).toEqual([]);
 
-    // ⑤ 其余 zh 词与 en 词也各验一条（证明换成 RegExp 之后整张表还在工作，不是只剩 `第一`）
-    expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '保证排名']])).toHaveLength(1);
-    expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '业内最先进']])).toHaveLength(1);
-    expect(scanCompliance([['en-US', 'errors.reasons.probe', 'Guaranteed ranking']])).toHaveLength(1);
-    expect(scanCompliance([['en-US', 'errors.reasons.probe', 'The #1 choice']])).toHaveLength(1);
-    expect(scanCompliance([['en-US', 'errors.reasons.probe', '100% accurate']])).toHaveLength(1);
-    expect(scanCompliance([['en-US', 'errors.reasons.probe', 'the best provider']])).toHaveLength(1);
+    // ⑤ 其余 zh 词与 en 词也各验一条（证明换成词表驱动之后整张表还在工作，不是只剩 `第一`）。
+    // 用 toContain 点名而不是 toHaveLength(1)：`100%` 同时是词表词条与 en 判据，
+    // 两条 offenders 都点亮才是正确行为，数条数反而会把「判据变全」判成回归。
+    expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '保证排名']])).toContain(
+      'zh-CN errors.reasons.probe → /保证排名/',
+    );
+    expect(scanCompliance([['zh-CN', 'errors.reasons.probe', '业内最先进']])).toContain(
+      'zh-CN errors.reasons.probe → /最先进/',
+    );
+    expect(scanCompliance([['en-US', 'errors.reasons.probe', 'Guaranteed ranking']])).toContain(
+      'en-US errors.reasons.probe → /guaranteed/i',
+    );
+    expect(scanCompliance([['en-US', 'errors.reasons.probe', 'The #1 choice']])).toContain(
+      'en-US errors.reasons.probe → /#1/',
+    );
+    expect(scanCompliance([['en-US', 'errors.reasons.probe', '100% accurate']])).toContain(
+      'en-US errors.reasons.probe → /100%/',
+    );
+    expect(scanCompliance([['en-US', 'errors.reasons.probe', 'the best provider']])).toContain(
+      'en-US errors.reasons.probe → /\\bbest\\b/i',
+    );
   });
 });
 

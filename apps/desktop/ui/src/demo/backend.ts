@@ -51,6 +51,20 @@ import { exportWriteFile } from './handlers/export';
 import {
   factCheckList, factCheckResolve, insightCorrect, insightList, } from './handlers/insight';
 import {
+  remoteComplianceTerms,
+  remoteEndpointConfig,
+  remoteLegalGet,
+  remoteLegalIndex,
+  remoteManifestGet,
+  remoteNoticeList,
+  remotePrivacyFacts,
+  remoteProviderPresets,
+  remoteRulepackGet,
+  remoteRulepackList,
+  remoteStatus,
+  remoteSync,
+} from './handlers/remote';
+import {
   projectArchive, projectCreate, projectDelete, projectGet, projectList, projectUpdate, } from './handlers/project';
 import {
   projectExport, projectExportAssetsCsv, projectExportCompetitorsCsv, projectImport, } from './handlers/project-transfer';
@@ -261,6 +275,20 @@ export const demoBackend: Record<IpcCommand, DemoHandler> = {
   search_opportunity_update: searchOpportunityUpdate,
   search_browser_open: searchBrowserOpen,
   search_browser_capture: searchBrowserCapture,
+
+  // ---- 远程内容（12 条）----
+  remote_status: remoteStatus,
+  remote_sync: remoteSync,
+  remote_manifest_get: remoteManifestGet,
+  remote_rulepack_list: remoteRulepackList,
+  remote_rulepack_get: remoteRulepackGet,
+  remote_provider_presets: remoteProviderPresets,
+  remote_compliance_terms: remoteComplianceTerms,
+  remote_legal_index: remoteLegalIndex,
+  remote_legal_get: remoteLegalGet,
+  remote_privacy_facts: remotePrivacyFacts,
+  remote_notice_list: remoteNoticeList,
+  remote_endpoint_config: remoteEndpointConfig,
 };
 
 /**

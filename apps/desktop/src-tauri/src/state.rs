@@ -148,6 +148,9 @@ pub struct AppState {
     pub screenshots_dir: std::path::PathBuf,
     /// 系统 Chrome 浏览器助手使用的独立 profile（百度站长路径 C）。
     pub browser_profile_dir: std::path::PathBuf,
+    /// 远程内容（数据面）同步与读取。🔴 只在启动与用户手动触发时调用，
+    /// 本字段不持有任何定时器（I-3）。
+    pub remote: Arc<crate::services::RemoteService>,
 }
 
 impl AppState {
@@ -167,6 +170,7 @@ impl AppState {
 
         let settings = SettingsRepo::new(pool.clone()).get().await?;
         let proxy = crate::services::active_proxy(&settings);
+        let proxy_for_remote = proxy.clone();
         let screenshots_dir = data_dir.join("screenshots");
         let browser_profile_dir = data_dir.join("browser-profile");
         std::fs::create_dir_all(&screenshots_dir)?;
@@ -182,7 +186,17 @@ impl AppState {
             fetcher: build_fetcher(fetch_limits_from(&settings), proxy)?,
             screenshots_dir,
             browser_profile_dir,
+            remote: Arc::new(crate::services::RemoteService::production(
+                pool.clone(),
+                proxy_for_remote,
+            )),
         })
+    }
+
+    /// 替换远程服务（测试里指向 wiremock）。
+    pub fn with_remote(mut self, remote: Arc<crate::services::RemoteService>) -> Self {
+        self.remote = remote;
+        self
     }
 
     /// 测试装配：内存库 + 内存钥匙串 + fixture 传输 + 指向 wiremock 的抓取器。
@@ -192,6 +206,7 @@ impl AppState {
         llm: Arc<LlmFactory>,
         fetcher: Arc<SiteFetcher>,
     ) -> Self {
+        let pool_for_remote = pool.clone();
         Self {
             pool,
             secrets,
@@ -199,6 +214,13 @@ impl AppState {
             fetcher,
             screenshots_dir: std::env::temp_dir().join("gdk-geo-test-screenshots"),
             browser_profile_dir: std::env::temp_dir().join("gdk-geo-test-browser-profile"),
+            // 测试默认用一张"验签恒失败"的远程服务：任何用例若真要同步，
+            // 必须显式 `with_remote(...)` 注入 wiremock 端点 —— 默认配置绝不联网。
+            remote: Arc::new(crate::services::RemoteService::for_test(
+                pool_for_remote,
+                "http://127.0.0.1:0/client/v1".to_string(),
+                Arc::new(|_, _| false),
+            )),
         }
     }
 

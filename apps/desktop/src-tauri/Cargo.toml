@@ -28,7 +28,9 @@ base64 = { workspace = true }
 chrono = { workspace = true }
 csv = { workspace = true }
 headless_chrome = "1.0.22"
+minisign-verify = { workspace = true }
 reqwest = { workspace = true }
+rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

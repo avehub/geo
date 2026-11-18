@@ -1,21 +1,21 @@
 # 当前状态与里程碑回填
 
-> **状态快照**：2026-11-10（命令面仍为 2026-11-06 核对的 108 条）。本文是当前状态与执行回填，**不是需求真值源**；冲突时以产品定义、对应 spec、差异台账为准。
+> **状态快照**：2026-11-18（命令面 120 条：2026-11-06 核对的 108 条 + Task 9 的 12 条 `remote_*`）。本文是当前状态与执行回填，**不是需求真值源**；冲突时以产品定义、对应 spec、差异台账为准。
 >
 > **何时读**：改 demo、命令面、站长数据、项目概览、文章管理、站点接入前。
 >
 > **更新纪律**：命令增删时同步本文「当前命令面」表与差异台账；不要把未发生或无法验证的状态写进来。
 
-## 1. 当前命令面（2026-11-06 核对）
+## 1. 当前命令面（2026-11-18 核对）
 
 | 项 | 数量 | 真值源 |
 |---|---:|---|
-| `IPC_COMMANDS` | 108 | `apps/desktop/ui/src/api/client.ts` |
-| `demoBackend` 键 | 108 | `apps/desktop/ui/src/demo/backend.ts` |
-| Rust `generate_handler![]` | 108 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
+| `IPC_COMMANDS` | 120 | `apps/desktop/ui/src/api/client.ts` |
+| `demoBackend` 键 | 120 | `apps/desktop/ui/src/demo/backend.ts` |
+| Rust `generate_handler![]` | 120 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
 | demo-only | 0 | `contracts/ipc-command-surface.json` 的 `pending` |
 
-**108 = 108 条 Rust + 0 条 demo-only。** `demoBackend` 必须 108 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
+**120 = 120 条 Rust + 0 条 demo-only。** `demoBackend` 必须 120 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
 
 ### demo-only 族
 

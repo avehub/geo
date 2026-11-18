@@ -20,6 +20,7 @@ use crate::error::IpcError;
 use crate::services::search_service::SearchMetricImportResult;
 use crate::services::SearchService;
 use crate::state::AppState;
+use geo_domain::rulepack::{self, Rulepack};
 
 /// Chrome 调试端口就绪的最长等待。
 pub const CHROME_START_TIMEOUT: Duration = Duration::from_secs(20);
@@ -168,6 +169,46 @@ pub fn pick_candidate_tables(tables: &[String]) -> Vec<String> {
         .filter(|table| header_is_recognized(table))
         .cloned()
         .collect()
+}
+
+/// TSV → 行 × 单元格。
+fn tsv_to_rows(table: &str) -> Vec<Vec<String>> {
+    table
+        .lines()
+        .map(|line| line.split('\t').map(|c| c.trim().to_string()).collect())
+        .collect()
+}
+
+/// 🔴 规则包驱动的候选表筛选（plan Task 10 的接线点）。
+///
+/// 与 [`pick_candidate_tables`] 的区别：后者用 `parse_search_table` 里**硬编码**的
+/// 列名别名判断"这张表我们认不认识"；本函数改用**声明式规则包**判断 ——
+/// 平台改版时只需更新规则包，不必发新版客户端。
+///
+/// 🔴 保留旧路径作为兜底：内置规则包缺失/解析失败、或规则包一个都没选出来时，
+/// 退回硬编码判定。宁可"暂时还用老逻辑"，也不能因为规则包出问题就**完全取不到数**。
+/// 两条路的等价性由 `crates/geo-domain/tests/rulepack_parity.rs` 在真实录制样本上守着。
+pub fn pick_candidate_tables_with_rulepack(tables: &[String], rp: &Rulepack) -> Vec<String> {
+    let mut out = Vec::new();
+    for table in tables {
+        let rows = tsv_to_rows(table);
+        if rows.is_empty() {
+            continue;
+        }
+        // 任一表规则能接受（Ok，含"表头认得但暂无数据行"）即视为候选
+        let recognized = rp
+            .table_rules
+            .iter()
+            .any(|rule| rulepack::normalize_table(&rows, rule).is_ok());
+        if recognized {
+            out.push(table.clone());
+        }
+    }
+    if out.is_empty() {
+        // 兜底：规则包没选出来，退回硬编码别名判定
+        return pick_candidate_tables(tables);
+    }
+    out
 }
 
 /// 表头识别直接委托既有解析器：只喂第一行，`Ok` 即「这个表头我们认识」。
@@ -349,7 +390,14 @@ pub async fn browser_capture(
     let tables = tokio::task::spawn_blocking(move || read_visible_tables(&ws_url))
         .await
         .map_err(|_| browser_error("browser_task_failed"))??;
-    let candidates = pick_candidate_tables(&tables);
+    // 🔴 候选表筛选走**声明式规则包**（内置包；将来由 RemoteService 提供远程版本）。
+    //    取不到/解析失败时 `pick_candidate_tables_with_rulepack` 内部会退回硬编码判定。
+    let candidates = match rulepack::builtin_rulepack("baidu_ziyan")
+        .and_then(|json| rulepack::parse(json).ok())
+    {
+        Some(rp) => pick_candidate_tables_with_rulepack(&tables, &rp),
+        None => pick_candidate_tables(&tables),
+    };
 
     if candidates.is_empty() && tables.is_empty() {
         // 页面上一个可见 `<table>` 都没有：多半是停在首页 / 登录页 / 图表页。

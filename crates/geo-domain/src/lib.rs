@@ -26,6 +26,7 @@ pub mod project;
 pub mod prompt;
 pub mod remote;
 pub mod report;
+pub mod rulepack;
 pub mod search;
 pub mod search_import;
 pub mod search_metrics;

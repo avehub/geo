@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "engine_code": "baidu_ziyan",
+  "version": 4,
+  "min_app_version": "0.2.0",
+  "start_url": "https://ziyuan.baidu.com/aiflow/index",
+  "page_classifiers": [
+    {
+      "kind": "ai_table",
+      "match": {
+        "url_contains": [
+          "aiflow"
+        ]
+      }
+    },
+    {
+      "kind": "page_table",
+      "match": {
+        "title_contains": [
+          "收录"
+        ]
+      }
+    }
+  ],
+  "table_rules": [
+    {
+      "kind": "ai_table",
+      "columns": [
+        {
+          "header_match": [
+            "关键词",
+            "查询",
+            "问题"
+          ],
+          "field": "query",
+          "type": "text"
+        },
+        {
+          "header_match": [
+            "AI引用量",
+            "引用量"
+          ],
+          "field": "citations",
+          "type": "integer"
+        },
+        {
+          "header_match": [
+            "AI曝光量",
+            "曝光量",
+            "展现量"
+          ],
+          "field": "impressions",
+          "type": "integer"
+        },
+        {
+          "header_match": [
+            "AI点击量",
+            "点击量"
+          ],
+          "field": "clicks",
+          "type": "integer"
+        },
+        {
+          "header_match": [
+            "AI点击率",
+            "点击率",
+            "CTR"
+          ],
+          "field": "ctr",
+          "type": "percent"
+        }
+      ],
+      "empty_when": {
+        "all_cells_blank": true
+      },
+      "visibility": {
+        "require_bounding_box_nonzero": true,
+        "require_computed_visible": true
+      }
+    }
+  ],
+  "pagination": {
+    "kind": "none"
+  },
+  "notes_zh": "只读取当前可见页面的表格文本；不读 Cookie / localStorage，不调用平台私有接口。列名按 2026-11-18 真机录制校准：关键词|AI引用量|AI曝光量|AI点击量|AI点击率（+操作）。🔴 header_match 是**子串**匹配且按列从左到右取首个命中，所以 clicks 用「AI点击量/点击量」而不是「点击」—— 后者会与「AI点击率」冲突。"
+}

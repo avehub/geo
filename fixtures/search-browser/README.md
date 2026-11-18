@@ -137,15 +137,48 @@ node --check scripts/capture-search-tables.js  # 语法
    表1: rows=0 first=""
    ```
 
-   整页只有 **1 个 `<table>`，且只有表头行**（`table_count = 1`）。
-   数据行由非 table 的网格容器渲染（`scripts/diagnose-ai-dom.js` 用来确认具体结构）。
+   **结构已由 `scripts/diagnose-ai-dom.js` 完整确认**：该页用的是 **Element UI 的
+   `el-table`**，而 `el-table` 把表头与表体渲染成**两个独立的 `<table>`**：
 
-   **这意味着**：`extract_visible_tables_script()` 只遍历 `table → th/td`，
-   因此对真实的 AI 流量页**永远只能拿到 0 行** —— 这不是解析 bug，
-   是**结构性不匹配**。Task 10 计划里"遍历 table → 读 th/td 文本"的假设
-   对 AI 页不成立，提取器必须能处理非 `<table>` 的网格。
-   也因此：AI 页**没有有意义的"改造前 parity 基线"**（当前输出恒为 0 行）。
-   基线只能取「人工按可见页面核对出的期望行」，不能取"现有实现的输出"。
+   ```
+   <section class="panel-card">
+     <div class="panel-head">热门关键词 | 热门页面</div>        ← 两个 tab
+     <div class="el-table data-table">
+       <div class="hidden-columns"> …6 列… </div>
+       <div class="el-table__header-wrapper">
+         <table class="el-table__header">   ← 表0：表头（1 行 th）
+       </div>
+       <div class="el-table__body-wrapper">
+         <table class="el-table__body">     ← 表1：表体（N 行 td，无表头）
+       </div>
+     </div>
+     <div class="table-footer">下载表格 | 1 前往页 | 共 0 条</div>
+   </section>
+   ```
+
+   **这意味着**：`extract_visible_tables_script()` 会拿到两张**互不相连**的表 ——
+   一张只有表头（解析出 0 行）、一张只有数据行（首行被当成表头 → `missing_header`
+   被丢弃）。所以对真实 AI 页**永远只能拿到 0 行**：不是解析 bug，是**结构性不匹配**，
+   而且根因是 Element UI 的固定渲染方式，不是偶发。
+
+   🔴 由此得出两条硬结论：
+   * Task 10 的提取器必须**配对** `el-table__header` 与其**同一个 `.el-table` 容器内**
+     的 `el-table__body`（跨独立 `<table>` 组表头与数据行）。
+     计划里"遍历 table → 读 th/td"的假设对 AI 页不成立。
+   * AI 页**没有有意义的"改造前 parity 基线"**（当前输出恒 0 行）。
+     基线只能取「人工按可见页面核对出的期望行」，不能取"现有实现的输出"。
+
+   另注：`table-footer` 里有 **「下载表格」** 按钮（xlsx 导出），
+   与 `fixtures/search/*.xlsx` 那批录制样本对应 —— 说明平台除了页面表格
+   还有导出路径。哪条作为主路径属于产品决策，见下条待确认项。
+
+7. 🔴 **待确认（业务）**：本次复采的站点显示 **「暂无数据」/「共 0 条」**，
+   即该站点**本身没有 AI 引用数据**。所以到目前为止**仍缺**
+   "多行真实 AI 数据"的样本（唯一一行真实数据来自 2026-11-18T02-38 那次录制，
+   且当时表头与数据行分处两个 table，与 el-table 结构一致）。
+
+   要么换一个**有 AI 引用数据**的站点复采，要么接受"结构取自真实诊断、
+   行值取自那唯一一行真实数据"的构造样本。两者都能推进，但前者更可信。
 
 ## 复采时需要确认的动作
 

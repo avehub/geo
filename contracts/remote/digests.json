@@ -1,6 +1,5 @@
 {
   "$comment": "每份 schema 的 SHA-256。改 schema 后必须重跑 pnpm --filter contracts digests",
-  "generated_at": "2026-11-17",
   "schemas": {
     "compliance-terms.schema.json": "6fd11ace3521d3ca22850285ca2972a8ea230f4e6150ee5aed3a12bc76405a1a",
     "engine-catalog.schema.json": "ca955f085a8fd09725273e14c219e6c357b80cdab1c250a0794dac756a721c38",

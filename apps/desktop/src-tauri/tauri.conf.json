@@ -46,6 +46,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true 
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "RWTKQ/RuxSpHsfOXmA0hh8mUQj7DjQRdM1KMWfpPYRZDolKfpS2Sfq1v",
+      "endpoints": [
+        "https://geo_api.gaodekuai.com/client/v1/releases/latest.json"
+      ]
+    }
   }
 }

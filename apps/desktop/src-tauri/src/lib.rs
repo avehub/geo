@@ -67,6 +67,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // 日志先于业务初始化：迁移与钥匙串失败时才有据可查。
             init_logging(&app.path().app_log_dir()?);

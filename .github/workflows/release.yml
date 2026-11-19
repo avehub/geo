@@ -278,9 +278,11 @@ jobs:
           projectPath: ${{ env.PROJECT_PATH }}
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: --target ${{ matrix.rust_target }} --bundles ${{ matrix.bundles }}
-          # DR-R8：0.2 开启自动更新时把下面这行改成 true，
-          # 并同时在 tauri.conf.json 打开 bundle.createUpdaterArtifacts（两件事必须同一个提交做）。
-          uploadUpdaterJson: false
+          # 🔴 DR-R8（2026-11-19 已在 0.2 开启）：这行与 tauri.conf.json 的
+          # bundle.createUpdaterArtifacts 必须同进同退。只开一边的后果是：
+          # 要么产物没有 .sig / latest.json（客户端检查更新永远拿不到新版本），
+          # 要么 latest.json 指向了根本没签名的产物（客户端验签失败）。
+          uploadUpdaterJson: true
           updaterJsonPreferNsis: true
           # 同时留一份 workflow artifact，供 checksums job 算 SHA256SUMS
           uploadWorkflowArtifacts: true

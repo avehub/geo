@@ -22,6 +22,7 @@ geo-crawler = { workspace = true }
 geo-domain = { workspace = true }
 geo-llm = { workspace = true }
 geo-store = { workspace = true }
+tauri-plugin-updater = "2"
 
 async-trait = { workspace = true }
 base64 = { workspace = true }

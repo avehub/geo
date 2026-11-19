@@ -331,6 +331,11 @@ const settings = {
     lastSync: '上次同步',
     openPrivacy: '打开隐私政策',
     unavailable: '暂时无法获取最新政策，请稍后重试。',
+    checkUpdate: '检查更新',
+    checkingUpdate: '检查中…',
+    upToDate: '已是最新版本。',
+    updateAvailable: '发现新版本 {{version}}。',
+    updateCheckFailed: '检查更新失败：{{message}}',
   },
 
   page: {

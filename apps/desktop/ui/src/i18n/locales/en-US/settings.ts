@@ -261,6 +261,11 @@ const settings: ResourceBundle['settings'] = {
     lastSync: 'Last sync',
     openPrivacy: 'Open privacy policy',
     unavailable: 'The current policy is temporarily unavailable. Please try again later.',
+    checkUpdate: 'Check for updates',
+    checkingUpdate: 'Checking…',
+    upToDate: 'You are up to date.',
+    updateAvailable: 'New version available: {{version}}.',
+    updateCheckFailed: 'Update check failed: {{message}}',
   },
 
   page: {

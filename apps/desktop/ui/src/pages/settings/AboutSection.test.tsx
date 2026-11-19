@@ -7,10 +7,15 @@
  *    把它们整体推到二期，连置灰占位都不留（spec §2：留一个点不动的入口，比不出现
  *    更容易被走查的人当成缺陷）。中英两侧各扫一遍。
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+// 🔴 更新检查走 Tauri updater 插件；测试里只验证「按钮 → 状态 → 文案」，
+//    绝不联网、也绝不真的去读更新端点（AGENTS 硬性规则：测试禁止打真网络）。
+vi.mock('@tauri-apps/plugin-updater', () => ({ check: vi.fn() }));
+
+import { check } from '@tauri-apps/plugin-updater';
 import SettingsPage from '../SettingsPage';
 import { mockInvoke, type StubValue } from '../../test/invoke-mock';
 import { renderAtRoute } from '../../test/render';
@@ -202,5 +207,67 @@ describe('设置 · 关于段', () => {
     expect(screen.getByText('Version')).toBeInTheDocument();
     expect(screen.getByText('Build')).toBeInTheDocument();
     expect(screen.getByText('Open-source licenses')).toBeInTheDocument();
+  });
+});
+
+
+describe('设置 · 关于段 · 检查更新（0.2 自动更新）', () => {
+  beforeEach(() => {
+    mockInvoke.reset();
+    vi.mocked(check).mockReset();
+  });
+
+  it('🔴 有新版：显示版本号与更新日志（走 i18n，不用绝对化用语）', async () => {
+    stub();
+    vi.mocked(check).mockResolvedValue({
+      version: '0.2.0',
+      currentVersion: '0.1.0',
+      body: '新增自动更新检查与远程内容同步。',
+    } as never);
+    renderAbout();
+    await screen.findByText('9.9.9');
+
+    await userEvent.click(screen.getByRole('button', { name: '检查更新' }));
+
+    expect(await screen.findByText(/发现新版本/)).toBeInTheDocument();
+    expect(screen.getByText(/0\.2\.0/)).toBeInTheDocument();
+    expect(screen.getByText('新增自动更新检查与远程内容同步。')).toBeInTheDocument();
+  });
+
+  it('没有新版：如实说已是最新（不编造版本）', async () => {
+    stub();
+    vi.mocked(check).mockResolvedValue(null);
+    renderAbout();
+    await screen.findByText('9.9.9');
+
+    await userEvent.click(screen.getByRole('button', { name: '检查更新' }));
+
+    expect(await screen.findByText(/已是最新版本/)).toBeInTheDocument();
+  });
+
+  it('🔴 失败只提示不阻塞：显示失败原因，按钮恢复可点，页面其余内容照常', async () => {
+    stub();
+    vi.mocked(check).mockRejectedValue(new Error('network unreachable'));
+    renderAbout();
+    await screen.findByText('9.9.9');
+
+    const button = screen.getByRole('button', { name: '检查更新' });
+    await userEvent.click(button);
+
+    expect(await screen.findByText(/检查更新失败：network unreachable/)).toBeInTheDocument();
+    // 不阻塞：按钮回到可点状态，版本信息仍在
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.getByText('9.9.9')).toBeInTheDocument();
+  });
+
+  it('en-US 下按钮与结果文案都是英文', async () => {
+    stub();
+    vi.mocked(check).mockResolvedValue(null);
+    renderAbout('en-US');
+    await screen.findByText('9.9.9');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+
+    expect(await screen.findByText(/up to date/i)).toBeInTheDocument();
   });
 });

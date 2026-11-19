@@ -13,6 +13,7 @@
 import { useState } from 'react';
 import { Alert, Button, Card, Descriptions, Modal, Space, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
+import { check } from '@tauri-apps/plugin-updater';
 import { useTranslation } from 'react-i18next';
 
 import * as client from '../../api/client';
@@ -49,6 +50,44 @@ export default function AboutSection(_props: SectionProps) {
   /** 「打开隐私政策」：正文现取，取不到就如实说取不到（不显示旧文本）。 */
   const [policy, setPolicy] = useState<{ title: string; text: string } | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
+
+  /**
+   * 「检查更新」（DR-R8 / 0.2）。
+   *
+   * 🔴 失败**只提示、不阻塞**：断网、更新端点不可达、签名配置缺失都只落成一行
+   *    warning，页面其余内容照常可用 —— 更新检查是便利功能，不是启动前置条件。
+   * 🔴 不在前台轮询：只有用户点这个按钮才发一次请求（隐私政策 §6 的口径）。
+   */
+  type UpdateCheck =
+    | { status: 'idle' }
+    | { status: 'available'; version: string; notes: string | null }
+    | { status: 'none' }
+    | { status: 'error'; message: string };
+  const [updateCheck, setUpdateCheck] = useState<UpdateCheck>({ status: 'idle' });
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+
+  async function onCheckUpdate() {
+    setCheckingUpdate(true);
+    try {
+      const update = await check();
+      if (update === null) {
+        setUpdateCheck({ status: 'none' });
+      } else {
+        setUpdateCheck({
+          status: 'available',
+          version: update.version,
+          notes: update.body?.trim() ? update.body : null,
+        });
+      }
+    } catch (error) {
+      setUpdateCheck({
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
   const locale = i18n.language === 'en-US' ? 'en-US' : 'zh-CN';
 
   async function openPolicy() {
@@ -137,7 +176,41 @@ export default function AboutSection(_props: SectionProps) {
           />
 
           <Space direction="vertical" size={4}>
-            <Button onClick={() => void openPolicy()}>{t('settings.aboutExtra.openPrivacy')}</Button>
+            <Space wrap>
+              <Button onClick={() => void openPolicy()}>{t('settings.aboutExtra.openPrivacy')}</Button>
+              {runtime === 'tauri' && (
+                <Button loading={checkingUpdate} onClick={() => void onCheckUpdate()}>
+                  {checkingUpdate
+                    ? t('settings.aboutExtra.checkingUpdate')
+                    : t('settings.aboutExtra.checkUpdate')}
+                </Button>
+              )}
+            </Space>
+            {updateCheck.status === 'available' && (
+              <Space direction="vertical" size={2}>
+                <Typography.Text style={{ fontSize: 12 }}>
+                  {t('settings.aboutExtra.updateAvailable', { version: updateCheck.version })}
+                </Typography.Text>
+                {updateCheck.notes !== null && (
+                  <Typography.Paragraph
+                    type="secondary"
+                    style={{ fontSize: 12, marginBottom: 0, whiteSpace: 'pre-wrap' }}
+                  >
+                    {updateCheck.notes}
+                  </Typography.Paragraph>
+                )}
+              </Space>
+            )}
+            {updateCheck.status === 'none' && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {t('settings.aboutExtra.upToDate')}
+              </Typography.Text>
+            )}
+            {updateCheck.status === 'error' && (
+              <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                {t('settings.aboutExtra.updateCheckFailed', { message: updateCheck.message })}
+              </Typography.Text>
+            )}
             {policyError !== null && (
               <Typography.Text type="warning" style={{ fontSize: 12 }}>
                 {policyError}

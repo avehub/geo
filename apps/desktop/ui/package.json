@@ -1,7 +1,7 @@
 {
   "name": "geo-desktop-ui",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "稿得快 GEO 客户端前端（React + antd v5）",
   "scripts": {

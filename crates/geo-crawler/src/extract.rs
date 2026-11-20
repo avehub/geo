@@ -40,6 +40,11 @@ pub struct ExtractedPage {
     pub links: Vec<String>,
     /// `main_text` 的字符数（按 `char` 计，不是字节数）。
     pub char_count: usize,
+    /// 客户端跳转目标（`<meta http-equiv="refresh">` 或 `location.href` 脚本）。
+    ///
+    /// 只在正文不可用时给出，且已解析成**同站**绝对地址（主机相同或只差 `www.`）。真实企业站常用
+    /// 「HTTP 200 + 一行 window.location」做跳转，不识别它就会把壳页当成成功页面。
+    pub client_redirect: Option<String>,
 }
 
 /// 字符集探测扫描的字节数上限：`<meta>` 声明按规范必须在文档前部。
@@ -48,6 +53,12 @@ const CHARSET_SCAN_BYTES: usize = 4096;
 /// `html2text` 的换行宽度。取足够大的值，避免中文句子被硬换行切断，
 /// 从而保证正文里的整句可以直接被下游检索与喂给 LLM。
 const TEXT_WIDTH: usize = 4096;
+
+/// 正文少于该字符数即视为「没有可用内容」：纯跳转壳页、脚本渲染页与反爬挑战页都落在这一区间。
+///
+/// 低于阈值的页面在 `crawl_site` 里不占页数配额；若页面声明了客户端跳转，会先跟随到真实页面。
+/// 40 字足以排除「正在跳转…」这类提示文本，又不会误伤短小的联系页。
+pub const MIN_USABLE_TEXT_CHARS: usize = 40;
 
 /// DOM 序列化的最大深度：抓的是不可信内容，超深嵌套（多为异常页面）直接截断，
 /// 避免递归栈溢出。正常企业站的嵌套深度远小于该值。
@@ -72,6 +83,8 @@ static BODY_SELECTOR: LazyLock<Selector> = LazyLock::new(|| selector("body"));
 static TITLE_SELECTOR: LazyLock<Selector> = LazyLock::new(|| selector("title"));
 static H1_SELECTOR: LazyLock<Selector> = LazyLock::new(|| selector("h1"));
 static LINK_SELECTOR: LazyLock<Selector> = LazyLock::new(|| selector("a[href]"));
+static META_SELECTOR: LazyLock<Selector> = LazyLock::new(|| selector("meta[http-equiv]"));
+static SCRIPT_SELECTOR: LazyLock<Selector> = LazyLock::new(|| selector("script"));
 
 /// 解析内置选择器。选择器都是编译期常量，非法即属开发错误。
 fn selector(raw: &str) -> Selector {
@@ -148,12 +161,19 @@ pub fn extract(raw: &RawPage) -> Result<ExtractedPage, CrawlerError> {
     let html = decode(&raw.bytes, encoding);
     let document = Html::parse_document(&html);
     let main_text = normalize_text(&body_to_text(&document)?);
+    let char_count = main_text.chars().count();
+    let client_redirect = if char_count < MIN_USABLE_TEXT_CHARS {
+        client_redirect(&document, &base).map(|url| url.to_string())
+    } else {
+        None
+    };
     Ok(ExtractedPage {
         url: raw.url.clone(),
         title: find_title(&document),
         links: collect_links(&document, &base),
-        char_count: main_text.chars().count(),
+        char_count,
         main_text,
+        client_redirect,
     })
 }
 
@@ -169,6 +189,134 @@ fn find_title(document: &Html) -> String {
     first_text(&TITLE_SELECTOR)
         .or_else(|| first_text(&H1_SELECTOR))
         .unwrap_or_default()
+}
+
+/// 识别客户端跳转：先看 `<meta http-equiv="refresh">`，再看内联脚本里的 `location` 赋值。
+///
+/// 只返回**同站**目标（主机相同或只差 `www.`）：跨站跳转一律丢弃（规格：只抓自有域名）。
+/// 目标解析失败同样丢弃。
+fn client_redirect(document: &Html, base: &Url) -> Option<Url> {
+    let target = meta_refresh_target(document).or_else(|| script_redirect_target(document))?;
+    let resolved = base.join(target.trim()).ok()?;
+    if !crate::discover::same_site(&resolved, base) {
+        return None;
+    }
+    Some(resolved)
+}
+
+/// `<meta http-equiv="refresh" content="0; url=/next">` 的目标。
+fn meta_refresh_target(document: &Html) -> Option<String> {
+    for element in document.select(&META_SELECTOR) {
+        let is_refresh = element
+            .value()
+            .attr("http-equiv")
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("refresh"));
+        if !is_refresh {
+            continue;
+        }
+        let Some(content) = element.value().attr("content") else {
+            continue;
+        };
+        let lower = content.to_ascii_lowercase();
+        let Some(position) = lower.find("url") else {
+            continue;
+        };
+        let rest = content[position + "url".len()..].trim_start();
+        let Some(rest) = rest.strip_prefix('=') else {
+            continue;
+        };
+        let rest = rest.trim_start_matches(['"', '\'']).trim_start();
+        let target = rest
+            .split(['"', '\'', ';'])
+            .next()
+            .unwrap_or_default()
+            .trim();
+        if !target.is_empty() {
+            return Some(target.to_string());
+        }
+    }
+    None
+}
+
+/// 内联脚本里的 `location.href=` / `location.replace(...)` / `location.assign(...)`。
+///
+/// 只扫短脚本：大 bundle 常把 `location.href` 当普通读取，按赋值形态 + 目标形状双重过滤。
+fn script_redirect_target(document: &Html) -> Option<String> {
+    const MAX_INLINE_SCRIPT_CHARS: usize = 2048;
+    for element in document.select(&SCRIPT_SELECTOR) {
+        let text: String = element.text().collect();
+        if text.len() > MAX_INLINE_SCRIPT_CHARS {
+            continue;
+        }
+        if let Some(target) = redirect_target_in_script(&text) {
+            return Some(target);
+        }
+    }
+    None
+}
+
+fn redirect_target_in_script(script: &str) -> Option<String> {
+    let lower = script.to_ascii_lowercase();
+    let mut search_from = 0;
+    while let Some(offset) = lower[search_from..].find("location") {
+        let start = search_from + offset;
+        search_from = start + "location".len();
+        let rest_lower = &lower[search_from..];
+        let rest = &script[search_from..];
+        let trimmed = rest_lower.len() - rest_lower.trim_start().len();
+        let rest_lower = rest_lower.trim_start();
+        let rest = &rest[trimmed..];
+
+        let (consumed, is_call) = if rest_lower.starts_with(".replace(") {
+            (".replace(".len(), true)
+        } else if rest_lower.starts_with(".assign(") {
+            (".assign(".len(), true)
+        } else if rest_lower.starts_with(".href") {
+            (".href".len(), false)
+        } else if rest_lower.starts_with('=') {
+            (0, false)
+        } else {
+            continue;
+        };
+
+        let tail_lower = &rest_lower[consumed..];
+        let tail = &rest[consumed..];
+        let spaces = tail_lower.len() - tail_lower.trim_start().len();
+        let tail = &tail[spaces..];
+        let tail_lower = tail_lower.trim_start();
+        if !is_call && !tail_lower.starts_with('=') {
+            continue;
+        }
+
+        let Some(quote_at) = tail.find(['\'', '"', '`']) else {
+            continue;
+        };
+        if quote_at > 80 {
+            continue;
+        }
+        let quote = tail.as_bytes()[quote_at] as char;
+        let value = &tail[quote_at + 1..];
+        let Some(end) = value.find(quote) else {
+            continue;
+        };
+        let target = value[..end].trim();
+        if looks_like_redirect_target(target) {
+            return Some(target.to_string());
+        }
+    }
+    None
+}
+
+fn looks_like_redirect_target(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 200
+        && !value.chars().any(char::is_whitespace)
+        && !value.contains(['{', '}', '$', '`'])
+        && (value.starts_with('/')
+            || value.contains("://")
+            || value.starts_with("./")
+            || value.starts_with("../")
+            || value.contains('/'))
 }
 
 /// 把 `<body>` 剔除样板子树后重新序列化，再交给 `html2text` 转纯文本。
@@ -247,7 +395,7 @@ fn escape_attribute(value: &str) -> String {
     escaped
 }
 
-/// 收集同域绝对链接：相对地址按页面 URL 解析，丢弃非 http(s)、跨域与空链接，
+/// 收集同站绝对链接：相对地址按页面 URL 解析，丢弃非 http(s)、跨站与空链接，
 /// 去掉片段与空查询串后按文档顺序去重（`/a.html#x` 与 `/a.html` 视为同一页）。
 fn collect_links(document: &Html, base: &Url) -> Vec<String> {
     let mut links = Vec::new();
@@ -263,7 +411,9 @@ fn collect_links(document: &Html, base: &Url) -> Vec<String> {
         let Ok(joined) = base.join(href) else {
             continue;
         };
-        if !matches!(joined.scheme(), "http" | "https") || joined.origin() != base.origin() {
+        if !matches!(joined.scheme(), "http" | "https")
+            || !crate::discover::same_site(&joined, base)
+        {
             continue;
         }
         let normalized = normalize_link(joined).to_string();
@@ -532,6 +682,20 @@ mod tests {
     }
 
     #[test]
+    fn links_to_the_www_variant_are_collected() {
+        let html = r#"<html><body>
+            <a href="https://www.a.example/about.html">关于</a>
+            <a href="https://other.example/x">跨站</a>
+        </body></html>"#;
+        let page = extract(&page_from_html("https://a.example/", html)).expect("提取失败");
+
+        assert_eq!(
+            page.links,
+            vec!["https://www.a.example/about.html".to_string()]
+        );
+    }
+
+    #[test]
     fn links_inside_nav_are_collected_even_though_nav_text_is_dropped() {
         let html = r#"<html><body>
             <nav><a href="/only-in-nav.html">导航页</a></nav>
@@ -657,5 +821,96 @@ mod tests {
         // url 与 reason 分开装：reason 是 `url` crate 的原文
         assert_eq!(error.params()["url"], "not a url", "{error}");
         assert!(!error.params()["reason"].is_empty(), "{error}");
+    }
+
+    /// 真实站点常见形态：HTTP 200 + 一行 `window.location`，正文为空。
+    /// 不识别它就会把一个「成功页面」记进结果、白占一个抓取配额（ouhor.com 实测）。
+    #[test]
+    fn js_location_redirect_is_detected_on_an_empty_page() {
+        let page = extract(&page_from_html(
+            "https://a.example/products/",
+            "<html><body><script>window.location.href='/products/real/';</script></body></html>",
+        ))
+        .expect("提取失败");
+
+        assert_eq!(page.char_count, 0);
+        assert_eq!(
+            page.client_redirect.as_deref(),
+            Some("https://a.example/products/real/")
+        );
+    }
+
+    #[test]
+    fn location_replace_and_assign_are_detected() {
+        for html in [
+            "<html><body><script>location.replace(\"/about.html\")</script></body></html>",
+            "<html><head><script>window.location.assign('/about.html')</script></head><body></body></html>",
+        ] {
+            let page = extract(&page_from_html("https://a.example/x", html)).expect("提取失败");
+            assert_eq!(
+                page.client_redirect.as_deref(),
+                Some("https://a.example/about.html"),
+                "未识别：{html}"
+            );
+        }
+    }
+
+    #[test]
+    fn meta_refresh_redirect_is_detected_on_an_empty_page() {
+        let page = extract(&page_from_html(
+            "https://a.example/old",
+            r#"<html><head><meta http-equiv="refresh" content="0; url=/new/"></head><body></body></html>"#,
+        ))
+        .expect("提取失败");
+
+        assert_eq!(page.char_count, 0);
+        assert_eq!(
+            page.client_redirect.as_deref(),
+            Some("https://a.example/new/")
+        );
+    }
+
+    /// 有正文的页面不应被页面里的跳转脚本带走：分析脚本里出现 `location.href` 很常见。
+    #[test]
+    fn redirect_is_ignored_when_the_page_has_usable_text() {
+        let text = "上海宏宇水泵制造有限公司成立于2006年，专注工业离心泵与潜水排污泵的研发、生产与销售，服务全国二十六个省级行政区。";
+        let html = format!(
+            "<html><body><main><p>{text}</p></main><script>window.location.href='/other';</script></body></html>"
+        );
+        let page = extract(&page_from_html("https://a.example/", &html)).expect("提取失败");
+
+        assert!(page.char_count >= MIN_USABLE_TEXT_CHARS);
+        assert_eq!(page.client_redirect, None);
+    }
+
+    /// 只跟自有域名的跳转：跨域跳转在这里就丢掉，`crawl_site` 不必再判一次。
+    #[test]
+    fn redirect_to_the_www_variant_is_kept() {
+        let page = extract(&page_from_html(
+            "https://a.example/",
+            "<html><body><script>window.location.href='https://www.a.example/x';</script></body></html>",
+        ))
+        .expect("提取失败");
+        assert_eq!(
+            page.client_redirect.as_deref(),
+            Some("https://www.a.example/x")
+        );
+    }
+
+    #[test]
+    fn cross_origin_redirect_target_is_dropped() {
+        let page = extract(&page_from_html(
+            "https://a.example/",
+            "<html><body><script>window.location.href='https://other.example/x';</script></body></html>",
+        ))
+        .expect("提取失败");
+        assert_eq!(page.client_redirect, None);
+
+        let page = extract(&page_from_html(
+            "https://a.example/",
+            r#"<html><head><meta http-equiv="refresh" content="0;url=//other.example/x"></head><body></body></html>"#,
+        ))
+        .expect("提取失败");
+        assert_eq!(page.client_redirect, None);
     }
 }

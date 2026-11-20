@@ -10,7 +10,7 @@ pub mod fetch;
 pub mod robots;
 pub mod site;
 
-pub use discover::{classify, discover_from_html, normalize, PageRole};
+pub use discover::{classify, discover_from_html, normalize, same_site, PageRole};
 pub use error::CrawlerError;
 pub use extract::{decode, detect_charset, extract, ExtractedPage, RawPage};
 pub use fetch::{FetchLimits, SiteFetcher};

@@ -1,4 +1,4 @@
-//! 同域站点抓取编排：robots 过滤 + 角色配额 BFS。
+//! 站点抓取编排：robots 过滤 + 角色配额 BFS（同站限定）。
 //!
 //! 设计要点：
 //! - **只抓自有域名**：竞品站点在 P0-A 一律不抓（产品红线，见 spec 4.1）；
@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use url::Url;
 
-use crate::discover::{classify, discover_from_html, normalize, PageRole};
+use crate::discover::{classify, discover_from_html, normalize, same_site, PageRole};
 use crate::error::CrawlerError;
 use crate::extract::{extract, ExtractedPage};
 use crate::fetch::{FetchLimits, SiteFetcher};
@@ -40,8 +40,9 @@ impl CrawlRequest {
 
 /// 被跳过的页面与原因（robots / 总超时 / 抓取失败）。
 ///
-/// `reason` 是**稳定记号**，取值只有三种（裁定 §G-5 / R-C4）：
-/// [`SKIP_TOTAL_TIMEOUT`] / [`SKIP_ROBOTS_DISALLOWED`] / [`SKIP_FETCH_FAILED`]。
+/// `reason` 是**稳定记号**，取值只有四种（裁定 §G-5 / R-C4）：
+/// [`SKIP_TOTAL_TIMEOUT`] / [`SKIP_ROBOTS_DISALLOWED`] / [`SKIP_FETCH_FAILED`] /
+/// [`SKIP_EMPTY_CONTENT`]。
 /// 它最终经 `entity_card_service` 落进 `crawler/empty` 的 `skipped` 参数，
 /// 而壳侧 `guard_instance_params_stay_ascii` **没有白名单**——params 的取值只能是
 /// 语言中立数据或稳定记号，中文说明一律只进日志（AGENTS 规则 7）。
@@ -56,9 +57,9 @@ pub struct SkippedPage {
     pub reason: String,
 }
 
-/// `SkippedPage::reason` 的三种取值。
+/// `SkippedPage::reason` 的四种取值。
 ///
-/// 提成常量而不是各站点写字面量：这三个记号是 `crawler/empty` 的 `skipped` 参数
+/// 提成常量而不是各站点写字面量：这四个记号是 `crawler/empty` 的 `skipped` 参数
 /// 与前端词典之间的契约，拼错一个字母不会有任何测试变红（漂移守卫比的是**键名**
 /// 不是取值），与 `geo-llm` 把 reason key 收成常量的理由相同。
 ///
@@ -68,6 +69,11 @@ pub const SKIP_TOTAL_TIMEOUT: &str = "total_timeout";
 pub const SKIP_ROBOTS_DISALLOWED: &str = "robots_disallowed";
 /// 单页抓取或正文提取失败（超时 / 非 2xx / 超大 / 非 HTML / 解码失败）。
 pub const SKIP_FETCH_FAILED: &str = "fetch_failed";
+/// 页面抓取成功，但正文为空或过短（`<script>` 渲染壳、纯跳转页、反爬挑战页）。
+///
+/// 这类页面**不能**算成功：算进去会白占 `max_pages` 配额，还会让
+/// `crawler/empty` 的「一页都没抓到」失效——用户看到的是「抓了 8 页」而实体卡全空。
+pub const SKIP_EMPTY_CONTENT: &str = "empty_content";
 
 /// 抓取结果：成功页面、角色索引与跳过明细。
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -76,6 +82,9 @@ pub struct CrawlResult {
     pub skipped: Vec<SkippedPage>,
     pub roles: HashMap<PageRole, Vec<String>>,
 }
+
+/// 客户端跳转（meta refresh / location.href）最多跟几跳，防止 a → b → a 循环。
+const MAX_CLIENT_REDIRECTS: usize = 3;
 
 /// 拼接正文时的角色优先级：首页 → 关于 → 产品 → FAQ → 联系 → 其他。
 const TEXT_PRIORITY: [PageRole; 6] = [
@@ -97,24 +106,112 @@ impl CrawlResult {
     }
 
     /// 按角色优先级拼接正文，供 LLM 结构化抽取消费；按**字符**截断，不切半个汉字。
+    ///
+    /// 预算分两轮分配：第一轮每页均分，避免一个 1.4 万字的首页把「关于 / 产品 / 联系」
+    /// 全挤掉（真实站点 `www.ouhor.com` 的首页就是这种形态）；第二轮把短页面没用完的
+    /// 额度按角色优先级回填。跨页重复的行（导航 / 页脚）只保留第一次出现。
     pub fn combined_text(&self, max_chars: usize) -> String {
-        let mut combined = String::new();
-        for role in TEXT_PRIORITY {
-            for url in self.urls_for(role) {
-                let Some(page) = self.pages.iter().find(|page| page.url == url) else {
-                    continue;
-                };
-                if !combined.is_empty() {
-                    combined.push('\n');
-                }
-                combined.push_str(&page.main_text);
-            }
+        if max_chars == 0 {
+            return String::new();
         }
-        combined.chars().take(max_chars).collect()
+        let pages: Vec<&crate::extract::ExtractedPage> = TEXT_PRIORITY
+            .iter()
+            .flat_map(|role| self.urls_for(*role))
+            .filter_map(|url| self.pages.iter().find(|page| page.url == url))
+            .collect();
+        if pages.is_empty() {
+            return String::new();
+        }
+
+        let lines: Vec<Vec<&str>> = pages
+            .iter()
+            .map(|page| page.main_text.lines().collect())
+            .collect();
+        let mut cursors = vec![0usize; lines.len()];
+        let mut seen_lines: HashSet<String> = HashSet::new();
+        let mut combined = String::new();
+
+        // 第一轮：每页均分预算。
+        let fair_share = max_chars / pages.len();
+        for (page_lines, cursor) in lines.iter().zip(cursors.iter_mut()) {
+            append_lines(
+                page_lines,
+                cursor,
+                fair_share,
+                &mut combined,
+                &mut seen_lines,
+            );
+        }
+        // 第二轮：短页面没用完的额度，按角色优先级回填。
+        for (page_lines, cursor) in lines.iter().zip(cursors.iter_mut()) {
+            let remaining = max_chars.saturating_sub(combined.chars().count());
+            if remaining == 0 {
+                break;
+            }
+            append_lines(
+                page_lines,
+                cursor,
+                remaining,
+                &mut combined,
+                &mut seen_lines,
+            );
+        }
+        combined
     }
 }
 
-/// 抓取整个站点（同域、受限、robots 合规）。
+/// 从一页的剩余行里追加正文，最多占用 `budget` 个字符（含换行分隔符）。
+///
+/// 整行放不下时按字符截断最后一行，保持 `combined_text`「最多 max_chars」的旧契约；
+/// 空行与跨页重复行跳过。返回本次实际追加的字符数。
+fn append_lines(
+    lines: &[&str],
+    cursor: &mut usize,
+    budget: usize,
+    out: &mut String,
+    seen: &mut HashSet<String>,
+) -> usize {
+    let mut used = 0usize;
+    while *cursor < lines.len() {
+        let line = lines[*cursor];
+        if line.is_empty() {
+            *cursor += 1;
+            continue;
+        }
+        if seen.contains(line) {
+            *cursor += 1;
+            continue;
+        }
+        let separator = usize::from(!out.is_empty());
+        let cost = separator + line.chars().count();
+        if used + cost <= budget {
+            *cursor += 1;
+            seen.insert(line.to_string());
+            if separator == 1 {
+                out.push('\n');
+            }
+            out.push_str(line);
+            used += cost;
+            continue;
+        }
+        let remaining = budget.saturating_sub(used);
+        if remaining > separator {
+            *cursor += 1;
+            seen.insert(line.to_string());
+            if separator == 1 {
+                out.push('\n');
+            }
+            let keep = remaining - separator;
+            let truncated: String = line.chars().take(keep).collect();
+            out.push_str(&truncated);
+            used += separator + truncated.chars().count();
+        }
+        break;
+    }
+    used
+}
+
+/// 抓取整个站点（同站、受限、robots 合规）。
 pub async fn crawl_site(
     fetcher: &SiteFetcher,
     request: &CrawlRequest,
@@ -132,6 +229,8 @@ pub async fn crawl_site(
     }
 
     let mut covered: HashSet<PageRole> = HashSet::new();
+    // 最终地址去重（302 / 客户端跳转的落点可能与已抓页面相同）。
+    let mut fetched_final: HashSet<String> = HashSet::new();
     while result.pages.len() < limits.max_pages {
         if Instant::now() >= deadline {
             tracing::debug!(
@@ -153,31 +252,90 @@ pub async fn crawl_site(
             .remove(index)
             .unwrap_or_else(|| request.origin.clone());
 
-        if !robots.is_allowed(url.path()) {
-            tracing::debug!(url = %url, "robots.txt 禁止抓取");
-            result.skipped.push(SkippedPage {
-                url: url.to_string(),
-                reason: SKIP_ROBOTS_DISALLOWED.to_string(),
-            });
-            continue;
-        }
-
-        match fetch_and_extract(fetcher, &url).await {
-            Ok(page) => {
-                for link in discover_from_html(&page, &request.origin) {
-                    enqueue(&mut queue, &mut seen, link, &request.origin);
-                }
-                let role = classify(&url, &page.title);
-                covered.insert(role);
-                result.roles.entry(role).or_default().push(page.url.clone());
-                result.pages.push(page);
-            }
-            Err(error) => {
-                tracing::debug!(url = %url, error = %error, "页面抓取失败，跳过");
+        let mut target = url;
+        let mut hops = 0usize;
+        loop {
+            if Instant::now() >= deadline {
+                tracing::debug!(url = %target, "跟随跳转时达到总超时上限");
                 result.skipped.push(SkippedPage {
-                    url: url.to_string(),
-                    reason: SKIP_FETCH_FAILED.to_string(),
+                    url: request.origin.to_string(),
+                    reason: SKIP_TOTAL_TIMEOUT.to_string(),
                 });
+                break;
+            }
+            if !robots.is_allowed(target.path()) {
+                tracing::debug!(url = %target, "robots.txt 禁止抓取");
+                result.skipped.push(SkippedPage {
+                    url: target.to_string(),
+                    reason: SKIP_ROBOTS_DISALLOWED.to_string(),
+                });
+                break;
+            }
+
+            match fetch_and_extract(fetcher, &target).await {
+                Ok(page) if page.char_count >= crate::extract::MIN_USABLE_TEXT_CHARS => {
+                    // 302 也是不可信输入：跳到另一个注册域的响应不能当成本站内容
+                    // （同时挡住跳去内网地址的 SSRF 面）。
+                    let final_url = match Url::parse(&page.url) {
+                        Ok(final_url) if same_site(&final_url, &request.origin) => final_url,
+                        _ => {
+                            tracing::debug!(from = %target, to = %page.url, "HTTP 跳转落到站外，拒收");
+                            result.skipped.push(SkippedPage {
+                                url: page.url.clone(),
+                                reason: SKIP_FETCH_FAILED.to_string(),
+                            });
+                            break;
+                        }
+                    };
+                    // 302 / 客户端跳转都可能让不同 URL 落到同一页面：按最终地址去重，
+                    // 否则同一页会重复占配额、正文也会在拼接时重复。
+                    if !fetched_final.insert(page.url.clone()) {
+                        tracing::debug!(url = %page.url, "最终地址与已抓页面重复，不重复计入");
+                        break;
+                    }
+                    for link in discover_from_html(&page, &request.origin) {
+                        enqueue(&mut queue, &mut seen, link, &request.origin);
+                    }
+                    let role = classify(&final_url, &page.title);
+                    covered.insert(role);
+                    result.roles.entry(role).or_default().push(page.url.clone());
+                    result.pages.push(page);
+                    break;
+                }
+                Ok(page) => {
+                    // HTTP 200 但正文为空：先看是不是客户端跳转壳页，是就跟过去。
+                    if hops < MAX_CLIENT_REDIRECTS {
+                        let next = page
+                            .client_redirect
+                            .as_deref()
+                            .and_then(|raw| Url::parse(raw).ok())
+                            .and_then(|next| normalize(&next, &request.origin));
+                        if let Some(next) = next {
+                            tracing::debug!(from = %target, to = %next, "跟随客户端跳转");
+                            target = next;
+                            hops += 1;
+                            continue;
+                        }
+                    }
+                    tracing::debug!(
+                        url = %target,
+                        chars = page.char_count,
+                        "正文为空或过短，跳过该页（不占配额）"
+                    );
+                    result.skipped.push(SkippedPage {
+                        url: target.to_string(),
+                        reason: SKIP_EMPTY_CONTENT.to_string(),
+                    });
+                    break;
+                }
+                Err(error) => {
+                    tracing::debug!(url = %target, error = %error, "页面抓取失败，跳过");
+                    result.skipped.push(SkippedPage {
+                        url: target.to_string(),
+                        reason: SKIP_FETCH_FAILED.to_string(),
+                    });
+                    break;
+                }
             }
         }
     }
@@ -261,7 +419,8 @@ mod tests {
     use super::*;
     use crate::testkit::mount_fixture_site;
     use std::time::Duration;
-    use wiremock::MockServer;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn limits(max_pages: usize) -> FetchLimits {
         FetchLimits {
@@ -444,6 +603,244 @@ mod tests {
             result.urls_for(PageRole::Home).len(),
             1,
             "应从 origin 根开始"
+        );
+    }
+
+    /// 真实站点（ouhor.com）实测：分类页返回 200 + 一行 `window.location`，正文为空。
+    /// 这类壳页必须跟随到真实页面，而不是作为一个「成功但 0 字」的页面占掉配额。
+    const CONTENT: &str =
+        "上海宏宇水泵制造有限公司成立于2006年，专注工业离心泵与潜水排污泵的研发、生产与销售，服务全国二十六个省级行政区。";
+
+    async fn mount_page(server: &MockServer, route: &str, html: &str) {
+        Mock::given(method("GET"))
+            .and(path(route))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw(html.as_bytes().to_vec(), "text/html; charset=utf-8"),
+            )
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn js_redirect_stub_is_followed_instead_of_counting_an_empty_page() {
+        let server = MockServer::start().await;
+        mount_page(
+            &server,
+            "/",
+            "<html><body><script>window.location.href='/about.html';</script></body></html>",
+        )
+        .await;
+        mount_page(
+            &server,
+            "/about.html",
+            &format!("<html><body><main><p>{CONTENT}</p></main><a href='/contact.html'>联系</a></body></html>"),
+        )
+        .await;
+        mount_page(
+            &server,
+            "/contact.html",
+            &format!("<html><body><main><p>{CONTENT}</p></main></body></html>"),
+        )
+        .await;
+
+        let origin = Url::parse(&server.uri()).unwrap();
+        let result = crawl_site(&fetcher(3), &CrawlRequest::new(origin.clone()), &limits(3)).await;
+
+        assert!(
+            result
+                .pages
+                .iter()
+                .all(|page| page.char_count >= crate::extract::MIN_USABLE_TEXT_CHARS),
+            "不得把 0 字壳页记成成功页面：{result:?}"
+        );
+        assert!(
+            result
+                .pages
+                .iter()
+                .any(|page| page.url.ends_with("/about.html")),
+            "应跟随跳转抓到真实页面：{result:?}"
+        );
+        assert!(
+            result.skipped.is_empty(),
+            "跟随跳转不应记成跳过：{result:?}"
+        );
+        assert_eq!(result.page_count(), 2, "壳页不占配额：{result:?}");
+    }
+
+    #[tokio::test]
+    async fn blank_page_is_skipped_and_does_not_consume_the_page_budget() {
+        let server = MockServer::start().await;
+        mount_page(
+            &server,
+            "/",
+            &format!("<html><body><a href='/blank.html'>空白</a><a href='/about.html'>关于</a><p>{CONTENT}</p></body></html>"),
+        )
+        .await;
+        mount_page(
+            &server,
+            "/blank.html",
+            "<html><body><div id='app'></div></body></html>",
+        )
+        .await;
+        mount_page(
+            &server,
+            "/about.html",
+            &format!("<html><body><main><p>{CONTENT}</p></main></body></html>"),
+        )
+        .await;
+
+        let origin = Url::parse(&server.uri()).unwrap();
+        let result = crawl_site(&fetcher(2), &CrawlRequest::new(origin), &limits(2)).await;
+
+        assert_eq!(result.page_count(), 2, "空白页不得占掉配额：{result:?}");
+        assert!(result
+            .pages
+            .iter()
+            .any(|page| page.url.ends_with("/about.html")));
+        let blank = result
+            .skipped
+            .iter()
+            .find(|page| page.url.ends_with("/blank.html"))
+            .unwrap_or_else(|| panic!("空白页应记入 skipped：{result:?}"));
+        assert_eq!(blank.reason, SKIP_EMPTY_CONTENT);
+    }
+
+    /// 首页 302 到 `/home.html` 后，页面里又链回 `/home.html`：同一最终地址只能算一页。
+    #[tokio::test]
+    async fn redirect_collisions_do_not_duplicate_pages() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(302).insert_header("location", "/home.html"))
+            .mount(&server)
+            .await;
+        mount_page(
+            &server,
+            "/home.html",
+            &format!(
+                "<html><body><a href='/home.html'>自己</a><a href='/about.html'>关于</a><p>{CONTENT}</p></body></html>"
+            ),
+        )
+        .await;
+        mount_page(
+            &server,
+            "/about.html",
+            &format!("<html><body><main><p>{CONTENT}</p></main></body></html>"),
+        )
+        .await;
+
+        let origin = Url::parse(&server.uri()).unwrap();
+        let result = crawl_site(&fetcher(3), &CrawlRequest::new(origin), &limits(3)).await;
+
+        assert_eq!(result.page_count(), 2, "重定向落点不得重复计入：{result:?}");
+        let home_hits = result
+            .pages
+            .iter()
+            .filter(|page| page.url.ends_with("/home.html"))
+            .count();
+        assert_eq!(home_hits, 1, "同一最终地址只应出现一次：{result:?}");
+    }
+
+    /// 302 跳到另一个注册域（或内网）时不能把目标内容当成本站页面。
+    #[tokio::test]
+    async fn cross_site_http_redirect_is_rejected() {
+        let server = MockServer::start().await;
+        let port = Url::parse(&server.uri()).unwrap().port().unwrap();
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("location", format!("http://localhost:{port}/other")),
+            )
+            .mount(&server)
+            .await;
+        mount_page(
+            &server,
+            "/other",
+            &format!("<html><body><main><p>{CONTENT}</p></main></body></html>"),
+        )
+        .await;
+
+        let origin = Url::parse(&server.uri()).unwrap();
+        let result = crawl_site(&fetcher(1), &CrawlRequest::new(origin), &limits(1)).await;
+
+        assert_eq!(result.page_count(), 0, "站外落点不得计入：{result:?}");
+        assert!(
+            result
+                .skipped
+                .iter()
+                .any(|page| page.reason == SKIP_FETCH_FAILED),
+            "站外跳转应记 fetch_failed：{result:?}"
+        );
+    }
+
+    /// 超大首页不能把「关于 / 产品 / 联系」的预算全吃掉。
+    #[test]
+    fn combined_text_gives_every_page_a_share() {
+        let mut result = CrawlResult::default();
+        let page = |url: &str, text: &str| crate::extract::ExtractedPage {
+            url: url.to_string(),
+            title: String::new(),
+            main_text: text.to_string(),
+            links: Vec::new(),
+            char_count: text.chars().count(),
+            client_redirect: None,
+        };
+        let home_text = "首页正文".repeat(2_000);
+        result.pages = vec![
+            page("https://a.example/", &home_text),
+            page("https://a.example/about.html", "关于我们"),
+            page("https://a.example/contact.html", "联系电话 400-820-6688"),
+        ];
+        result
+            .roles
+            .insert(PageRole::Home, vec!["https://a.example/".to_string()]);
+        result.roles.insert(
+            PageRole::About,
+            vec!["https://a.example/about.html".to_string()],
+        );
+        result.roles.insert(
+            PageRole::Contact,
+            vec!["https://a.example/contact.html".to_string()],
+        );
+
+        let text = result.combined_text(300);
+        assert!(text.contains("关于我们"), "关于页被首页挤掉了：{text}");
+        assert!(
+            text.contains("联系电话 400-820-6688"),
+            "联系页被首页挤掉了：{text}"
+        );
+        assert!(text.chars().count() <= 300, "不得超过预算：{text:?}");
+    }
+
+    /// 每个页面都重复同一段导航时，拼接语料不应把预算耗在重复行上。
+    #[test]
+    fn combined_text_drops_lines_repeated_across_pages() {
+        let mut result = CrawlResult::default();
+        let page = |url: &str, text: &str| crate::extract::ExtractedPage {
+            url: url.to_string(),
+            title: String::new(),
+            main_text: text.to_string(),
+            links: Vec::new(),
+            char_count: text.chars().count(),
+            client_redirect: None,
+        };
+        result.pages = vec![
+            page("https://a.example/", "首页\n产品\n共同行"),
+            page("https://a.example/about.html", "首页\n关于我们\n共同行"),
+        ];
+        result
+            .roles
+            .insert(PageRole::Home, vec!["https://a.example/".to_string()]);
+        result.roles.insert(
+            PageRole::About,
+            vec!["https://a.example/about.html".to_string()],
+        );
+
+        assert_eq!(
+            result.combined_text(usize::MAX),
+            "首页\n产品\n共同行\n关于我们"
         );
     }
 }

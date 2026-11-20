@@ -186,7 +186,13 @@ async fn autobuild_reports_an_empty_site_as_code_plus_params() {
         skipped.is_empty()
             || skipped.split("; ").all(|entry| {
                 let reason = entry.rsplit(' ').next().unwrap_or_default();
-                ["total_timeout", "robots_disallowed", "fetch_failed"].contains(&reason)
+                [
+                    "total_timeout",
+                    "robots_disallowed",
+                    "fetch_failed",
+                    "empty_content",
+                ]
+                .contains(&reason)
             }),
         "每条都必须是 `{{url}} {{稳定记号}}`：{skipped:?}"
     );

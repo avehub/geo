@@ -236,7 +236,7 @@ impl EntityCardService {
             let Ok(url) = Url::parse(&asset.url) else {
                 continue;
             };
-            if url.host_str() != origin.host_str() || seeds.contains(&url) {
+            if !geo_crawler::same_site(&url, origin) || seeds.contains(&url) {
                 continue;
             }
             seeds.push(url);

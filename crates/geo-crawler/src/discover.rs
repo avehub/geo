@@ -104,14 +104,39 @@ fn match_keywords(haystack: &str) -> Option<PageRole> {
         .map(|(role, _)| *role)
 }
 
-/// 归一化并做同域校验：非 http(s)、跨域一律返回 `None`。
+/// 判断两个 URL 是否属于同一站点：主机相等，或只差一个 `www.` 前缀。
+///
+/// 国内企业站极常见 `example.com` → `www.example.com` 的跳转。若严格按 `Url::origin()`
+/// 比较，用户在自动建档里填裸域名时，首页跳过去之后**所有站内链接都会被当成跨域丢掉**，
+/// 最终只抓到一页导航。协议不参与比较（http → https 是同一站点），
+/// 同协议时仍比较端口，避免把同主机的另一个本地服务当成站内页面。
+pub fn same_site(left: &Url, right: &Url) -> bool {
+    if !matches!(left.scheme(), "http" | "https") || !matches!(right.scheme(), "http" | "https") {
+        return false;
+    }
+    if left.scheme() == right.scheme()
+        && left.port_or_known_default() != right.port_or_known_default()
+    {
+        return false;
+    }
+    match (left.host_str(), right.host_str()) {
+        (Some(left), Some(right)) => strip_www(left) == strip_www(right),
+        _ => false,
+    }
+}
+
+fn strip_www(host: &str) -> &str {
+    host.strip_prefix("www.").unwrap_or(host)
+}
+
+/// 归一化并做同站校验：非 http(s)、跨站点一律返回 `None`。
 ///
 /// 去片段、去空查询串，保证同一页面的不同链接写法只抓一次。
 pub fn normalize(url: &Url, origin: &Url) -> Option<Url> {
     if !matches!(url.scheme(), "http" | "https") {
         return None;
     }
-    if url.origin() != origin.origin() {
+    if !same_site(url, origin) {
         return None;
     }
     let mut normalized = url.clone();
@@ -293,6 +318,31 @@ mod tests {
         let discovered = discover_from_html(&page, &url("https://a.example/"));
         assert_eq!(discovered.len(), 1);
         assert_eq!(discovered[0].as_str(), "https://a.example/about.html");
+    }
+
+    #[test]
+    fn www_and_bare_hosts_are_the_same_site() {
+        let bare = url("https://a.example/");
+        let www = url("https://www.a.example/");
+        assert!(same_site(&bare, &www));
+        assert!(same_site(&www, &bare));
+        assert_eq!(
+            normalize(&url("https://www.a.example/about"), &bare).map(|u| u.to_string()),
+            Some("https://www.a.example/about".to_string())
+        );
+        assert_eq!(
+            normalize(&url("http://a.example/about"), &bare).map(|u| u.to_string()),
+            Some("http://a.example/about".to_string()),
+            "http → https 视为同一站点"
+        );
+        assert!(!same_site(&bare, &url("https://b.example/")));
+    }
+
+    #[test]
+    fn same_site_keeps_different_ports_apart() {
+        let one = url("http://127.0.0.1:8001/");
+        let two = url("http://127.0.0.1:8002/");
+        assert!(!same_site(&one, &two));
     }
 
     #[test]

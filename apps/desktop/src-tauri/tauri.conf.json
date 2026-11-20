@@ -51,7 +51,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "RWTKQ/RuxSpHsfOXmA0hh8mUQj7DjQRdM1KMWfpPYRZDolKfpS2Sfq1v",
+      "pubkey": "RWR2aUNe55NbjNL118psdfS+tfP7/4K0zI+4BqZIoEkRt+Fquyxgd71u",
       "endpoints": [
         "https://geo_api.gaodekuai.com/client/v1/releases/latest.json"
       ]

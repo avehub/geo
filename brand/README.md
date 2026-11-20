@@ -2,29 +2,42 @@
 
 | 文件 | 说明 |
 |---|---|
-| `icon-source.png` | 1024×1024 RGBA 图标源图（唯一手绘资产），由 `scripts/make-icon.py` 生成 |
-| `../apps/desktop/src-tauri/icons/` | 各平台尺寸产物，由 `tauri icon` 从源图派生，**不要手改** |
+| `icon-source.jpg` | 设计交付原图（2048×2048 JPEG，白底上画蓝色圆角方块） |
+| `icon-source.png` | 1024×1024 RGBA 母版：裁到方块边界、圆角外侧补透明，由脚本生成 |
+| `../apps/desktop/src-tauri/icons/` | 各平台尺寸产物，由 `scripts/make-icon.py` 派生，**不要手改** |
 
 ## 图形语义
 
-- 深蓝渐变圆角方块：桌面应用的"窗口/画布"。
-- 白色雷达弧 + 圆点：GEO 的核心动作——在生成式引擎里"被看见"。
-- 三根上升柱（白/青）：可见度与提及率的提升趋势。
+- 蓝色圆角方块：桌面应用的"窗口/画布"。
+- 白色「稿得」字标 + 黄色对勾：稿得快品牌字标，"内容交付"的确认动作。
+- 右下 `GEO` + 放大镜：生成式引擎优化（被看见、被引用）。
+- 底部「生成式搜索引擎优化」为品牌副标题。
 
 不含任何排名承诺或绝对化用语（`AGENTS.md` 规则 6）。
 
 ## 重新生成
 
-改样式时只改 `scripts/make-icon.py`（纯标准库，无第三方依赖），然后：
+只改 `icon-source.jpg`（或整体换图）后重跑：
 
 ```bash
-python3 scripts/make-icon.py                                   # 重画 1024×1024 源图
-mise exec -- pnpm --dir apps/desktop/ui run tauri icon \
-  -o ../src-tauri/icons "$(pwd)/brand/icon-source.png"          # 派生全部尺寸
-scripts/record-fixtures.sh check                                # 顺手跑一遍离线自检
+python3 scripts/make-icon.py          # 需要 Pillow，仅开发期依赖
+scripts/record-fixtures.sh check      # 顺手跑一遍离线自检
 ```
 
-注意 `tauri icon` 的路径参数要传**绝对路径**（pnpm 会把 cwd 切到 `apps/desktop/ui`）。
+脚本一次产出：`brand/icon-source.png` 母版、Windows `icon.ico`、macOS `icon.icns`、
+Tauri 的 PNG 尺寸、Microsoft Store 磁贴（`Square*Logo.png` / `StoreLogo.png`），
+以及 `android/` `ios/` 里的移动端产物（桌面构建不引用，只为保持一致）。
 
-派生产物会覆盖 `apps/desktop/src-tauri/icons/` 下的 png/icns/ico 与 android/ios 目录，
-提交前用 `git status` 确认只多了预期的图标文件。
+## Windows 任务栏三条硬约束
+
+1. **ICO 第 0 帧必须是 256×256。** `tauri-codegen` 在 Windows 上把 `icon.ico` 的
+   **第一个 entry** 解码成窗口图标（也就是任务栏图标），它不挑最大帧。旧图标第 0 帧
+   只有 32×32，高 DPI 任务栏只能把它放大成糊图。脚本按 256 → 16 降序写帧。
+2. **帧必须是未压缩 BMP。** Windows 外壳与 `ico` crate 对 BMB 帧的兼容性最好；
+   脚本不写 PNG 帧，避免出现"exe 有图标、任务栏却是空白"的情况。
+3. **圆角外必须透明。** 原图圆角外是白底，直接缩小会在任务栏/标题栏留下白方块；
+   母版按原图圆角半径重建 alpha 通道。
+
+改完图标后如果 Windows 仍显示旧图标，那是资源管理器图标缓存：
+`ie4uinit.exe -show` 或重启 explorer 即可；正式发布请同时跑
+`mise run version:set -- X.Y.Z` 让安装包与 exe 时间戳一起变化。

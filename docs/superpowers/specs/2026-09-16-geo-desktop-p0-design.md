@@ -152,9 +152,9 @@ pub enum SampleSizeGrade { Sufficient /*>=60*/, Directional /*30..59*/, Insuffic
 - mise 任务为唯一命令入口：`doctor/install/dev/web/test/lint/build/check`。
 
 **FR-B2 桌面壳**
-- Tauri 2 应用，窗口标题「稿得快 GEO」，默认尺寸 1280×800，最小 1024×700；`devUrl = http://localhost:1420`，`frontendDist = ../ui/dist`。
+- Tauri 2 应用，窗口标题「搞钱GEO」，默认尺寸 1280×800，最小 1024×700；`devUrl = http://localhost:1420`，`frontendDist = ../ui/dist`。
 - 插件：`tauri-plugin-dialog`（导入导出选路径，**导出必须走它**：WKWebView 不支持 `<a download href="blob:">`，前端点下载会静默失败）、`tauri-plugin-opener`（打开外部链接）。
-- 日志：`tracing` + `tracing-appender`，输出 stdout + `app_log_dir` 下的每日滚动文件（`gdk-geo.log.YYYY-MM-DD`）；级别开关 `GEO_LOG` > `RUST_LOG` > `info`。**不使用 `tauri-plugin-log`**，理由见 §7 决策记录。
+- 日志：`tracing` + `tracing-appender`，输出 stdout + `app_log_dir` 下的每日滚动文件（`gq-geo.log.YYYY-MM-DD`）；级别开关 `GEO_LOG` > `RUST_LOG` > `info`。**不使用 `tauri-plugin-log`**，理由见 §7 决策记录。
 - capability 文件最小权限：仅允许本项目使用的命令与上述插件动作。
 
 **FR-B3 存储**

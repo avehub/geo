@@ -31,7 +31,7 @@
 **Interfaces:** Produces 可 `cargo check --workspace` 与 `pnpm build` 的空骨架；`geo_desktop_lib::run()` 入口。
 
 - [ ] 写 workspace 与五个成员 manifest（统一 `[workspace.dependencies]`）
-- [ ] 写 Tauri 配置：`productName=gdk-geo`、`identifier=com.gaodekuai.geo`、窗口 1280×800/min 1024×700、`devUrl=http://localhost:1420`、`frontendDist=../ui/dist`
+- [ ] 写 Tauri 配置：`productName=GQ-GEO`、`identifier=com.gaodekuai.geo`、窗口 1280×800/min 1024×700、`devUrl=http://localhost:1420`、`frontendDist=../ui/dist`
 - [ ] 生成应用图标：`pnpm --dir apps/desktop/ui exec tauri icon brand/icon-source.png`
 - [ ] `mise exec -- cargo check --workspace` 通过
 - [ ] `pnpm --dir apps/desktop/ui run build` 通过

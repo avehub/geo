@@ -1,21 +1,27 @@
 # 当前状态与里程碑回填
 
-> **状态快照**：2026-11-18（命令面 120 条：2026-11-06 核对的 108 条 + Task 9 的 12 条 `remote_*`）。本文是当前状态与执行回填，**不是需求真值源**；冲突时以产品定义、对应 spec、差异台账为准。
+> **状态快照**：2026-11-20（命令面 121 条：2026-11-18 的 120 条 + 元宝纯登录 `collection_engine_login`）。本文是当前状态与执行回填，**不是需求真值源**；冲突时以产品定义、对应 spec、差异台账为准。
 >
 > **何时读**：改 demo、命令面、站长数据、项目概览、文章管理、站点接入前。
 >
 > **更新纪律**：命令增删时同步本文「当前命令面」表与差异台账；不要把未发生或无法验证的状态写进来。
 
-## 1. 当前命令面（2026-11-18 核对）
+> **2026-11-20 品牌更名**：展示名 `稿得快GEO` → `搞钱GEO`（英文展示名 `GQ-GEO`）；`productName`
+> 由 `gdk-geo` 改为 `GQ-GEO`，产物名随之变成 `GQ-GEO_*.dmg` / `GQ-GEO_*.exe` / `GQ-GEO_*.msix`。
+> **有意未改**：bundle identifier `com.gaodekuai.geo`、钥匙串 service、`geo_api.gaodekuai.com`、
+> MSIX Identity `F73A5A8D.GEO`、`~/.config/gdk-geo/` 凭据路径——它们是已装用户的数据目录/凭据/服务端
+> 契约，改名会丢数据或断更新。Store 侧保留名仍是 `稿得快GEO`；提交新包前需在 Partner Center 保留 `搞钱GEO`。
+
+## 1. 当前命令面（2026-11-20 核对）
 
 | 项 | 数量 | 真值源 |
 |---|---:|---|
-| `IPC_COMMANDS` | 120 | `apps/desktop/ui/src/api/client.ts` |
-| `demoBackend` 键 | 120 | `apps/desktop/ui/src/demo/backend.ts` |
-| Rust `generate_handler![]` | 120 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
+| `IPC_COMMANDS` | 121 | `apps/desktop/ui/src/api/client.ts` |
+| `demoBackend` 键 | 121 | `apps/desktop/ui/src/demo/backend.ts` |
+| Rust `generate_handler![]` | 121 | `apps/desktop/src-tauri/src/ipc/mod.rs` |
 | demo-only | 0 | `contracts/ipc-command-surface.json` 的 `pending` |
 
-**120 = 120 条 Rust + 0 条 demo-only。** `demoBackend` 必须 120 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
+**121 = 121 条 Rust + 0 条 demo-only。** `demoBackend` 必须 121 条全覆盖（漏一条 `tsc -b` 就红）；桌面端点进 demo-only 命令报 `ipc/unknown_command`，按规则 8 **不屏蔽**。
 
 ### demo-only 族
 
@@ -59,13 +65,13 @@
 - **公共检查码去 demo 化**：`site_cms_not_configured` / `search_binding_blocked` 的文案不再夹带「演示模式不收密码 / 不发请求」；WordPress 通道说明也改成运行时中立，demo 的凭据边界只由 `site.channels.demoCredentials` 承担。
 - **测试**：demo 与 tauri 两侧分别钉住（`*.demo.test.tsx` / `*.live.test.tsx`），设置段测试不再用 demo 文案断言 tauri 运行时。
 
-### 2026-11-19 demo 提示收口：只保留全局细条
+### 2026-11-19 demo 提示全部移除
 
-- **产品裁定**：模块页与弹窗不再重复「演示模式 / 预置样本 / 不调模型 / 不联网 / 不收凭据 / 不写钥匙串」提示；统一由 `components/ui/DemoModeStrip.tsx` 的 32px 细条 + `demo.aboutBody` 弹层承担。
+- **产品裁定**：模块页、弹窗与全局框架都不再显示「演示模式 / 预置样本 / 不调模型 / 不联网 / 不收凭据 / 不写钥匙串」提示；原顶部 32px `DemoModeStrip` 细条与其 `demo` 词典一并删除。
 - **已移除**：FAQ / 关键词 / 知识库 / 行动 / 诊断 / 解析 / 报告 / 采集 / 站点 / 站长数据 / 文章管理 / 组合总览 / 自动采集 / 设置各段的页头与页内提示，以及 FAQ、关键词、知识库、文稿、补丁、采集、纠正等弹窗 / 抽屉的演示提示。
-- **保留**：运行时中立的能力与合规说明（例如「未执行合规扫描」「{{format}} 暂未接入导出」「生成内容默认待人工审核」）；demo 专属行为差异仍按 `runtime` 切换，但不再重复「演示模式」字样。
-- **唯一真值**：`demo.aboutBody` 记完整边界——静态种子、刷新即重置、不触达真实引擎 / 线上站点、不调模型、不做合规扫描、密钥不入钥匙串、排期不自动运行。
-- **测试**：各页面 / 弹窗测试从「demo 文案必须出现」改为「页面不再出现 `演示模式`」；`DemoModeStrip.test.tsx` 正向钉住 `aboutBody` 的完整口径。
+- **保留**：运行时中立的能力与合规说明（例如「未执行合规扫描」「{{format}} 暂未接入导出」「生成内容默认待人工审核」）；demo 专属行为差异仍按 `runtime` 切换，但不再出现「演示模式」字样。
+- **差异记录**：demo 与真后端的边界只保留在本文与差异台账里，不再通过界面提示承担。
+- **测试**：各页面 / 弹窗测试从「demo 文案必须出现」改为「页面不再出现 `演示模式`」；`AppLayout.test.tsx` 反向钉住框架不再渲染 `role="note"` 的演示细条。
 
 ### 2026-11-06 百度站长路径 C：控制系统 Chrome（命令面 106 → 108）
 
@@ -85,7 +91,7 @@
 ## 2. 当前 demo 边界
 
 - **领域算法**：去重率、字段完整率、样本量分级、机会判定等只在 Rust 纯函数里真算；demo 只呈现预置值或静态清单（规则 9）。
-- **站点接入**：demo 不真的改线上站点；`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成交接文件。模块页不再重复演示提示，统一由全局 `DemoModeStrip` 说明；站点页保留运行时中立的交接说明。
+- **站点接入**：demo 不真的改线上站点；`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成交接文件。演示提示已全部移除；站点页保留运行时中立的交接说明。
 - **文章管理**：demo 没有真定时任务；桌面端有一个 **60 秒轮询**的排期扫描器（启动即跑一次，之后每分钟扫 `enabled=1 AND next_run_at <= now`），到点调模型生成文章并把排期推进；标题重复时不新增文章但照常推进，避免每分钟重试。生成物一律 `pending_review`。
 - **站长数据**：demo 的 OAuth 一条都没实现；Tauri 侧 2026-11-06 起支持 GSC OAuth 拉数。demo 仍只走导入 / 填报 / 汇总 / 筛选 / 机会处置。归一 / 求和 / 重算 / 筛选 / 区间收敛在前端 `api/search-compose.ts` 真做；机会清单是静态 6 条。
 - **项目概览**：M9 组合只有数据层、没有页面；`summarizePortfolio` 只给计数 + 每个指标的 min/median/max 分布 + 逐项目行。
@@ -184,7 +190,7 @@
 - 根因：后端的接入要求只写在 Rust 里——`CollectionService::engine_bundle` 按引擎取对应服务商
   的钥匙串位（`secret_for_provider`），取不到就回 `LoginRequired`；元宝没有 Key，靠本机浏览器
   扫码登录态。界面对这张映射一无所知，只能把「需要登录」四个字原样端出来。
-- 本轮改动（**命令面不变，仍 120 条**）：
+- 本轮改动（**命令面 120 → 121**，新增 `collection_engine_login`）：
   - 新增 `ui/src/api/engine-access.ts`：引擎 → 必需钥匙串位 / 浏览器登录的唯一映射
     （`doubao→volcengine_ark`、`kimi→moonshot`、`qwen→ali_bailian`、`baidu_ai→baidu_qianfan`、
     `deepseek→deep_seek`、`metaso→metaso` **加**当前对话模型、`yuanbao→browser_login`），
@@ -199,6 +205,13 @@
     元宝的失败任务把「重跑」写作「登录并重跑」（重跑会打开浏览器窗口等待扫码）。
   - 排一轮采集弹窗：勾选引擎时先做预检，确认缺 Key 的引擎就地警告（不拦排队），
     并给「去接入」入口——避免整轮跑完才发现某几家全失败。
+  - **纯登录按钮（2026-11-20 追加）**：新增 `collection_engine_login(engine)`（Rust + demo 同步，
+    第 121 条）。当前只接受 `yuanbao`：用系统 Chrome 以 `browser_profile_dir/yuanbao` 打开元宝页后
+    **立即返回**（不进 CDP、不提交问题、不 kill 窗口），用户自己扫码即可；登录态与采集流程共用，
+    之后排一轮或重跑任务直接复用。非元宝引擎回 `validation/failed`（`engine/not_allowed`）；
+    Store 版按 B8 回 `channel/unsupported_in_store_build`；浏览器不可用回
+    `browser/unavailable`（`browser_disabled` / `chrome_not_found` / `launch_failed`）。
+    demo 后端明确拒绝（`browser/unavailable` + `browser_disabled`），不开窗口、不伪造登录。
 - demo 同步：`demo/handlers/secret.ts` 的 provider 判定改为 `requireSecretProvider`，
   镜像 Rust `parse_secret_provider`（模型厂商 ∪ `metaso` / `google_oauth` / `gsc` / `bing_wmt` /
   `bing_oauth`）。此前 demo 只认模型厂商，设置页「采集与频控」与本次接入弹窗里的 `metaso`
@@ -206,7 +219,8 @@
   不是新的 demo-only 差异）。
 - 验收：`api/engine-access.test.ts`（映射/状态/聚合）、`CollectionPage.test.tsx` 新增 4 条
   （提示条 + 任务行入口 / 焦点展开 / 配 Key 后状态翻转 / 排一轮预检）、`demo/handlers/secret.test.ts`
-  新增 2 条（metaso 密钥位、仍不能当模型厂商）。
+  新增 2 条（metaso 密钥位、仍不能当模型厂商）、`EngineAccessModal.test.tsx` 2 条（纯登录成功 /
+  浏览器不可用）、Rust `browser::open_login_window` 2 条 + `browser_login_engine` 1 条。
 
 ### M1.5 素材层（关键词库 / FAQ 常见问题库）
 
@@ -220,7 +234,7 @@
 - 规格：`docs/superpowers/specs/2026-09-30-site-connect-patch-bench-design.md`。
 - 先读该文 §2 的全球市场调研与 §3 的裁定：覆盖层 / CMS 连接器 / 仓库代理 / 落地包交接四条路径各自的代价都在里面。
 - 二级项「站点接入」排在**行动中心之后、报告之前**。
-- 演示模式**不会**真的改到线上站点：`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成可下载的交接文件。演示边界统一由全局 `DemoModeStrip` 说明（2026-11-19 产品裁定），页面不再重复提示。
+- 演示模式**不会**真的改到线上站点：`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成可下载的交接文件。演示提示已按 2026-11-19 产品裁定全部移除。
 - 该轮新增 `site_*` 共 11 条，**只有 demo 侧实现**；连同前面几轮当时共 43 条，差异见 §4e E-55…E-57。
 - E-56 记的是凭据面：真后端的 `secret_set` 只认 `provider`、`parse_secret_ref` 只吃两段，站点通道那个三段引用串在 Rust 侧还没有落点。
 
@@ -246,7 +260,7 @@
 
 **归一、机会与分布**
 - **归一 / 求和 / 重算 / 筛选 / 区间收敛在前端 `api/search-compose.ts` 真做**（DR-99，demo 与桌面端将来共用同一份纯函数）。
-- **机会清单是静态 6 条**（DR-100 的判定是 `geo-domain` 纯函数，demo 不算，规则 9）⇒ 这一页“**汇总数字真变、机会清单不变**”的不对称是刻意的；说明已收口到全局 `DemoModeStrip` 的 `demo.aboutBody`，页面不再重复。
+- **机会清单是静态 6 条**（DR-100 的判定是 `geo-domain` 纯函数，demo 不算，规则 9）⇒ 这一页“**汇总数字真变、机会清单不变**”的不对称是刻意的；演示提示已按 2026-11-19 产品裁定全部移除。
 - 接入建议（DR-111）的分布数字走 `search_board` 的 `traffic_split`（demo 是只读种子表，真后端由 `analytics` 组的**来源分析**算出）；**没有分布就显示空态，绝不端一份内置的市场份额推荐**。
 - **四条会被反复踩的口径**（产品负责人 2026-10-12 裁定后的版本）：
   1. 二级项叫**「站长数据」**（en `Webmaster Data`），排在**解析与核查之后、诊断与归因之前**（DR-91）。
@@ -422,6 +436,8 @@
   直下载 NSIS 通道短期**不签名**（下载页如实写明提示与绕过步骤），后续补商业 CA 的 OV 云签名。
 - **帐户实测**：Partner Center 个人开发者帐户状态=活动（卖家 ID 97279770、发布者显示名"众友合"）；
   `稿得快GEO` 名称已保留（Store ID 9MSXNS1VDQ50、PFN `F73A5A8D.GEO_hbxpqea2bc6ae`）。
+  **2026-11-20 更名**：产品改名为 `搞钱GEO`（英文 `GQ-GEO`）；`搞钱GEO` 这个名称需在
+  Partner Center 重新保留后，清单里的 `DisplayName` 才能与之逐字一致（详见发布规格 §2 更名附注）。
   首版先用个人帐户跑通；公司帐户（邓白氏编号已取得）后续新建承接品牌——个人→公司**不可转换**。
 - **仓库落地**：`release.yml` 新增 `msix` job（`tauri build --bundles none` →
   `scripts/msix-manifest.sh` 渲染清单 → `makeappx pack`；产物**仅** workflow artifact
@@ -447,7 +463,7 @@
   隐私政策 §5.4 / §6 增加「通道差异」标注（仅直下载版含这两条通道）。
 - **CI 实测两轮**：run 43373812483 暴露仓库 Workflow token 只读（已 API 改 write）与 rust-toolchain.toml
   覆盖 dtolnay targets（已显式 `rustup target add`）；run 43378551722 暴露 `--no-bundle` 裸二进制是
-  cargo 包名 `geo-desktop.exe`（复制时改名 gdk-geo.exe）。msix 产物路径 `msix-out/`。
+  cargo 包名 `geo-desktop.exe`（复制时改名 GQ-GEO.exe）。msix 产物路径 `msix-out/`。
 - **Store 控制台进度**：类别=商务、隐私=是（策略本体待法务）、年龄分级 IARC 3+ 已保存、
   提交选项=手动发布、定价=免费+全球；截图 4 张 1920×1080 存 `brand/store-screenshots/`；
   一览文案草稿 `brand/store-listing.zh-CN.md`。**程序包未上传**（等 tag 重跑 CI 出 msix）。

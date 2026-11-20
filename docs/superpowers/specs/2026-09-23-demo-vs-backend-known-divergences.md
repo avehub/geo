@@ -3,7 +3,7 @@
 > **状态**：正式交底产出物（计划 `docs/superpowers/plans/2026-09-18-plan-a-i18n-foundation-and-demo-backend.md` §A-4 第 39 条）
 > **基线 commit**：`08790a4`（分支 `feat/settings-redesign-demo-i18n`）· **行号核准日期**：2026-09-23
 > **门禁**：cargo 22 targets / 515 passed / 0 failed；vitest 42 files / 635 tests；`CHECK_EXIT=0`
-> 🔴 **2026-11-19 界面口径更新**：demo 提示统一收口到全局 `DemoModeStrip`（32px 细条 + `demo.aboutBody`）；本文各条提到的 `staticNote` / `demoBody` / `demoNotice` 等**模块级常驻提示已不再渲染**，但对应的 demo 与真后端能力差异本身不变。
+> 🔴 **2026-11-19 界面口径更新**：所有 demo 提示已从界面移除（含原顶部 32px `DemoModeStrip` 细条）；本文各条提到的 `staticNote` / `demoBody` / `demoNotice` 等**提示已不再渲染**，但对应的 demo 与真后端能力差异本身不变。
 >
 > **2026-09-28 增补（§4b · E-33 … E-45）**：M3–M7 demo 闭环那一轮新增 13 条，设计规格见
 > `2026-09-28-demo-m3-m7-closed-loop-design.md`。该轮的 `mise run check` **全绿**（`CHECK_EXIT=0`）：

@@ -29,13 +29,20 @@ Windows 11 开了 Smart App Control 会**直接拒绝运行**、下载页与隐�
 
 ## 2. 裁定（DR-R 系列）
 
+> **更名附注（2026-11-20）**：产品展示名 `稿得快GEO` → `搞钱GEO`（英文 `GQ-GEO`），`productName`
+> 改为 `GQ-GEO`，安装包与 app 文件名统一为 `GQ-GEO_*`。以下三类**不改**：① bundle identifier
+> `com.gaodekuai.geo`（已装用户的数据目录、钥匙串、macOS TCC 授权都绑在它上面）；② 服务端域名
+> `geo_api.gaodekuai.com`；③ MSIX `Identity/Name = F73A5A8D.GEO`（Partner Center 分配，改不了）。
+> 另外 `Properties/DisplayName` 必须与 Partner Center **保留的名称**逐字一致——`搞钱GEO` 需先重新保留，
+> 否则 MSIX 认证会失败。本文 2026-11-10 的实测记录保留当时产物名（`gdk-geo_0.1.0_*`）。
+
 ### DR-R1 许可证：专有（All Rights Reserved）+ 仓库可公开阅读
 
 `Cargo.toml` 的 `workspace.package.license` 本来就是 `"UNLICENSED"`，与之一致。
 这是面向国内中小企业的**付费桌面工具**，公开源码只用于「客户可查看、可审计数据流向」，
 不等于授予复制/分发/二次商用权利。
 
-- `LICENSE` 写专有许可全文（© 2026 稿得快 / avehub，保留所有权利）。
+- `LICENSE` 写专有许可全文（© 2026 搞钱GEO / avehub，保留所有权利）。
 - `Cargo.toml` 的 `license = "UNLICENSED"` **保持不变**（SPDX 里 `UNLICENSED` 就是「未授予开源许可」的正确表达）。
 - **改主意的成本**：若日后要转开源，只需替换 `LICENSE` 全文 + 改 `Cargo.toml` 的 `license` 为 `Apache-2.0`/`MIT` + 改 README 许可证段。**注意**：一旦公开发布过专有版本，已分发出去的副本仍受原条款约束；转开源只影响之后的版本。
 - 推荐 Apache-2.0 而非 MIT 的场景：想靠社区贡献获客，且在意**专利授权条款**（MIT 无明示专利授权）。
@@ -64,7 +71,7 @@ Windows 改走 **Microsoft Store MSIX 主通道**（微软重签、免费、无 
    免费、**无 SmartScreen 警告**、Smart App Control 开启的机器可装；开发者注册费已取消
    （2025 免个人、2026-05 免公司）；非游戏类应用可接**自有支付**并保留 100% 收入。
 4. **帐户实测**：Partner Center 个人开发者帐户**状态=活动**（卖家 ID 97279770，发布者显示名"众友合"），
-   `稿得快GEO` 名称已保留（Store ID 9MSXNS1VDQ50）。首版先用个人帐户跑通；公司帐户（邓白氏已备好）
+   `稿得快GEO` 名称已保留（Store ID 9MSXNS1VDQ50；**2026-11-20 更名**后需为 `搞钱GEO` 重新保留）。首版先用个人帐户跑通；公司帐户（邓白氏已备好）
    作为后续品牌升级——个人→公司**不可转换**，需新建帐户并重新保留名称。
 
 落地形态：
@@ -143,7 +150,7 @@ mise run version:check            # 只校验三处是否一致，不一致退�
 
 ```bash
 shasum -a 256 -c SHA256SUMS.txt        # macOS
-certutil -hashfile gdk-geo_0.1.0_x64-setup.exe SHA256   # Windows
+certutil -hashfile GQ-GEO_0.1.0_x64-setup.exe SHA256   # Windows
 ```
 
 ### DR-R8 自动更新推到 0.2，且必须一次性原子开启
@@ -153,7 +160,7 @@ certutil -hashfile gdk-geo_0.1.0_x64-setup.exe SHA256   # Windows
 这是个会让所有人卡住的坑，所以 0.2 开启时必须一个提交里同时做完这五件事：
 
 1. `pnpm --dir apps/desktop/ui add @tauri-apps/plugin-updater`（+ Rust 侧 `tauri-plugin-updater`，`lib.rs` 注册 `.plugin(tauri_plugin_updater::Builder::new().build())`）
-2. `pnpm --dir apps/desktop/ui exec tauri signer generate -w ~/.tauri/gdk-geo-updater.key` 生成 minisign 密钥对；**私钥离线保存 + 进 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`**，公钥进配置
+2. `pnpm --dir apps/desktop/ui exec tauri signer generate -w ~/.tauri/gq-geo-updater.key` 生成 minisign 密钥对；**私钥离线保存 + 进 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`**，公钥进配置
 3. `tauri.conf.json`：`bundle.createUpdaterArtifacts: true` + `plugins.updater.pubkey`（**必须是公钥字符串本身，不能是文件路径**）+ `plugins.updater.endpoints`
 4. `capabilities/default.json` 加 `updater:default` 权限
 5. `release.yml` 的 tauri-action 步骤加 `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 环境变量
@@ -307,7 +314,7 @@ cd - && mise run release:verify         # 核验签名 / 公证 / staple 票据
 
 原"并行推进 Azure Artifact Signing"六步清单**作废**（资格不成立，见 DR-R3 修订）。现行序列：
 
-1. ✅ Partner Center 个人开发者帐户已验证（卖家 ID 97279770，发布者显示名"众友合"）；`稿得快GEO` 名称已保留。
+1. ✅ Partner Center 个人开发者帐户已验证（卖家 ID 97279770，发布者显示名"众友合"）；`稿得快GEO` 名称已保留（2026-11-20 更名后需重新保留 `搞钱GEO`）。
 2. ✅ 仓库侧落地（2026-11-13）：`release.yml` 的 `msix` job + `msix/AppxManifest.xml` 模板 +
    `scripts/msix-manifest.sh` 渲染脚本 + `scripts/tests/msix-manifest.test.sh` 守护测试（已接 `mise run test`）。
 3. 提交首版：补完商店一览 / 属性 / 年龄分级 / **AI 披露** → 下载 `store-msix-x64` artifact 上传 → 认证。
@@ -332,8 +339,8 @@ Mac App Store（MAS）通道整体后移到 0.2+ 立项。理由：0.1 的主分
 
 1. Account Holder 在「商务」模块接受新版 **Paid Applications Schedule**——ASC 硬拦截：
    不接受连新建 App 都不允许（2026-11-13 实测，弹窗原文「你的付费应用程序协议已过期」）；
-2. 建 App 记录：名称 `稿得快GEO`、平台 macOS、Bundle ID `com.gaodekuai.geo`、
-   SKU `gdk-geo-macos`、主语言简体中文；
+2. 建 App 记录：名称 `搞钱GEO`（若沿用已保留的 `稿得快GEO` 则先改显示名）、平台 macOS、Bundle ID `com.gaodekuai.geo`、
+   SKU `gq-geo-macos`、主语言简体中文；
 3. MAS 沙盒化可行性评估（输出 entitlements 对照表与改造清单）；
 4. MAS 构建链：Apple Distribution 证书 + Mac App Store 描述文件 + Transporter 上传 +
    元数据（截屏 / 隐私 URL / 年龄分级）+ 提交审核。
@@ -457,8 +464,8 @@ CI（美区 runner）不受影响。
 6. **`fixtures/` 与 `docs/superpowers/` 的人工通读未做**：DR-R10 要求，目前只做了自动化密钥扫描。
 7. **仓库转 public 的动作本身不可逆**（历史随之公开），属规则 10 的边界，需产品负责人显式确认。
 8. **法务文档尚是草稿**：`docs/legal/*` 有 `【待填：…】` 占位符，未过法务不得对外发布。
-9. **著作权主体名待确认**：`LICENSE` 抬头目前写 `稿得快（gdk_auto_article）`，
-   与 `Cargo.toml` 的 `authors = ["稿得快 <dev@gaodekuai.local>"]` 保持一致。
+9. **著作权主体名待确认**：`LICENSE` 抬头目前写 `搞钱GEO（gdk_auto_article）`，
+   与 `Cargo.toml` 的 `authors = ["搞钱GEO <dev@gaodekuai.local>"]` 保持一致。
    对外发布前应换成**登记的公司全称**（营业执照上的名称），`dev@gaodekuai.local`
    这个 `.local` 邮箱也是占位，须换成真实可达的域名邮箱。
 10. **`SECURITY.md` 的安全联系邮箱是 `【待填】`**：`release-check.sh` 会因此 FAIL。
@@ -500,7 +507,7 @@ CI（美区 runner）不受影响。
 16. **`CollectionService::new` 的截图目录默认值指向 `std::env::temp_dir()`**，与 `state.rs:170`
     的 `<data_dir>/screenshots` 不一致。生产路径全走 `from_state`（已核实 6 处调用点），
     **当前不会真的写到临时目录**；但 `tauri.conf.json` 的 `assetProtocol` scope 里还留着
-    `$TEMP/gdk-geo/**` 这条历史痕迹。建议清理死代码与 scope，以免将来误用。
+    `$TEMP/gq-geo/**` 这条历史痕迹。建议清理死代码与 scope，以免将来误用。
 17. **`services/article_service.rs:9` 的文件头注释已过期**：写「没有后台定时器」，
     但 `lib.rs:79-89` 确实起了 60 秒轮询的 `run_due`。法务文档按代码实际行为写。
 18. **法务文档与 `LICENSE` 内容重叠**：用户协议 §2.6 约定「冲突时以用户协议为准，

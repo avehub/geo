@@ -56,6 +56,10 @@ const FILES: &[(&str, &str)] = &[
     ("state.rs", include_str!("../src/state.rs")),
     ("services/mod.rs", include_str!("../src/services/mod.rs")),
     (
+        "services/generation.rs",
+        include_str!("../src/services/generation.rs"),
+    ),
+    (
         "services/project_service.rs",
         include_str!("../src/services/project_service.rs"),
     ),
@@ -348,6 +352,7 @@ fn the_guard_sees_every_production_site() {
     let expected: &[(&str, usize)] = &[
         ("state.rs", 4),
         ("services/mod.rs", 1),
+        ("services/generation.rs", 0),
         ("services/project_service.rs", 10),
         ("services/project_transfer.rs", 2),
         ("services/prompt_service.rs", 13),

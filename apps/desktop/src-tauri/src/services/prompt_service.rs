@@ -22,8 +22,8 @@ use geo_domain::{
 };
 use geo_llm::{chat_json, ChatMessage, ChatRequest, LlmClient, LlmError};
 use geo_store::{
-    CompetitorRepo, EntityCardRepo, ProjectRepo, PromptSetRepo, PromptSetSummary, SecretStore,
-    SettingsRepo,
+    CompetitorRepo, EntityCardRepo, KbRepo, ProjectRepo, PromptSetRepo, PromptSetSummary,
+    SecretStore, SettingsRepo,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -264,6 +264,24 @@ impl PromptService {
 
         let intents = options.intent_list();
         let context = PromptContext::new(&project, &competitors).with_card(card.as_ref());
+        let kb_entries = KbRepo::new(self.pool.clone())
+            .list_by_project(project_id)
+            .await?;
+        let focus = geo_domain::grounding::focus_terms(&project, card.as_ref());
+        let grounding =
+            geo_domain::grounding::Grounding::build(geo_domain::grounding::GroundingInput {
+                project: &project,
+                card: card.as_ref(),
+                entries: &kb_entries,
+                modules: geo_domain::grounding::GenerationPurpose::Prompt.modules(),
+                focus: &focus,
+                budget: geo_domain::grounding::GroundingBudget::default(),
+            });
+        tracing::info!(
+            project_id = %project_id,
+            grounding = %grounding.summary_zh(),
+            "题库生成上下文已装配"
+        );
         let target = options.effective_target();
         let quota = co_mention_quota(target, context.competitors.len());
 
@@ -273,7 +291,7 @@ impl PromptService {
 
         // 第 2 步：模型按意图分层扩写（不可用即降级）
         match self
-            .expand_with_model(&project, &context, &intents, &candidates)
+            .expand_with_model(&project, &context, &intents, &candidates, &grounding)
             .await
         {
             Ok(items) => {
@@ -401,11 +419,18 @@ impl PromptService {
         context: &PromptContext,
         intents: &[IntentCategory],
         existing: &[PromptItem],
+        grounding: &geo_domain::Grounding,
     ) -> Result<Vec<PromptItem>, IpcError> {
         let client = self.client().await?;
         let request = ChatRequest::new(vec![
             ChatMessage::system(EXPANSION_SYSTEM),
-            ChatMessage::user(expansion_prompt(project, context, intents, existing)),
+            ChatMessage::user(expansion_prompt(
+                project,
+                context,
+                intents,
+                existing,
+                grounding,
+            )),
         ])
         .json();
         let parsed: Vec<ExpansionItem> =
@@ -884,6 +909,7 @@ fn expansion_prompt(
     context: &PromptContext,
     intents: &[IntentCategory],
     existing: &[PromptItem],
+    grounding: &geo_domain::Grounding,
 ) -> String {
     let per_intent = (MAX_MODEL_ITEMS / intents.len().max(1)).max(3);
     let intent_lines: Vec<String> = intents
@@ -905,6 +931,7 @@ fn expansion_prompt(
     format!(
         "品牌：{brand}\n别名：{aliases}\n品类：{category}\n代表产品：{product}\n\
          行业：{industry}\n服务地域：{region}\n竞品：{competitors}\n\n\
+         {grounding}\n\n\
          请按下面的意图分层各补充 prompt：\n{intent_lines}\n\n\
          已有的 prompt（不要重复）：\n{samples}\n\n\
          只输出 JSON 数组。",
@@ -933,6 +960,7 @@ fn expansion_prompt(
         } else {
             samples.join("\n")
         },
+        grounding = grounding.render(),
     )
 }
 
@@ -1194,6 +1222,45 @@ mod tests {
             violation_terms("保证排名第一，全网第一"),
             "保证排名、全网第一、排名第一"
         );
+    }
+
+    #[test]
+    fn expansion_prompt_includes_grounding_blocks() {
+        let project = Project {
+            id: ProjectId::new(),
+            name: "宏宇项目".to_string(),
+            brand_name: "宏宇".to_string(),
+            aliases: vec!["宏宇环保".to_string()],
+            website: Some("https://example.com".to_string()),
+            region: "浙江".to_string(),
+            language: geo_domain::Language::ZhCn,
+            industry: Industry::B2bManufacturing,
+            industry_label: None,
+            tags: vec!["水泵".to_string()],
+            status: geo_domain::ProjectStatus::Active,
+            archived_at: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let context = PromptContext::new(&project, &[]);
+        let grounding = geo_domain::Grounding::build(geo_domain::GroundingInput {
+            project: &project,
+            card: None,
+            entries: &[],
+            modules: &[],
+            focus: &[],
+            budget: geo_domain::GroundingBudget::default(),
+        });
+        let prompt = expansion_prompt(
+            &project,
+            &context,
+            &[IntentCategory::CategoryAwareness],
+            &[],
+            &grounding,
+        );
+        assert!(prompt.contains("【品牌事实（实体卡）】"), "{prompt}");
+        assert!(prompt.contains("引用规则"), "{prompt}");
+        assert!(prompt.contains("品牌：宏宇"), "{prompt}");
     }
 
     #[test]

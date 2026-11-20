@@ -248,37 +248,28 @@ impl KbService {
             .map(|module| module.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        let products = card
-            .as_ref()
-            .map(|card| {
-                card.fields
-                    .products
-                    .iter()
-                    .map(|product| product.name.clone())
-                    .collect::<Vec<_>>()
-                    .join("、")
-            })
-            .unwrap_or_default();
         let existing_titles = existing
             .iter()
             .map(|entry| entry.title.as_str())
             .collect::<Vec<_>>()
             .join("、");
-        let prompt =
-            format!(
-            "企业：{brand}；行业：{industry}；地区：{region}；官网：{website}；产品：{products}\n\
-             已有标题（不要重复）：{existing}\n\
-             请生成最多 {target} 条知识条目，模块只能是：{modules}。\n\
-             每条给出 module、kind（statement/text/link/image/video/file）、title、body_markdown，\
-             可选 url、mime、tags；scenario 只允许用在 sales_script / support_script。\n\
-             要求：不使用“保证排名/第一/最/100%”等绝对化表述；只输出 JSON。",
-            brand = project.brand_name,
-            industry = project.industry.label_zh(),
-            region = project.region,
-            website = project.website.as_deref().unwrap_or("未填写"),
-            products = if products.is_empty() { "未填写" } else { &products },
-            existing = if existing_titles.is_empty() { "无" } else { &existing_titles },
+        let focus = geo_domain::grounding::focus_terms(&project, card.as_ref());
+        let grounding =
+            geo_domain::grounding::Grounding::build(geo_domain::grounding::GroundingInput {
+                project: &project,
+                card: card.as_ref(),
+                entries: &existing,
+                modules: geo_domain::grounding::GenerationPurpose::Knowledge.modules(),
+                focus: &focus,
+                budget: geo_domain::grounding::GroundingBudget::default(),
+            });
+        tracing::info!(
+            project_id = %project_id,
+            grounding = %grounding.summary_zh(),
+            "知识库生成上下文已装配"
         );
+        let prompt =
+            super::generation::kb_prompt(&project, &grounding, &existing_titles, &modules, target);
         let request = ChatRequest::new(vec![
             ChatMessage::system(
                 "你是 GEO 知识库编辑。只输出 JSON，结构为 {\"items\":[{\"module\":\"...\",\"kind\":\"...\",\"title\":\"...\",\"body_markdown\":\"...\",\"scenario\":null}]}。",

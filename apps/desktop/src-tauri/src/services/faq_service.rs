@@ -12,7 +12,9 @@ use geo_domain::{
     ProjectId,
 };
 use geo_llm::{chat_json, ChatMessage, ChatRequest, LlmClient, LlmError};
-use geo_store::{EntityCardRepo, FaqRepo, ProjectRepo, SecretStore, SettingsRepo, StoreError};
+use geo_store::{
+    EntityCardRepo, FaqRepo, KbRepo, ProjectRepo, SecretStore, SettingsRepo, StoreError,
+};
 use serde::Deserialize;
 use sqlx::SqlitePool;
 
@@ -183,35 +185,35 @@ impl FaqService {
             .map(|intent| intent.label_zh())
             .collect::<Vec<_>>()
             .join("、");
-        let products = card
-            .as_ref()
-            .map(|card| {
-                card.fields
-                    .products
-                    .iter()
-                    .map(|product| product.name.clone())
-                    .collect::<Vec<_>>()
-                    .join("、")
-            })
-            .unwrap_or_default();
         let existing_questions = existing
             .iter()
             .map(|item| item.question.as_str())
             .collect::<Vec<_>>()
             .join("、");
-        let prompt =
-            format!(
-            "企业：{brand}；行业：{industry}；地区：{region}；官网：{website}；产品：{products}\n\
-             已有问题（不要重复）：{existing}\n\
-             请生成最多 {target} 条中文 FAQ，意图覆盖：{intents}。\n\
-             问题要像真实用户会问的；答案给可核验的事实与步骤，可用 Markdown 列表。\n\
-             要求：不使用“保证排名/第一/最/100%”等绝对化表述；只输出 JSON。",
-            brand = project.brand_name,
-            industry = project.industry.label_zh(),
-            region = project.region,
-            website = project.website.as_deref().unwrap_or("未填写"),
-            products = if products.is_empty() { "未填写" } else { &products },
-            existing = if existing_questions.is_empty() { "无" } else { &existing_questions },
+        let kb_entries = KbRepo::new(self.pool.clone())
+            .list_by_project(project_id)
+            .await?;
+        let focus = geo_domain::grounding::focus_terms(&project, card.as_ref());
+        let grounding =
+            geo_domain::grounding::Grounding::build(geo_domain::grounding::GroundingInput {
+                project: &project,
+                card: card.as_ref(),
+                entries: &kb_entries,
+                modules: geo_domain::grounding::GenerationPurpose::Faq.modules(),
+                focus: &focus,
+                budget: geo_domain::grounding::GroundingBudget::default(),
+            });
+        tracing::info!(
+            project_id = %project_id,
+            grounding = %grounding.summary_zh(),
+            "FAQ 生成上下文已装配"
+        );
+        let prompt = super::generation::faq_prompt(
+            &project,
+            &grounding,
+            &existing_questions,
+            &intents,
+            target,
         );
         let request = ChatRequest::new(vec![
             ChatMessage::system(

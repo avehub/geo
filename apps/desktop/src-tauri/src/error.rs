@@ -34,6 +34,11 @@ pub(crate) mod err_codes {
     pub(crate) const PROMPT_SET_EMPTY_IMPORT: &str = "prompt_set/empty_import";
     /// 壳内错误，见 [`super::IpcError::internal`]。
     pub(crate) const IPC_INTERNAL: &str = "ipc/internal";
+    /// 远程条目不存在（`services/remote_service.rs`）。
+    pub(crate) const REMOTE_NOT_FOUND: &str = "remote/not_found";
+    /// 远程内容取不到（`services/remote_service.rs`）。同步路径不抛它，只有
+    /// 用户主动点开某一项时才可能看到。
+    pub(crate) const REMOTE_UNAVAILABLE: &str = "remote/unavailable";
 }
 
 /// 送回前端的统一错误结构。字段形状即 `apps/desktop/ui/src/api/types.ts` 的契约。
@@ -722,6 +727,9 @@ mod tests {
             ),
             IpcError::with_params("browser/unavailable", [("reason", "chrome_not_found")]),
             IpcError::internal("export dialog dismissed"),
+            IpcError::with_params(err_codes::REMOTE_NOT_FOUND, [("item", "rulepack")]),
+            IpcError::with_params("remote/rejected", [("item", "legal"), ("reason", "digest")]),
+            IpcError::with_params(err_codes::REMOTE_UNAVAILABLE, [("reason", "network")]),
         ]
     }
 

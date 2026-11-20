@@ -35,6 +35,7 @@
 | [`superpowers/specs/2026-10-30-visual-refresh-and-nav-grouping.md`](superpowers/specs/2026-10-30-visual-refresh-and-nav-grouping.md) | 视觉刷新与导航分组 |
 | [`superpowers/specs/2026-11-03-plan-c-preflight-contract-checklist.md`](superpowers/specs/2026-11-03-plan-c-preflight-contract-checklist.md) | Plan C 前置契约检查清单 |
 | [`superpowers/specs/2026-11-06-webmaster-data-acquisition-options.md`](superpowers/specs/2026-11-06-webmaster-data-acquisition-options.md) | 站长数据获取通道选型（GSC OAuth / 百度站长 Chrome 取数） |
+| [`superpowers/specs/2026-11-19-generation-grounding-design.md`](superpowers/specs/2026-11-19-generation-grounding-design.md) | **改关键词 / FAQ / 知识库 / Prompt 题库 / 文章生成的模型上下文前必读**（实体卡官方口径与已核实知识的注入规则） |
 | [`superpowers/specs/2026-11-10-release-signing-distribution-design.md`](superpowers/specs/2026-11-10-release-signing-distribution-design.md) | **发布工程裁定源**：许可证 / macOS 签名公证 / Windows 签名 / CI 打包 / 版本号真值源 / Secrets 清单。改 `release.yml`、`scripts/version.sh`、`scripts/setup-signing.sh`、`tauri.conf.json` 的 `bundle` 段前必读 |
 
 ## L3 实施计划

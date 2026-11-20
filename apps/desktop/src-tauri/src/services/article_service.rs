@@ -20,7 +20,10 @@ use geo_domain::{
     GeoError, KbModule, ProjectId,
 };
 use geo_llm::{chat_json, ChatMessage, ChatRequest, LlmClient, LlmError};
-use geo_store::{ArticleRepo, CompetitorRepo, ProjectRepo, SecretStore, SettingsRepo, StoreError};
+use geo_store::{
+    ArticleRepo, CompetitorRepo, EntityCardRepo, KbRepo, ProjectRepo, SecretStore, SettingsRepo,
+    StoreError,
+};
 use serde::Deserialize;
 use sqlx::SqlitePool;
 
@@ -146,28 +149,35 @@ impl ArticleService {
         self.require_project(project_id).await?;
         let target = usize::from(clamp_generate_target(target_count));
         let project = self.projects().get(project_id).await?;
+        let card = EntityCardRepo::new(self.pool.clone())
+            .get(project_id)
+            .await?;
+        let kb_entries = KbRepo::new(self.pool.clone())
+            .list_by_project(project_id)
+            .await?;
         let existing = self.repo().directions(project_id).await?;
         let existing_titles = existing
             .iter()
             .map(|direction| direction.title.as_str())
             .collect::<Vec<_>>()
             .join("、");
-        let prompt = format!(
-            "企业：{brand}；行业：{industry}；地区：{region}；官网：{website}\n\
-             已有方向（不要重复）：{existing}\n\
-             请给出最多 {target} 个中文内容方向，每个方向包含 title（一句话主题）与 summary\
-             （写给谁、在什么场景下写）。只输出 JSON：{{\"items\":[{{\"title\":\"...\",\
-             \"summary\":\"...\"}}]}}；不使用“保证排名/第一/最/100%”等绝对化表述。",
-            brand = project.brand_name,
-            industry = project.industry.label_zh(),
-            region = project.region,
-            website = project.website.as_deref().unwrap_or("未填写"),
-            existing = if existing_titles.is_empty() {
-                "无"
-            } else {
-                &existing_titles
-            },
+        let focus = geo_domain::grounding::focus_terms(&project, card.as_ref());
+        let grounding =
+            geo_domain::grounding::Grounding::build(geo_domain::grounding::GroundingInput {
+                project: &project,
+                card: card.as_ref(),
+                entries: &kb_entries,
+                modules: geo_domain::grounding::GenerationPurpose::Article.modules(),
+                focus: &focus,
+                budget: geo_domain::grounding::GroundingBudget::default(),
+            });
+        tracing::info!(
+            project_id = %project_id,
+            grounding = %grounding.summary_zh(),
+            "文章方向生成上下文已装配"
         );
+        let prompt =
+            super::generation::direction_prompt(&project, &grounding, &existing_titles, target);
         let request = ChatRequest::new(vec![
             ChatMessage::system("你是 GEO 内容策略师，只输出 JSON，不输出解释。"),
             ChatMessage::user(prompt),
@@ -428,6 +438,12 @@ impl ArticleService {
         let competitors = CompetitorRepo::new(self.pool.clone())
             .list_by_project(project_id)
             .await?;
+        let card = EntityCardRepo::new(self.pool.clone())
+            .get(project_id)
+            .await?;
+        let kb_entries = KbRepo::new(self.pool.clone())
+            .list_by_project(project_id)
+            .await?;
         let competitor_names = competitors
             .iter()
             .map(|competitor| competitor.name.as_str())
@@ -446,20 +462,30 @@ impl ArticleService {
                 (ArticleSlot::Competitor, Some(competitor_names)),
             ],
         );
-        let prompt = format!(
-            "企业：{brand}；行业：{industry}。\n模板提示词：{rendered}\n\
-             文风：{style}；目标字数：{length}。\n\
-             只输出 JSON：{{\"title\":\"...\",\"body_markdown\":\"...\"}}；\
-             不使用“保证排名/第一/最/100%”等绝对化表述，不编造资质与数据。",
-            brand = project.brand_name,
-            industry = project.industry.label_zh(),
-            style = if template.style.is_empty() {
-                "专业、克制"
-            } else {
-                &template.style
-            },
-            length = template.length,
+        let modules: Vec<geo_domain::KbModule> = if template.kb_modules.is_empty() {
+            geo_domain::grounding::GenerationPurpose::Article
+                .modules()
+                .to_vec()
+        } else {
+            template.kb_modules.clone()
+        };
+        let focus = geo_domain::grounding::focus_terms(&project, card.as_ref());
+        let grounding =
+            geo_domain::grounding::Grounding::build(geo_domain::grounding::GroundingInput {
+                project: &project,
+                card: card.as_ref(),
+                entries: &kb_entries,
+                modules: &modules,
+                focus: &focus,
+                budget: geo_domain::grounding::GroundingBudget::default(),
+            });
+        tracing::info!(
+            project_id = %project_id,
+            template_id = %template.id,
+            grounding = %grounding.summary_zh(),
+            "文章生成上下文已装配"
         );
+        let prompt = super::generation::article_prompt(&project, &rendered, &template, &grounding);
         let request = ChatRequest::new(vec![
             ChatMessage::system("你是 GEO 内容编辑，只输出 JSON，不输出解释。"),
             ChatMessage::user(prompt),

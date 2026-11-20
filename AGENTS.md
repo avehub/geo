@@ -22,6 +22,10 @@
   （改站点通道、补丁下发 / 撤回 / 回滚前必读；先看 §2 调研与 §3 裁定）。
 - 知识库 / Article Studio：`docs/superpowers/specs/2026-10-10-kb-redesign-and-article-studio-design.md`
   （改知识库卡片、修订留痕、文章管理前必读；市场调研见同目录 `2026-10-10-kb-and-article-studio-ux-survey.md`）。
+- **生成依据（实体卡 / 知识库 → AI 生成上下文）**：
+  `docs/superpowers/specs/2026-11-19-generation-grounding-design.md`
+  （改关键词 / FAQ / 知识库 / Prompt 题库 / 文章生成的模型上下文前必读；
+  官方口径与已核实知识的注入、待确认字段的隔离、预算与模块映射都在这里）。
 - 站长数据：`docs/superpowers/specs/2026-10-12-webmaster-data-integration-design.md`
   （改导入 / 归一 / 机会 / 凭据前必读；先看 §3.4c 的禁止模拟登录裁定）。
 - 项目概览：`docs/superpowers/specs/2026-10-29-project-overview-home-design.md`

@@ -8,6 +8,7 @@ pub mod diagnosis_service;
 pub mod entity_card_service;
 pub mod environment_service;
 pub mod faq_service;
+pub mod generation;
 pub mod insight_service;
 pub mod kb_service;
 pub mod keyword_service;

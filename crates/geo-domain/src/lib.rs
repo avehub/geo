@@ -18,6 +18,7 @@ pub mod diagnosis_build;
 pub mod entity_card;
 pub mod error;
 pub mod faq;
+pub mod grounding;
 pub mod ids;
 pub mod insight;
 pub mod kb;
@@ -77,6 +78,9 @@ pub use entity_card::{
 };
 pub use error::GeoError;
 pub use faq::{FaqDraft, FaqItem};
+pub use grounding::{
+    focus_terms, GenerationPurpose, Grounding, GroundingBudget, GroundingInput, MAX_KB_BODY_CHARS,
+};
 pub use ids::{
     AssetId, CompetitorId, FaqId, KbEntryId, KeywordId, ProjectId, PromptId, PromptSetId,
     RevisionId, SearchAiOverviewId, SearchMetricId, SearchNativeExtraId, SearchOpportunityId,

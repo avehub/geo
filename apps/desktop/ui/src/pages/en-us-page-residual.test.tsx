@@ -265,9 +265,8 @@ const SHORT_DATA_PINNED: readonly string[] = [
 const DATA_STRINGS_UPPER_BOUND = 870;
 
 /**
- * en-US 词典里**刻意**含 CJK 的值（第二类例外，形状钉死为恰好 2 条）。
+ * en-US 词典里**刻意**含 CJK 的值（第二类例外，形状钉死为恰好 1 条）。
  *
- * - `common.appName` = `'稿得快 GEO'`：产品名，两侧**逐字相同**（专有名词不译）。
  * - `project.wizard.aliasesPlaceholder` = `'e.g. HongYu, 宏宇'`：那个中文样本是**产品意图**
  *   而不是漏翻——别名既可能是中文也可能是拼音，占位提示要同时示范两种写法
  *   （`i18n/locales/zh-CN/project.ts` 顶部那段注释讲的就是它，zh 侧对应值是 `'例如：宏宇、HongYu'`）。
@@ -439,7 +438,6 @@ describe('常驻守卫（第 9 条）· 每个页面/分段在 en-US 下整页�
     // en 词典里刻意含 CJK 的值：逐条钉死（多一条 ⇒ 必须回来判断是刻意样本还是漏翻）
     expect(EN_DICT_CJK, 'en-US 词典里含 CJK 的值变了（逐条判断：刻意样本还是漏翻？）').toEqual([
       'e.g. HongYu, 宏宇',
-      '稿得快 GEO',
     ]);
     // 长串排在前面（减法顺序的前提）
     for (let index = 1; index < DATA_STRINGS.length; index += 1) {

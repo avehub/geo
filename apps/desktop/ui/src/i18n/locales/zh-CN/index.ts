@@ -6,7 +6,6 @@ import project from './project';
 import prompt from './prompt';
 import entity from './entity';
 import settings from './settings';
-import demo from './demo';
 import collection from './collection';
 import insight from './insight';
 import diagnosis from './diagnosis';
@@ -25,7 +24,7 @@ import design from './design';
  * zh-CN 资源树：产品主语言，也是**键集的真值源**（`ResourceBundle = typeof zhCN`）。
  *
  * namespace 的顺序按计划正文固定：common / nav / errors / fields / project / prompt /
- * entity / settings / demo，M3–M7 之后接 collection / insight / diagnosis / action / report
+ * entity / settings，M3–M7 之后接 collection / insight / diagnosis / action / report
  * （顺序 = 里程碑顺序，`dictionary.test.ts` 的合规扫描清单按同一顺序登记）。
  * M1.5 的 `library` 与 M6.5 的 `site` 接在后面（各自那一轮新增，顺序 = 落地顺序）。
  * M1.2b 的 `kb` 与 M6 的 `article` 同属 2026-10-10 那一轮（知识库重构 + 文章管理），
@@ -47,7 +46,6 @@ const zhCN = {
   prompt,
   entity,
   settings,
-  demo,
   collection,
   insight,
   diagnosis,

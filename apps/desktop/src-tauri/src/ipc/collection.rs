@@ -5,7 +5,7 @@
 
 use geo_domain::{
     CollectionBoard, CollectionRecord, CollectionRecordDetail, CollectionRound,
-    CollectionRoundDetail, CollectionTask, ProjectId, RecordFilter,
+    CollectionRoundDetail, CollectionTask, EngineId, ProjectId, RecordFilter,
 };
 use tauri::State;
 
@@ -51,6 +51,20 @@ pub async fn collection_record_get(
 ) -> Result<CollectionRecordDetail, IpcError> {
     CollectionService::from_state(&state)
         .record_get(record_id)
+        .await
+}
+
+/// 打开元宝的纯登录窗口（不提交问题）。
+///
+/// Store（MSIX）版按 B8 裁定不含浏览器通道 ⇒ 与 `search_browser_*` 同一道门禁。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn collection_engine_login(
+    state: State<'_, AppState>,
+    engine: EngineId,
+) -> Result<(), IpcError> {
+    crate::build_flavor::reject_in_store_build("yuanbao")?;
+    CollectionService::from_state(&state)
+        .open_engine_login(engine)
         .await
 }
 

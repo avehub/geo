@@ -620,7 +620,7 @@ describe('pages/SitePage · 导出落地文件（DR-53）', () => {
 
     await user.click(screen.getByRole('button', { name: /导出/ }));
     const dialog = await openModal();
-    expect(within(dialog).getByText(/本交接单由稿得快 GEO 客户端生成/)).toBeDefined();
+    expect(within(dialog).getByText(/本交接单由搞钱GEO客户端生成/)).toBeDefined();
 
     const approved = SEED_SITE_PATCHES.filter((row) => row.review_status === 'approved');
     expect(approved.length).toBeGreaterThan(0);

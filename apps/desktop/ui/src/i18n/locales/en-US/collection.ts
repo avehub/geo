@@ -231,7 +231,12 @@ const collection: ResourceBundle['collection'] = {
     openSettings: 'Open settings',
     fix: 'Set up',
     yuanbaoSteps:
-      'Yuanbao has no public chat API: when a round includes Yuanbao, a controlled Chrome window opens and waits up to 3 minutes for you to sign in by QR code. The sign-in state stays on this machine and is reused. For an existing failed task, "Sign in and retry" opens the same window.',
+      'Yuanbao has no public chat API: "Sign in to Yuanbao" opens a controlled Chrome window and waits for you to sign in by QR code (up to 3 minutes). The sign-in state stays on this machine and is reused by later rounds. For an existing failed task, "Sign in and retry" opens the same window.',
+    yuanbaoLogin: 'Sign in to Yuanbao',
+    yuanbaoLoginOpened:
+      'The browser window is open — scan the QR code there. After signing in you can retry the failed task.',
+    yuanbaoLoginHint:
+      'This only opens the sign-in window and submits no prompt; the sign-in state stays on this machine.',
     loginFailedTitle: '{{failed}} tasks failed with "Login required"',
     loginFailedDesc:
       'These engines are not set up yet, or their key is no longer valid. Add or update the API key, or complete the browser sign-in, then retry the task — no need to queue the whole round again.',

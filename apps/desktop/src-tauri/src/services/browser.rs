@@ -8,6 +8,7 @@
 //! 这是 MVP 的“小样本可走查”实现；60 题批量采集时建议只把元宝作为补充引擎。
 
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use headless_chrome::protocol::cdp::Page;
@@ -190,6 +191,51 @@ fn collect_citations(tab: &headless_chrome::Tab) -> Vec<SearchHit> {
         .collect()
 }
 
+/// 「纯登录」窗口的失败原因。与 `BrowserError` 分开：登录窗口不需要 CDP，
+/// 也不该把「没找到 Chrome」混成「采集任务失败」。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoginWindowError {
+    /// 测试 / CI 明确禁用浏览器（`GEO_DISABLE_BROWSER`）。
+    Disabled,
+    /// 本机没有找到 Chrome / Edge。
+    NotFound,
+    /// 目录或进程启动失败。
+    LaunchFailed,
+}
+
+/// 纯登录窗口的启动参数（纯函数，便于钉住「共用元宝 profile」与「不关沙箱」）。
+fn login_window_args(profile: &Path) -> Vec<String> {
+    vec![
+        format!("--user-data-dir={}", profile.display()),
+        "--no-first-run".to_string(),
+        "--no-default-browser-check".to_string(),
+        YUANBAO_URL.to_string(),
+    ]
+}
+
+/// 打开元宝登录窗口，**不提交任何问题**。
+///
+/// 与 `ask_yuanbao` 的区别：采集流程在 `headless_chrome` 里等回答、结束时浏览器随之退出；
+/// 这里只是替用户把真实浏览器停到元宝页，登录态写进同一个 profile 后就返回。
+/// 窗口保持运行（不进 CDP、不 kill 子进程），用户扫码后可以继续用，也可以直接重跑任务。
+pub fn open_login_window(profile_base: &Path) -> Result<(), LoginWindowError> {
+    if std::env::var_os("GEO_DISABLE_BROWSER").is_some() {
+        return Err(LoginWindowError::Disabled);
+    }
+    let executable =
+        headless_chrome::browser::default_executable().map_err(|_| LoginWindowError::NotFound)?;
+    let profile = profile_dir(profile_base);
+    std::fs::create_dir_all(&profile).map_err(|_| LoginWindowError::LaunchFailed)?;
+    Command::new(executable)
+        .args(login_window_args(&profile))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| LoginWindowError::LaunchFailed)?;
+    Ok(())
+}
+
 /// 元宝通道的独立 profile 目录：`base/yuanbao`。
 ///
 /// 🔴 `base` 必须是 `AppState::browser_profile_dir`（app data dir 下），不是临时目录：
@@ -249,6 +295,27 @@ mod tests {
             !profile.starts_with(std::env::temp_dir()),
             "元宝 profile 不得落临时目录：{profile:?}"
         );
+    }
+
+    /// 2026-11-20「纯登录」入口：测试/CI 明确禁用浏览器时不再启动窗口。
+    #[test]
+    fn login_window_honours_the_browser_disable_switch() {
+        std::env::set_var("GEO_DISABLE_BROWSER", "1");
+        let outcome = open_login_window(Path::new("/tmp/geo-yuanbao-login-test"));
+        std::env::remove_var("GEO_DISABLE_BROWSER");
+        assert_eq!(outcome, Err(LoginWindowError::Disabled));
+    }
+
+    /// 纯登录窗口与采集窗口共用同一个 profile，且**不加** `--no-sandbox`。
+    #[test]
+    fn login_window_args_reuse_the_yuanbao_profile_without_disabling_sandbox() {
+        let profile = profile_dir(Path::new("/data/browser-profile"));
+        let args = login_window_args(&profile);
+        assert!(args
+            .iter()
+            .any(|arg| arg == "--user-data-dir=/data/browser-profile/yuanbao"));
+        assert!(args.iter().any(|arg| arg == YUANBAO_URL));
+        assert!(!args.iter().any(|arg| arg.contains("--no-sandbox")));
     }
 
     /// P3-06a：`sandbox` 必须是 true，即启动参数里不会出现 `--no-sandbox`

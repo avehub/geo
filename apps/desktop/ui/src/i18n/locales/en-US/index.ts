@@ -8,7 +8,6 @@ import project from './project';
 import prompt from './prompt';
 import entity from './entity';
 import settings from './settings';
-import demo from './demo';
 import collection from './collection';
 import insight from './insight';
 import diagnosis from './diagnosis';
@@ -39,7 +38,6 @@ const enUS: ResourceBundle = {
   prompt,
   entity,
   settings,
-  demo,
   collection,
   insight,
   diagnosis,

@@ -1,5 +1,5 @@
 /**
- * M3 多引擎采集的 6 条命令（`collection_*`）的内存实现。
+ * M3 多引擎采集的 7 条命令（`collection_*`）的内存实现。
  *
  * # 🔴 demo 不采集（AGENTS 规则 9）
  * 真后端在这里跑引擎适配器、记账 token、算成功率与耗时。demo 一律**不发请求**：
@@ -312,4 +312,14 @@ export const collectionRecordGet: DemoHandler = (args) => {
   const record = db.collectionRecords.find((entry) => entry.id === id);
   if (!record) unknownId('record_id', id);
   return structuredClone(record);
+};
+
+/**
+ * `collection_engine_login`：demo 不启动浏览器（规则 2 / 规则 11）。
+ *
+ * 与 `search_browser_open` 同一条口径：命令存在、参数齐全，但演示模式**不打开任何窗口**，
+ * 回稳定错误码让界面按词典渲染。真后端只打开真实浏览器让用户自己扫码，不代登录。
+ */
+export const collectionEngineLogin: DemoHandler = () => {
+  throw demoError('browser/unavailable', { reason: 'browser_disabled' });
 };

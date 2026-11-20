@@ -1,4 +1,4 @@
-//! 稿得快 GEO 客户端桌面壳。
+//! 搞钱GEO客户端桌面壳。
 //!
 //! 分层：`ipc` 只做 Tauri 命令与 DTO 转换，`services` 负责编排（不依赖 `tauri::*`，
 //! 因此集成测试可以直接构造 service 调用，无需启动 WebView）。
@@ -17,8 +17,8 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
-/// 日志文件前缀：实际文件名形如 `gdk-geo.log.2026-09-17`（每日滚动）。
-pub const LOG_FILE_PREFIX: &str = "gdk-geo.log";
+/// 日志文件前缀：实际文件名形如 `gq-geo.log.2026-09-17`（每日滚动）。
+pub const LOG_FILE_PREFIX: &str = "gq-geo.log";
 
 /// 初始化日志：stdout + 每日滚动文件（写在 Tauri 的 `app_log_dir`），
 /// 并把依赖的 `log` 记录桥接进 tracing，保证一个文件里能看到全链路。

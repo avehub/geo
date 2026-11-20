@@ -81,10 +81,6 @@ const design: ResourceBundle['design'] = {
     loading: 'Loading',
   },
 
-  strip: {
-    title: 'Demo strip',
-    note: '32px, always on, not dismissible; the compliance sentence stays intact.',
-  },
 
   density: {
     title: 'Density',

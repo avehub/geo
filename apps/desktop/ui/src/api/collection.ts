@@ -1,5 +1,5 @@
 /**
- * M3 多引擎采集的 IPC wrapper（6 条命令）。
+ * M3 多引擎采集的 IPC wrapper（7 条命令）。
  *
  * 与 `client.ts` 同族：组件只调这里的具名函数，**不许**直接 `call` / `invoke`。
  * 拆出单独一个模块是因为 `client.ts` 已经接近「单文件约 400 行就拆分」的上限
@@ -9,6 +9,7 @@
 import { call } from './client';
 import type {
   CollectionBoard,
+  EngineId,
   CollectionRecord,
   CollectionRecordDetail,
   CollectionRound,
@@ -33,6 +34,15 @@ export const collectionStart = (projectId: string, options: CollectionStartOptio
 /** 重跑一条失败任务（demo 里推入一条预置证据）。 */
 export const collectionTaskRetry = (taskId: string) =>
   call<CollectionTask>('collection_task_retry', { task_id: taskId });
+
+/**
+ * 打开某个引擎的纯登录窗口（当前只有元宝）。
+ *
+ * 只启动浏览器、不提交问题；登录态落在本机 profile，之后采集直接复用。
+ * demo 后端明确拒绝（`browser/unavailable` + `browser_disabled`）。
+ */
+export const collectionEngineLogin = (engine: EngineId) =>
+  call<void>('collection_engine_login', { engine });
 
 /** 一轮的证据列表行（不含回答全文）。 */
 export const collectionRecordList = (roundId: string, filter: RecordFilter = {}) =>

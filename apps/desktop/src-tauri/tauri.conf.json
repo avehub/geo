@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "gdk-geo",
+  "productName": "GQ-GEO",
   "version": "0.2.0",
   "identifier": "com.gaodekuai.geo",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "稿得快 GEO",
+        "title": "搞钱GEO",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
@@ -28,7 +28,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$TEMP/gdk-geo/**",
+          "$TEMP/gq-geo/**",
           "$APPDATA/**",
           "$APPLOCALDATA/**"
         ]

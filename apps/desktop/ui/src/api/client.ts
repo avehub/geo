@@ -58,9 +58,10 @@ import type {
 import { isIpcErrorPayload } from './types';
 
 /**
- * 全部 IPC 命令名（**120** 条）。前后端漂移时这里先炸，便于排查。
+ * 全部 IPC 命令名（**121** 条）。前后端漂移时这里先炸，便于排查。
  *
- * 🔴 2026-11-18 核对为 **120 = 120 条 Rust + 0 条 demo-only**：Task 9 新增 12 条
+ * 🔴 2026-11-20 核对为 **121 = 121 条 Rust + 0 条 demo-only**：新增
+ * `collection_engine_login`（元宝纯登录窗口）。此前基线：2026-11-18 为 120 条，Task 9 新增 12 条
  * `remote_*`（远程内容读取与同步）。此前基线为 108 条。M5.5 站长数据现在 9 条：
  * 原有 6 条 + `search_oauth_begin`（GSC OAuth 起点）+ 系统 Chrome 取数两条
  * （`search_browser_open` / `search_browser_capture`，只支持百度站长两个面）。demo 后端对
@@ -113,6 +114,7 @@ export const IPC_COMMANDS = [
   'collection_round_get',
   'collection_start',
   'collection_task_retry',
+  'collection_engine_login',
   'collection_record_list',
   'collection_record_get',
   // ---- M4 回答解析与事实核查 ----

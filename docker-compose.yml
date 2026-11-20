@@ -18,14 +18,14 @@
 # 降并行即可绕过：
 #   docker compose run --rm dev bash -lc 'CARGO_BUILD_JOBS=2 mise run check'
 
-name: gdk-geo
+name: gq-geo
 
 services:
   dev:
     build:
       context: docker
       dockerfile: dev.Dockerfile
-    image: gdk-geo-dev:local
+    image: gq-geo-dev:local
     working_dir: /work
     environment:
       # 仓库配置由 root 读取，而 bind mount 的文件属主是宿主机用户 → 显式信任 /work

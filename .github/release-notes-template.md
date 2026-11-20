@@ -1,11 +1,11 @@
-稿得快 GEO 客户端 {{VERSION}}
+搞钱GEO客户端 {{VERSION}}
 
 ## 安装
 
-- **macOS（Apple Silicon，M1/M2/M3/M4）**：`gdk-geo_{{VERSION}}_aarch64.dmg`
-- **macOS（Intel）**：`gdk-geo_{{VERSION}}_x64.dmg`
+- **macOS（Apple Silicon，M1/M2/M3/M4）**：`GQ-GEO_{{VERSION}}_aarch64.dmg`
+- **macOS（Intel）**：`GQ-GEO_{{VERSION}}_x64.dmg`
   - 不确定芯片：左上角  → 「关于本机」，看「芯片」一行
-- **Windows（64 位）**：`gdk-geo_{{VERSION}}_x64-setup.exe`
+- **Windows（64 位）**：`GQ-GEO_{{VERSION}}_x64-setup.exe`
 
 ## 校验完整性
 
@@ -16,7 +16,7 @@ shasum -a 256 -c SHA256SUMS.txt        # macOS
 ```
 
 ```bat
-certutil -hashfile gdk-geo_{{VERSION}}_x64-setup.exe SHA256
+certutil -hashfile GQ-GEO_{{VERSION}}_x64-setup.exe SHA256
 ```
 
 Windows 侧把 `certutil` 输出的哈希与 `SHA256SUMS.txt` 里对应行手工比对。

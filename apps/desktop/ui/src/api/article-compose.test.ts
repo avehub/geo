@@ -80,13 +80,13 @@ describe('composeArticleMarkdown', () => {
       ],
       t,
       '文章册',
-      '由稿得快 GEO 文章管理导出',
+      '由搞钱GEO 文章管理导出',
     );
 
     expect(markdown).not.toBeNull();
     const text = markdown as string;
     expect(text.startsWith('# 文章册\n')).toBe(true);
-    expect(text).toContain('_由稿得快 GEO 文章管理导出_');
+    expect(text).toContain('_由搞钱GEO 文章管理导出_');
     expect(text).toContain('## 选型说明');
     expect(text).toContain('工况 → 方案 → 结果');
     expect(text).toContain(dateTimeText('2026-09-22T01:30:00Z'));

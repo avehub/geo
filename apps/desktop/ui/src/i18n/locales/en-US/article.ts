@@ -221,7 +221,7 @@ const article: ResourceBundle['article'] = {
     markdownTitle: 'Export the Markdown article book',
     markdownHint: 'A version the content team can read directly; only approved articles are included.',
     docTitle: 'Generated article book',
-    docNote: 'Exported from the GEO desktop client. Pending and rejected articles are not included.',
+    docNote: 'Exported from the GQ-GEO client. Pending and rejected articles are not included.',
     metaLine: 'Generated {{time}} · {{words}} words',
   },
 };

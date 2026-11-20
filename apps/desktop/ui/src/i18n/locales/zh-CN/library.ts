@@ -9,7 +9,7 @@
  *
  * # 文案合规（AGENTS 规则 6）
  * 不承诺排名与效果；搜索量、竞争难度与 AI 生成的问答在 demo 里都是**预置静态值**。
- * 演示边界统一由全局 `DemoModeStrip` 说明，模块页与弹窗不再重复 `staticNote` / `demoBody`。
+ * 演示边界已由 2026-11-19 产品裁定全部移除，模块页与弹窗不再重复 `staticNote` / `demoBody`。
  *
  * ⚠ 插值变量一律不叫 `count`（i18next 会走复数分支去找 `_one` / `_other`，本词典没有）。
  */

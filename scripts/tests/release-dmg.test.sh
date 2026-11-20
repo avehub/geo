@@ -28,7 +28,7 @@ done
   || { echo "FAIL: 步骤顺序不对（build=$L_BUILD appnot=$L_APPNOT appstaple=$L_APPSTAPLE hdiutil=$L_HDIUTIL dmgsign=$L_DMGSIGN dmgnot=$L_DMGNOT dmgstaple=$L_DMGSTAPLE validate=$L_VALIDATE）"; exit 1; }
 
 # 版本必须从 tauri.conf.json 单一真值源解析出来（否则 DMG 文件名会缺版本号）
-grep -qE 'gdk-geo_[0-9]+\.[0-9]+\.[0-9]+_aarch64\.dmg' <<<"$OUT" || { echo "FAIL: dry-run 未解析出带版本号的 DMG 路径"; exit 1; }
+grep -qE 'GQ-GEO_[0-9]+\.[0-9]+\.[0-9]+_aarch64\.dmg' <<<"$OUT" || { echo "FAIL: dry-run 未解析出带版本号的 DMG 路径"; exit 1; }
 
 # dry-run 不得真碰钥匙串 / 网络：输出里不允许出现非 [dry-run] 的执行痕迹
 grep -qE '^\s+\[dry-run\]' <<<"$OUT" || { echo "FAIL: dry-run 无计划输出"; exit 1; }

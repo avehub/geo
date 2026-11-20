@@ -4,7 +4,7 @@
  *
  * 背景：原先 `index.html` 没有 `<link rel="icon">`，浏览器回落请求 `/favicon.ico`
  * 得到 404，demo（`mise run web`）每次加载都在控制台留一条错误。这条守卫钉住两件事：
- * ① link 还在；② 它指向的文件没被删（只钉 link 不钉文件，删了 svg 照样绿）。
+ * ① link 还在；② 它指向的文件没被删（只钉 link 不钉文件，删了图标文件照样绿）。
  */
 import { describe, expect, it } from 'vitest';
 

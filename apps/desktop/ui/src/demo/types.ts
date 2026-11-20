@@ -205,7 +205,7 @@ export interface DemoDb {
   //   与 `SEED_KEYWORD_GENERATED_POOL` / `SEED_KB_GENERATED_POOL` 同一条裁定：
   //   要让「点生成 → 库里多出来」这件事在界面上看得见（AGENTS 规则 9：demo 不调模型）。
   // 🔴 **没有定时器**（DR-85）：`next_run_at` 只是按 freq + time 算出来的显示值，
-  //   到点不会自己跑；界面上那句「演示模式不跑真实定时任务」常驻。
+  //   到点不会自己跑；2026-11-19 产品裁定：演示提示已全部移除，不在界面重复。
   // -------------------------------------------------------------------------
   /** 内容方向（`article_direction_add` / `_generate` push；带 `id` 的 add 就地改状态）。 */
   articleDirections: ArticleDirection[];

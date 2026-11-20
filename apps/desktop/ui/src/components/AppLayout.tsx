@@ -3,18 +3,17 @@ import { FileTextOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import DemoModeStrip from './ui/DemoModeStrip';
 import SideNav from './SideNav';
 
 const { Header, Content } = Layout;
 
 /**
- * 全局框架：48px 标题栏 + 32px demo 细条 + 左侧导航 + 内容区。
+ * 全局框架：48px 标题栏 + 左侧导航 + 内容区。
  *
  * # 2026-10-30 视觉重做的三处变化
  * - 标题栏 64 → **48px**：副标题（`common.tagline`）从标题栏撤掉，只保留品牌名与开发入口——
  *   企业风的上沿只做「这是谁」，不做「这是一句口号」；腾出来的 16px 留给首屏内容；
- * - demo 横幅换成 `DemoModeStrip`（32px 常驻细条，不可关闭），合规句一字不减；
+ * - 2026-11-19 产品裁定：demo 提示全部移除，不再挂全局演示细条；
  * - 外层 `Layout` 用 `100vh` 而不是 `minHeight`：只有内容区滚动，侧栏与顶部条固定，
  *   这样长页面滚动时导航不会跟着走（原来 `minHeight` + 整页滚动会让侧栏底部跑出窗口）。
  *
@@ -61,7 +60,6 @@ export default function AppLayout() {
           </Button>
         ) : null}
       </Header>
-      <DemoModeStrip />
       <Layout style={{ minHeight: 0 }}>
         <SideNav />
         <Content className="geo-page" style={{ overflow: 'auto' }}>

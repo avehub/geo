@@ -261,12 +261,6 @@ export default function DesignGalleryPage() {
           </SectionCard>
         </Col>
       </Row>
-
-      <div style={{ marginTop: 12 }}>
-        <SectionCard title={t('design.strip.title')} description={t('design.strip.note')}>
-          <div style={{ fontSize: 12, color: token.colorTextTertiary }}>{t('design.note')}</div>
-        </SectionCard>
-      </div>
     </div>
   );
 }

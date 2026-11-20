@@ -15,7 +15,7 @@ export interface KeywordGenerateModalProps {
 /**
  * 「AI 生成关键词」弹窗（spec DR-42：demo 的生成是**预置批次**，不调模型）。
  *
- * 演示边界由全局 `DemoModeStrip` 说明；弹窗不再重复 `demoBody`
+ * 演示2026-11-19 产品裁定：演示提示已全部移除；弹窗不再重复 `demoBody`
  * （AGENTS 规则 9 的界面侧对价已上收到全局细条）。
  */
 export default function KeywordGenerateModal({

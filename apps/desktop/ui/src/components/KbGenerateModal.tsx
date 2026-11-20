@@ -22,7 +22,7 @@ export interface KbGenerateModalProps {
  * 「AI 生成知识条目」的选项弹窗（M1.2b；模块清单按 taxonomy v2，DR-74）。
  *
  * 弹窗保留运行时中立的免责说明（AGENTS 规则 9 / 规则 6）：生成内容一律待人工审核，
- * 桌面端命中广告法红线词会整批拒绝。演示边界由全局 `DemoModeStrip` 说明。
+ * 桌面端命中广告法红线词会整批拒绝。演示2026-11-19 产品裁定：演示提示已全部移除。
  *
  * 条数上下限**复用**素材库那一档（`LIBRARY_GENERATE_MIN` / `MAX`）：两处各写一份常量
  * 就是下一个漂移面。

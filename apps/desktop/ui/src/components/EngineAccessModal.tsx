@@ -15,11 +15,15 @@
  * - 状态只来自 `secret_status`（`exists`，不解密、不触发钥匙串授权框）。
  */
 import { useMemo, useState } from 'react';
-import { Alert, Button, Collapse, Modal, Space, Tag, Typography } from 'antd';
+import { Alert, App, Button, Collapse, Modal, Space, Tag, Typography } from 'antd';
+import { LoginOutlined } from '@ant-design/icons';
+import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
+import * as collection from '../api/collection';
 import { availableEngines } from '../api/build-flavor';
+import { describeIpcError } from '../api/errors';
 import { ENGINE_ACCESS, engineAccessState, type EngineAccessState } from '../api/engine-access';
 import type { EngineId } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
@@ -91,6 +95,13 @@ function AccessBody({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const { message } = App.useApp();
+  // 纯登录：只打开浏览器窗口等扫码，不提交问题、不消耗采集任务。
+  const loginMutation = useMutation({
+    mutationFn: () => collection.collectionEngineLogin('yuanbao'),
+    onSuccess: () => message.success(t('collection.access.yuanbaoLoginOpened')),
+    onError: (error) => message.error(describeIpcError(error, t)),
+  });
   // 构建形态门禁（B8）：Store 版不含元宝通道，这里也不展示它。
   const engines = useMemo(() => [...availableEngines()], []);
   const [active, setActive] = useState<string | null>(focusEngine);
@@ -115,12 +126,34 @@ function AccessBody({
           </Typography.Paragraph>
           {spec.kind === 'api_key' &&
             spec.providers.map((provider) => (
-              <SecretStatusPanel key={provider} provider={provider} allowTest={provider !== 'metaso'} />
+              <SecretStatusPanel
+                key={provider}
+                provider={provider}
+                // 「测试连接」只对**当前**模型服务商开放：后端 `client_for` 会把
+                // `settings.model.base_url` 带到任意 provider 上，给非当前厂商测连接等于
+                // 把新 Key 发到用户为别家填的网关地址。秘塔搜索 Key 本来就没有统一测试。
+                allowTest={provider === status.currentModelProvider && provider !== 'metaso'}
+              />
             ))}
           {spec.kind === 'browser_login' && (
-            <Typography.Paragraph style={{ marginBottom: 0 }}>
-              {t('collection.access.yuanbaoSteps')}
-            </Typography.Paragraph>
+            <>
+              <Typography.Paragraph style={{ marginBottom: 0 }}>
+                {t('collection.access.yuanbaoSteps')}
+              </Typography.Paragraph>
+              <Space size={8} wrap>
+                <Button
+                  type="primary"
+                  icon={<LoginOutlined />}
+                  loading={loginMutation.isPending}
+                  onClick={() => loginMutation.mutate()}
+                >
+                  {t('collection.access.yuanbaoLogin')}
+                </Button>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {t('collection.access.yuanbaoLoginHint')}
+                </Typography.Text>
+              </Space>
+            </>
           )}
           {/* 秘塔还要当前对话模型的 Key，那条属于「模型服务商」段，给一个直达入口。 */}
           {engine === 'metaso' && (

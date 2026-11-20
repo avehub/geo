@@ -124,7 +124,7 @@ function SecretStatusPanelInner({ provider, allowTest = true }: SecretStatusPane
         />
       )}
 
-      {/* 2026-11-19 产品裁定：demo 密钥边界统一由全局 `DemoModeStrip.aboutBody` 说明，
+      {/* 2026-11-19 产品裁定：demo 密钥边界统一由全局演示提示 说明，
           密钥区不再重复「演示模式不会写入系统钥匙串」。 */}
       <Space.Compact style={{ width: '100%', maxWidth: 520 }}>
         <Input.Password

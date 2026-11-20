@@ -85,10 +85,6 @@ const design = {
     loading: '加载中',
   },
 
-  strip: {
-    title: '演示模式细条',
-    note: '32px 常驻、不可关闭；合规句一字不减。',
-  },
 
   density: {
     title: '密度',

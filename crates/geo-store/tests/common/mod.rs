@@ -56,8 +56,8 @@ pub fn sample_project(name: &str) -> Project {
     Project {
         id: ProjectId::new(),
         name: name.to_string(),
-        brand_name: "稿得快".to_string(),
-        aliases: vec!["GDK".to_string(), "gaodekuai".to_string()],
+        brand_name: "搞钱GEO".to_string(),
+        aliases: vec!["GQ".to_string(), "gaodekuai".to_string()],
         website: Some("https://www.gaodekuai.com".to_string()),
         region: "华东".to_string(),
         language: Language::ZhCn,
@@ -98,8 +98,8 @@ pub fn sample_asset(project_id: ProjectId, url: &str) -> ProjectAsset {
 
 pub fn sample_fields() -> EntityFields {
     EntityFields {
-        standard_name: "稿得快".to_string(),
-        aliases: vec!["GDK".to_string()],
+        standard_name: "搞钱GEO".to_string(),
+        aliases: vec!["GQ".to_string()],
         founded_year: Some(2024),
         qualifications: vec!["ISO9001".to_string()],
         products: vec![ProductSpec {

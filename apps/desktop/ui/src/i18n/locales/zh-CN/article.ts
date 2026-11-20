@@ -9,7 +9,7 @@
  * 用 `components/ArticleScheduleTable.tsx` 里那张 `Record<number, TranslationKey>` 查）。
  *
  * # 演示边界（2026-11-19 产品裁定）
- * 全局 `DemoModeStrip` 的 `aboutBody` 统一说明：demo 没有定时器、不调模型、刷新即重置。
+ * 全局演示提示 的 `aboutBody` 统一说明：demo 没有定时器、不调模型、刷新即重置。
  * 页头与排期表不再重复 `demoHint` / `schedules.demoBody`。
  *
  * # 文案合规（AGENTS 规则 6）
@@ -259,7 +259,7 @@ const article = {
     markdownTitle: '导出 Markdown 文章册',
     markdownHint: '给内容团队直接读的版本；只有已通过评审的文章会被收录。',
     docTitle: '生成文章册',
-    docNote: '由稿得快 GEO 客户端导出；待审核与已打回的文章不含在本文件内。',
+    docNote: '由搞钱GEO客户端导出；待审核与已打回的文章不含在本文件内。',
     /** 每一篇末尾那行元信息（`api/article-compose.ts` 用）。 */
     metaLine: '生成于 {{time}} · {{words}} 字',
   },

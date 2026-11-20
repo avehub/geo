@@ -23,8 +23,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 VERSION="$(python3 -c "import json;print(json.load(open('apps/desktop/src-tauri/tauri.conf.json'))['version'])")"
-APP="target/release/bundle/macos/gdk-geo.app"
-DMG="target/release/bundle/dmg/gdk-geo_${VERSION}_aarch64.dmg"
+APP="target/release/bundle/macos/GQ-GEO.app"
+DMG="target/release/bundle/dmg/GQ-GEO_${VERSION}_aarch64.dmg"
 CFG="${GDK_SIGNING_ENV:-$HOME/.config/gdk-geo/signing.env}"
 
 step() { printf '\n== %s ==\n' "$*"; }
@@ -78,7 +78,7 @@ else
   MNT="/tmp/gdk-release-dmg-mnt-$$"
   mkdir -p "$MNT"
   hdiutil attach "$DMG" -mountpoint "$MNT" -nobrowse -readonly >/dev/null
-  cp -R "$MNT/gdk-geo.app" "$APP"
+  cp -R "$MNT/GQ-GEO.app" "$APP"
   hdiutil detach "$MNT" >/dev/null
   W="/tmp/gdk-release-dmg-$$"
   mkdir -p "$W"
@@ -94,9 +94,9 @@ if [[ $DRY -eq 1 ]]; then
 else
   S="/tmp/gdk-release-dmg-stage-$$"
   mkdir -p "$S"
-  cp -R "$APP" "$S/gdk-geo.app"
+  cp -R "$APP" "$S/GQ-GEO.app"
   ln -s /Applications "$S/Applications"
-  hdiutil create -volname "gdk-geo" -srcfolder "$S" -ov -format UDZO "$DMG" >/dev/null
+  hdiutil create -volname "GQ-GEO" -srcfolder "$S" -ov -format UDZO "$DMG" >/dev/null
   codesign --sign "$APPLE_SIGNING_IDENTITY" --force "$DMG"
 fi
 

@@ -552,8 +552,8 @@ mod tests {
 
     fn full_fields() -> EntityFields {
         EntityFields {
-            standard_name: "稿得快".to_string(),
-            aliases: vec!["GDK".to_string()],
+            standard_name: "搞钱GEO".to_string(),
+            aliases: vec!["GQ".to_string()],
             founded_year: Some(2016),
             qualifications: vec!["ISO9001".to_string()],
             products: vec![ProductSpec {
@@ -794,8 +794,8 @@ mod tests {
     #[test]
     fn fields_from_draft_maps_wizard_input() {
         let fields = fields_from_draft(
-            "稿得快",
-            &["GDK".to_string()],
+            "搞钱GEO",
+            &["GQ".to_string()],
             Some("华东"),
             vec![ProductSpec {
                 name: "GEO 客户端".into(),
@@ -805,7 +805,7 @@ mod tests {
             Some("全国"),
             Some("https://www.gaodekuai.com"),
         );
-        assert_eq!(fields.standard_name, "稿得快");
+        assert_eq!(fields.standard_name, "搞钱GEO");
         assert_eq!(fields.service_regions, vec!["华东", "全国"]);
         assert_eq!(fields.products.len(), 1);
         assert!(fields.contact.is_some());

@@ -1,5 +1,5 @@
 /**
- * 题库页的演示边界已收口到全局 `DemoModeStrip`：
+ * 题库页的演示边界已按 2026-11-19 产品裁定移除：
  * 页面不再单独挂「演示模式未执行合规扫描」。
  */
 import { describe, expect, it, vi } from 'vitest';

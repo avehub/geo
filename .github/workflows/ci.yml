@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE: gdk-geo-dev:ci
+  IMAGE: gq-geo-dev:ci
 
 jobs:
   rust:
@@ -70,7 +70,7 @@ jobs:
             --volume "$PWD:/work" \
             --volume "$PWD/.cache/cargo/registry:/root/.cargo/registry" \
             --volume "$PWD/.cache/cargo/git:/root/.cargo/git" \
-            --volume gdk-geo-ci-cargo-target:/work/target \
+            --volume gq-geo-ci-cargo-target:/work/target \
             --env MISE_TRUSTED_CONFIG_PATHS=/work \
             --env RUST_BACKTRACE=1 \
             "$IMAGE" \
@@ -112,7 +112,7 @@ jobs:
       # 写错这个路径 + if-no-files-found: error 会让这个 job 永远失败。
       - uses: actions/upload-artifact@v4
         with:
-          name: gdk-geo-${{ matrix.os }}
+          name: gq-geo-${{ matrix.os }}
           path: |
             target/release/bundle/**/*.dmg
             target/release/bundle/**/*.exe
@@ -156,7 +156,7 @@ jobs:
             --workdir /work \
             --volume "$PWD:/work" \
             --volume "$PWD/.cache/pnpm:/root/.local/share/pnpm/store" \
-            --volume gdk-geo-ci-node-modules:/work/apps/desktop/ui/node_modules \
+            --volume gq-geo-ci-node-modules:/work/apps/desktop/ui/node_modules \
             --env MISE_TRUSTED_CONFIG_PATHS=/work \
             "$IMAGE" \
             bash -lc 'set -euo pipefail

@@ -100,8 +100,8 @@ mod tests {
             "INSERT INTO projects (id, name, brand_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(project_id)
-        .bind("稿得快")
-        .bind("稿得快")
+        .bind("搞钱GEO")
+        .bind("搞钱GEO")
         .bind(TS)
         .bind(TS)
         .execute(pool)

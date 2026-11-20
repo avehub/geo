@@ -324,7 +324,7 @@ mod tests {
         repo.upsert(&first).await.unwrap();
 
         let mut second = first.clone();
-        second.fields.standard_name = "稿得快（新口径）".to_string();
+        second.fields.standard_name = "搞钱GEO（新口径）".to_string();
         second.fields.price_range = None;
         second.created_at = later(300);
         second.updated_at = later(600);

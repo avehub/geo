@@ -39,7 +39,8 @@ import { appEnvironment } from './handlers/app-environment';
 import {
   actionBoard, actionUpdateStatus, contentGenerate, contentUpdateStatus, } from './handlers/action';
 import {
-  collectionBoard, collectionRecordGet, collectionRecordList, collectionRoundGet, collectionStart, collectionTaskRetry, } from './handlers/collection';
+  collectionBoard, collectionEngineLogin, collectionRecordGet, collectionRecordList, collectionRoundGet,
+  collectionStart, collectionTaskRetry, } from './handlers/collection';
 import {
   diagnosisAlertAcknowledge, diagnosisCompetitors, diagnosisEngines, diagnosisFunnel, diagnosisOverview, } from './handlers/diagnosis';
 import {
@@ -191,6 +192,7 @@ export const demoBackend: Record<IpcCommand, DemoHandler> = {
   collection_round_get: collectionRoundGet,
   collection_start: collectionStart,
   collection_task_retry: collectionTaskRetry,
+  collection_engine_login: collectionEngineLogin,
   collection_record_list: collectionRecordList,
   collection_record_get: collectionRecordGet,
 

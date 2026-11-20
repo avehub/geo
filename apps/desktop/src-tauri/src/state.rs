@@ -212,8 +212,8 @@ impl AppState {
             secrets,
             llm,
             fetcher,
-            screenshots_dir: std::env::temp_dir().join("gdk-geo-test-screenshots"),
-            browser_profile_dir: std::env::temp_dir().join("gdk-geo-test-browser-profile"),
+            screenshots_dir: std::env::temp_dir().join("gq-geo-test-screenshots"),
+            browser_profile_dir: std::env::temp_dir().join("gq-geo-test-browser-profile"),
             // 测试默认用一张"验签恒失败"的远程服务：任何用例若真要同步，
             // 必须显式 `with_remote(...)` 注入 wiremock 端点 —— 默认配置绝不联网。
             remote: Arc::new(crate::services::RemoteService::for_test(

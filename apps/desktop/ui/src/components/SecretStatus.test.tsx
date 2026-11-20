@@ -1,14 +1,14 @@
 /**
  * `SecretStatus.tsx` 的运行时行为。
  *
- * 2026-11-19 产品裁定：演示边界统一由全局 `DemoModeStrip` 说明，
+ * 2026-11-19 产品裁定：演示边界已由 2026-11-19 产品裁定全部移除，
  * 密钥区不再重复「演示模式不会写入系统钥匙串」的提示。
  * 本文件钉住两件事：
  * ① demo 与 tauri 下密钥区都能正常渲染状态，且不出现演示模式文案；
  * ② 读取钥匙串失败时有错误与重试出口。
  *
  * ⚠ 控制 `runtime` 只能 `vi.mock`：它是 `api/runtime.ts` 的模块级常量，改 `window` 再渲染
- * 拿到的还是模块首次求值那一个。可变盒子 + 命名空间 getter 的写法照 `DemoModeStrip.test.tsx`。
+ * 拿到的还是模块首次求值那一个。可变盒子 + 命名空间 getter 的写法沿用项目里既有的 runtime 测试模式。
  */
 import { useState } from 'react';
 import { screen, waitFor } from '@testing-library/react';

@@ -560,7 +560,7 @@ async fn competitor_and_asset_csv_exports_carry_headers_and_rows() {
 async fn project_draft_defaults_are_applied_on_create() {
     let (state, _server, _secrets) = test_state(OfflineTransport::new()).await;
     let draft = ProjectDraft {
-        brand_name: "  稿得快  ".to_string(),
+        brand_name: "  搞钱GEO  ".to_string(),
         website: Some("gaodekuai.example".to_string()),
         ..Default::default()
     };
@@ -568,8 +568,8 @@ async fn project_draft_defaults_are_applied_on_create() {
         .create_draft(&draft, now())
         .await
         .expect("最简草稿也能建项");
-    assert_eq!(project.brand_name, "稿得快");
-    assert_eq!(project.name, "稿得快");
+    assert_eq!(project.brand_name, "搞钱GEO");
+    assert_eq!(project.name, "搞钱GEO");
     assert_eq!(project.region, "全国");
     assert_eq!(
         project.website.as_deref(),

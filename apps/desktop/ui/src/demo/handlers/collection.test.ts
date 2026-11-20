@@ -446,3 +446,16 @@ describe('demo/handlers/collection · collection_record_list / record_get', () =
     );
   });
 });
+
+
+describe('demo/handlers/collection · 纯登录窗口', () => {
+  it('collection_engine_login 在 demo 里不启动浏览器（browser/unavailable）', async () => {
+    const cause = await capture(() =>
+      demoInvoke('collection_engine_login', { engine: 'yuanbao' }),
+    );
+    expect(isIpcErrorPayload(cause)).toBe(true);
+    if (!isIpcErrorPayload(cause)) throw new Error('unreachable');
+    expect(cause.code).toBe('browser/unavailable');
+    expect(cause.params?.reason).toBe('browser_disabled');
+  });
+});

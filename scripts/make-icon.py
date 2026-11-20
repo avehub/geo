@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """从品牌源图派生全部桌面图标（Windows ICO / macOS ICNS / Tauri PNG / Store 磁贴）。
 
-源图：`brand/icon-source.jpg`（设计交付原图，2048×2048，四角为白色圆角外区域）
+源图：`brand/icon-source-original.png`（设计交付原图，1536×1536，四角为白色圆角外区域）
 母版：`brand/icon-source.png`（1024×1024，圆角外侧透明）
 产物：`apps/desktop/src-tauri/icons/` 下各平台尺寸
 
@@ -27,7 +27,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "brand" / "icon-source.jpg"
+SRC = ROOT / "brand" / "icon-source-original.png"
 MASTER = ROOT / "brand" / "icon-source.png"
 ICONS = ROOT / "apps" / "desktop" / "src-tauri" / "icons"
 
@@ -98,6 +98,17 @@ def build_master() -> tuple[Image.Image, float]:
     )
     alpha = canvas.resize((width, height), Image.LANCZOS)
     rgba = source.convert("RGBA")
+    # 圆角弧线与直边交界处的抗锯齿像素是「蓝→白」混合，只切 alpha 会在 1024/512 留下
+    # 一两个白点。先用品牌蓝把弧线外侧（内缩 3px，比 alpha 的内缩多 1px）刷掉，再接 alpha。
+    blue = source.getpixel((width // 40, height // 2))
+    fill = Image.new("L", (width * ss, height * ss), 255)
+    ImageDraw.Draw(fill).rounded_rectangle(
+        [3 * ss, 3 * ss, (width - 4) * ss, (height - 4) * ss],
+        radius=max(0.0, radius - 3) * ss,
+        fill=0,
+    )
+    rgba.paste(Image.new("RGBA", source.size, blue + (255,)),
+               (0, 0), fill.resize((width, height), Image.LANCZOS))
     rgba.putalpha(alpha)
     master = rgba.resize((MASTER_SIZE, MASTER_SIZE), Image.LANCZOS)
     master.save(MASTER)

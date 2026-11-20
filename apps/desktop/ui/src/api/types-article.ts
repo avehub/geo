@@ -9,11 +9,11 @@
  * 形态照 Jasper / Copy.ai 的 workflows 与 HubSpot campaigns（spec §2 那张采纳表）。
  *
  * # 🔴 demo 的边界（AGENTS 规则 9 / 规则 2 / 规则 6，spec DR-85）
- * - **没有真 cron**：`next_run_at` 是按 freq + time 算出来的**显示值**，到点不会自己跑；
- *   界面上那句「演示模式不跑真实定时任务」常驻；
+ * - **没有真 cron**：`next_run_at` 是按 freq + time 算出来的**显示值**，到点不会自己跑
+ *   （2026-11-19 产品裁定：演示提示已全部移除，不在界面重复）；
  * - **不调模型**：`article_schedule_run` 与模板「立即生成」都从 `demo/seed/articles.ts` 的
  *   预置文章池里取，按标题去重，池子用完回空数组；
- * - **不做合规扫描**：生成物一律 `pending_review`，界面上另挂「演示模式未执行合规扫描」标签；
+ * - **不做合规扫描**：生成物一律 `pending_review`，合规状态用中性标签「未执行合规扫描」；
  * - **不做真拼接注入**（DR-89）：`bindings` 与 `kb_modules` 只是**记录**"这条模板引用了什么"，
  *   demo 不把它们塞进 prompt 发给模型；预览里的替换发生在**前端**（`components/article-slots.ts`）。
  *

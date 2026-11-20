@@ -187,7 +187,7 @@ finish() {
 # STAGES: author this section. One stage() per step the human takes.
 # ──────────────────────────────────────────────────────────────────────────
 #
-# 稿得快 GEO 客户端：发布签名凭据向导
+# 搞钱GEO客户端：发布签名凭据向导
 # 对应 docs/superpowers/specs/2026-11-10-release-signing-distribution-design.md §4 / §7。
 # 只做「人必须在浏览器/钥匙串里点」的部分；能自动算的（base64、随机密码、写 secret）都由脚本做。
 #
@@ -222,7 +222,7 @@ write_env_q() {
   printf '  %s✓ wrote%s %s → %s\n' "$GREEN" "$RESET" "$key" "$ENV_FILE"
 }
 
-banner "稿得快 GEO：发布签名凭据配置"
+banner "搞钱GEO：发布签名凭据配置"
 
 # ── Stage 1 ──────────────────────────────────────────────────────────────
 stage "确认 Apple 账号等级与角色"

@@ -97,7 +97,7 @@ impl CollectionService {
             pool,
             llm,
             secrets,
-            screenshots_dir: std::env::temp_dir().join("gdk-geo").join("screenshots"),
+            screenshots_dir: std::env::temp_dir().join("gq-geo").join("screenshots"),
             browser_profile_dir,
         }
     }
@@ -379,6 +379,23 @@ impl CollectionService {
         self.recompute_round(&task.round_id).await?;
         self.parse_round_quietly(&task.round_id).await;
         Ok(task)
+    }
+
+    /// 打开某个引擎的纯登录窗口（当前只有元宝支持）。
+    ///
+    /// 只启动浏览器、不提交问题；登录态落在 `AppState::browser_profile_dir/yuanbao`，
+    /// 之后排一轮采集或重跑任务会直接复用。不代登录、不绕验证码（规则 11）。
+    pub async fn open_engine_login(&self, engine: EngineId) -> Result<(), IpcError> {
+        browser_login_engine(engine)?;
+        use crate::services::browser::LoginWindowError;
+        crate::services::browser::open_login_window(&self.browser_profile_dir).map_err(|error| {
+            let reason = match error {
+                LoginWindowError::Disabled => "browser_disabled",
+                LoginWindowError::NotFound => "chrome_not_found",
+                LoginWindowError::LaunchFailed => "launch_failed",
+            };
+            IpcError::with_params("browser/unavailable", [("reason", reason)])
+        })
     }
 
     /// 解析失败不改变采集结果（轮次仍然成功），只写日志等下次续跑补。
@@ -1088,6 +1105,16 @@ fn browser_failure(error: &crate::services::browser::BrowserError) -> FailureRea
     }
 }
 
+/// 纯登录窗口只对浏览器通道开放：API Key 引擎的「登录」是配置 Key，不走浏览器。
+fn browser_login_engine(engine: EngineId) -> Result<(), IpcError> {
+    if engine == EngineId::Yuanbao {
+        return Ok(());
+    }
+    Err(GeoError::validation("engine", "not_allowed")
+        .with_param("value", engine.as_str())
+        .into())
+}
+
 /// 引擎 → 对话模型服务商。元宝走浏览器、秘塔用当前主模型，均不走这里。
 fn engine_provider(engine: EngineId) -> Option<LlmProvider> {
     match engine {
@@ -1131,6 +1158,14 @@ fn status_str(status: CollectionStatus) -> &'static str {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+
+    /// 纯登录窗口只对浏览器通道开放：API Key 引擎没有「登录」这回事。
+    #[test]
+    fn browser_login_engine_accepts_only_yuanbao() {
+        assert!(browser_login_engine(EngineId::Yuanbao).is_ok());
+        let error = browser_login_engine(EngineId::Doubao).expect_err("豆包没有浏览器登录窗口");
+        assert_eq!(error.code.as_str(), "validation/failed");
+    }
 
     /// P3-06b：元宝通道的 profile 必须挂在 `AppState::browser_profile_dir`（app data dir）
     /// 之下，不能是服务内部随手拼的临时目录。

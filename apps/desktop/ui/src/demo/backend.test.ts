@@ -91,12 +91,13 @@ const SETTINGS_COMMANDS: readonly IpcCommand[] = [
   'export_write_file',
 ];
 
-/** M3 多引擎采集 6 条（`collection_*`）。 */
+/** M3 多引擎采集 7 条（`collection_*`）。 */
 const M3_COMMANDS: readonly IpcCommand[] = [
   'collection_board',
   'collection_round_get',
   'collection_start',
   'collection_task_retry',
+  'collection_engine_login',
   'collection_record_list',
   'collection_record_get',
 ];
@@ -262,7 +263,7 @@ const REMOTE_COMMANDS: readonly IpcCommand[] = [
   'remote_endpoint_config',
 ];
 
-/** 已接线全集（② 的断言面）：**只增不减**；`IPC_COMMANDS` 全部接满之后就是 120 条全集。 */
+/** 已接线全集（② 的断言面）：**只增不减**；`IPC_COMMANDS` 全部接满之后就是 121 条全集。 */
 const IMPLEMENTED_COMMANDS: readonly IpcCommand[] = [
   ...M1_COMMANDS,
   ...M2_COMMANDS,
@@ -297,20 +298,20 @@ afterEach(() => {
 });
 
 describe('demo/backend · 骨架契约', () => {
-  it('demoBackend 的键集合与 IPC_COMMANDS 完全相等（120 条，不多不少）', () => {
+  it('demoBackend 的键集合与 IPC_COMMANDS 完全相等（121 条，不多不少）', () => {
     const keys = Object.keys(demoBackend);
 
-    expect(IPC_COMMANDS).toHaveLength(120);
+    expect(IPC_COMMANDS).toHaveLength(121);
     expect(keys).toHaveLength(IPC_COMMANDS.length);
     expect([...keys].sort()).toEqual([...IPC_COMMANDS].sort());
   });
 
-  it('120 条全部脱离骨架：空入参调用不再抛「not implemented」（反向断言，强度只增不减）', async () => {
+  it('121 条全部脱离骨架：空入参调用不再抛「not implemented」（反向断言，强度只增不减）', async () => {
     // 十五份账本各自的条数写死在这里：将来加一条命令必须同时改这个数，改不动就是没真的加。
     expect(M1_COMMANDS).toHaveLength(21);
     expect(M2_COMMANDS).toHaveLength(11);
     expect(SETTINGS_COMMANDS).toHaveLength(8);
-    expect(M3_COMMANDS).toHaveLength(6);
+    expect(M3_COMMANDS).toHaveLength(7);
     expect(M4_COMMANDS).toHaveLength(4);
     expect(M5_COMMANDS).toHaveLength(5);
     expect(M6_COMMANDS).toHaveLength(4);
@@ -322,7 +323,7 @@ describe('demo/backend · 骨架契约', () => {
     expect(ARTICLE_COMMANDS).toHaveLength(10);
     expect(SEARCH_COMMANDS).toHaveLength(9);
     expect(REMOTE_COMMANDS).toHaveLength(12);
-    expect(IMPLEMENTED_COMMANDS).toHaveLength(120);
+    expect(IMPLEMENTED_COMMANDS).toHaveLength(121);
     // 账本没有漏项：`IPC_COMMANDS` 里没有一条还挂在「待实现」上（清单接满后这个集合恒空）。
     expect(IPC_COMMANDS.filter((cmd) => !IMPLEMENTED_COMMANDS.includes(cmd))).toEqual([]);
 

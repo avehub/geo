@@ -56,7 +56,7 @@ const STATUS_COLORS: Record<CollectionStatus, string> = {
  * M3 多引擎采集：轮次列表、各引擎执行情况、任务队列（失败可单独重跑）、
  * 原始证据（可下钻到回答全文与引用链接）与用量看板。
  *
- * 演示边界统一由全局 `DemoModeStrip` 说明；页面只保留运行时中立说明
+ * 2026-11-19 产品裁定：演示提示已全部移除；页面只保留运行时中立说明
  * （例如浏览器通道没有 token 记账）。
  */
 export default function CollectionPage() {

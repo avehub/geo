@@ -3,8 +3,8 @@ import type { ResourceBundle } from '../../resources';
 /**
  * 跨页面复用的通用动作与兜底文案。键集由 zh-CN 侧钉死（R-G）。
  *
- * `appName` 的 en 值**故意**与 zh 相同：产品名是专有名词，不译（裁定 B-3）。
- * 两侧值相同是合法的——R-G 那条运行期断言只比较键路径集合，不比较值。
+ * `appName` 的 en 值是英文展示名 `GQ-GEO`（2026-11-20 更名裁定：中文 搞钱GEO / 英文 GQ-GEO）。
+ * 两岸值不再相同，但 R-G 那条运行期断言只比较键路径集合、不比较值，因此仍然成立。
  */
 const common: ResourceBundle['common'] = {
   // P2-10: native save-dialog title, supplied by the frontend per locale.
@@ -28,7 +28,7 @@ const common: ResourceBundle['common'] = {
   loading: 'Loading…',
   unknownError: 'Something went wrong. Please try again later.',
 
-  appName: '稿得快 GEO',
+  appName: 'GQ-GEO',
   tagline: 'Generative Engine Optimization · local-first',
 
   edit: 'Edit',

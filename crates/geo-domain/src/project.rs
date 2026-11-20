@@ -348,8 +348,8 @@ mod tests {
 
     fn valid_draft() -> ProjectDraft {
         ProjectDraft {
-            brand_name: "稿得快".to_string(),
-            aliases: vec!["GDK".to_string(), "稿得快AI".to_string()],
+            brand_name: "搞钱GEO".to_string(),
+            aliases: vec!["GQ".to_string(), "搞钱GEO".to_string()],
             name: None,
             website: Some("www.gaodekuai.com".to_string()),
             core_pages: vec!["https://www.gaodekuai.com/about".to_string()],
@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn build_defaults_name_to_brand_and_normalizes_website() {
         let bundle = valid_draft().build(now()).unwrap();
-        assert_eq!(bundle.project.name, "稿得快");
+        assert_eq!(bundle.project.name, "搞钱GEO");
         assert_eq!(
             bundle.project.website.as_deref(),
             Some("https://www.gaodekuai.com")
@@ -473,10 +473,10 @@ mod tests {
     #[test]
     fn build_dedupes_aliases_and_tags() {
         let mut draft = valid_draft();
-        draft.aliases = vec!["GDK".into(), " GDK ".into(), "GDK".into()];
+        draft.aliases = vec!["GQ".into(), " GQ ".into(), "GQ".into()];
         draft.tags = vec!["a".into(), "a".into(), " ".into()];
         let bundle = draft.build(now()).unwrap();
-        assert_eq!(bundle.project.aliases, vec!["GDK"]);
+        assert_eq!(bundle.project.aliases, vec!["GQ"]);
         assert_eq!(bundle.project.tags, vec!["a"]);
     }
 

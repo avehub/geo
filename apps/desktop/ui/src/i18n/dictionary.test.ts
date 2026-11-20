@@ -1018,7 +1018,8 @@ describe('AGENTS 规则 6 · 文案合规', () => {
     'prompt',
     'entity',
     'settings',
-    'demo',
+    // 2026-11-20 `demo` namespace 随「移除全部演示提示」一并删除（含顶部 DEMO 细条），
+    // 合规扫描面同步收敛为 21 个 namespace。
     // M3–M7 的 5 个（顺序照 `locales/zh-CN/index.ts` 的资源树 = 里程碑顺序）
     'collection',
     'insight',
@@ -1045,7 +1046,7 @@ describe('AGENTS 规则 6 · 文案合规', () => {
   ] as const;
 
   /**
-   * 今天的词典面：**全部 22 个 namespace**、两侧全部叶子（15b #49 扩面，原先只有 errors + fields）。
+   * 今天的词典面：**全部 21 个 namespace**、两侧全部叶子（15b #49 扩面，原先只有 errors + fields）。
    *
    * 从资源树**现算**（`leaves(zhCN[ns], ns)`），不手抄键名：`ENTRIES` / `FIELD_ENTRIES` 那两个
    * 预算好的常量继续留给「errors 与 fields 的键集双向相等」那组用（它们的判据是**键集**，
@@ -1067,13 +1068,13 @@ describe('AGENTS 规则 6 · 文案合规', () => {
   }
 
 
-  it('全部 22 个 namespace、两侧的文案都没有绝对化用语', () => {
+  it('全部 21 个 namespace、两侧的文案都没有绝对化用语', () => {
     const probe = dictionaryProbe();
     // 防空跑：词典面塌成空集时「0 条违规」是永真的。920 = 9 个 namespace × 两侧各 460 个叶子
     // （15c-1 的 #23/#47/#25 与 15c-2 的 #54 两侧同批各加 4 键）；M3–M7 又加了 5 个 namespace
     // 与 13 个 field 标签，所以今天的下界抬到 1800（写**下界**而不是精确值：新增一条文案不该打红门禁）。
     expect(probe.length, '合规扫描面塌了 ⇒ 判据已失效').toBeGreaterThanOrEqual(1800);
-    // 🔴 覆盖面自查（15b #49 的本体）：probe 里出现的 namespace 必须**恰好**是词典的全部 22 个。
+    // 🔴 覆盖面自查（15b #49 的本体）：probe 里出现的 namespace 必须**恰好**是词典的全部 21 个。
     // 少了 ⇒ 又回到 M-2 那个缺口；多了 ⇒ 说明 path 前缀被谁改坏了。
     expect(
       [...new Set(probe.map(([, path]) => path.split('.')[0]))].sort(),

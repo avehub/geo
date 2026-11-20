@@ -8,10 +8,10 @@
  * - **跨 surface 复用**的（`edit` / `close` / `actions` / `invalidUrl` / `noteOptional` /
  *   `listSeparator`）：同一条指令在建项向导、竞品编辑器、两张表格里的措辞必须一致，
  *   分开放只会让"改一处忘三处"。
- * - **品牌名与副标题**（`appName` / `tagline`，裁定 B-3）：`appName` 的 **en 值就是同一个
- *   中文串**——专有名词不译。这样做的理由不是好看：Task 15 的残留扫描要求非测试、非
- *   locales 的源码里只剩注释含中文，把品牌名留在 `AppLayout.tsx` 里就得给扫描开白名单，
- *   而白名单是下一个静默洞。两侧值相同完全合法（键集相等断言只看键不看值）。
+ * - **品牌名与副标题**（`appName` / `tagline`，裁定 B-3，2026-11-20 更名）：中文展示名
+ *   `搞钱GEO`、英文展示名 `GQ-GEO`，两 locale 各写各的。品牌名必须留在词典里而不是
+ *   `AppLayout.tsx`——Task 15 的残留扫描要求非测试、非 locales 的源码里只剩注释含中文，
+ *   把品牌名写死在组件里就得给扫描开白名单，而白名单是下一个静默洞。
  */
 const common = {
   /** 统一状态语言（StatusChip）：七种状态全站共用一套词。 */
@@ -35,7 +35,7 @@ const common = {
 
   /** P2-10（2026-11-07 测试报告）：原生「另存为」对话框标题由前端按当前语言传入，Rust 不再硬编码。 */
   exportDialogTitle: '导出',
-  appName: '稿得快 GEO',
+  appName: '搞钱GEO',
   tagline: '生成式引擎优化 · 本地优先',
 
   edit: '编辑',

@@ -175,7 +175,7 @@ const kb = {
 
   export: {
     docTitle: 'Brand knowledge base',
-    docNote: 'Exported by GDK GEO client; pending-review entries are excluded.',
+    docNote: 'Exported by GQ-GEO client; pending-review entries are excluded.',
     markdownTitle: 'Markdown handbook',
     markdownHint: 'A readable version for the content team',
     jsonTitle: 'JSON knowledge pack',

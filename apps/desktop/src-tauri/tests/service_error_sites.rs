@@ -368,7 +368,9 @@ fn the_guard_sees_every_production_site() {
         ("services/search_service.rs", 12),
         // GSC OAuth：`bind_failed()` 一处稳定的 `validation/failed` 映射。
         ("services/search_oauth.rs", 1),
-        ("services/collection_service.rs", 8),
+        // 2026-11-20 元宝纯登录：`browser_login_engine` 的 `engine/not_allowed` 校验
+        // 与 `open_engine_login` 的 `browser/unavailable` 映射各一处（8 → 10）。
+        ("services/collection_service.rs", 10),
         ("services/insight_service.rs", 7),
         ("services/diagnosis_service.rs", 2),
         ("services/environment_service.rs", 0),
@@ -421,6 +423,6 @@ fn the_guard_sees_every_production_site() {
         assert_eq!(actual, *want, "{name} 的生产站点数变了，守卫清单要同步");
         total += actual;
     }
-    assert_eq!(total, 121, "壳侧生产站点总数");
+    assert_eq!(total, 123, "壳侧生产站点总数");
     assert_eq!(FILES.len(), expected.len(), "FILES 与期望表要一一对应");
 }

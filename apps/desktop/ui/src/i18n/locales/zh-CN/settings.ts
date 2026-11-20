@@ -96,7 +96,7 @@ const settings = {
   /**
    * 「拉取模型列表」（Plan B Task 4 · DR-34）。
    *
-   * 2026-11-19 产品裁定：演示边界统一由全局 `DemoModeStrip` 说明；
+   * 2026-11-19 产品裁定：2026-11-19 产品裁定：演示提示已全部移除；
    * 这里只保留运行时中立的 `hintLive` / `emptyLive`。
    * `resultPreset` / `resultUpstream` 两句对应 `ModelsListResult.source` 的两档——
    * 刻意**不**做成 `enumLabel` 命名空间（那会多一个前缀），因为只有两档且各自要说的话不同。

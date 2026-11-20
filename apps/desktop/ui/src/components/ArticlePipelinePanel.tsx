@@ -44,7 +44,7 @@ export interface ArticlePipelinePanelProps {
  *
  * # 演示边界（2026-11-19 产品裁定）
  * demo 没有定时器，`next_run_at` 只是按 freq + time 算出来的显示值；
- * 该边界统一由全局 `DemoModeStrip` 说明，本面板不再重复。
+ * 2026-11-19 产品裁定：演示提示已全部移除，本面板不再重复。
  *
  * # 🔴 纯展示组件
  * 写路径全在页面层（`pages/ArticleStudioPage.tsx`）：本组件不直连 IPC，也不持有任何状态，

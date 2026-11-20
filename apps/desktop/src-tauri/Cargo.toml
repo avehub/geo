@@ -1,6 +1,6 @@
 [package]
 name = "geo-desktop"
-description = "稿得快 GEO 客户端（Tauri 2 桌面壳）"
+description = "搞钱GEO客户端（Tauri 2 桌面壳）"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

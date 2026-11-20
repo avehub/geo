@@ -63,6 +63,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         collection::collection_board,
         collection::collection_start,
         collection::collection_task_retry,
+        collection::collection_engine_login,
         environment::app_environment,
         diagnosis::diagnosis_overview,
         diagnosis::diagnosis_competitors,

@@ -12,7 +12,7 @@
  *
  * # 这些路径在 demo 里并不存在
  * `demo/handlers/app-environment.ts` 端的是一组形状正确的静态值（AGENTS 规则 9：
- * demo 不碰文件系统）。演示边界统一由全局 `DemoModeStrip` 说明，段首不再重复提示；
+ * demo 不碰文件系统）。演示边界已由 2026-11-19 产品裁定全部移除，段首不再重复提示；
  * 桌面端才显示真实目录说明。
  *
  * # 库大小走 `bytesText`

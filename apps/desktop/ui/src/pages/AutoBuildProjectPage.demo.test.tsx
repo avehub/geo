@@ -1,5 +1,5 @@
 /**
- * demo 运行时的自动采集屏：演示边界已收口到全局 `DemoModeStrip`，
+ * demo 运行时的自动采集屏：演示边界已按 2026-11-19 产品裁定移除，
  * 页面不再重复「演示模式」文案。
  */
 import { describe, expect, it, vi } from 'vitest';

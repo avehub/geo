@@ -35,6 +35,7 @@
     "collection_board",
     "collection_start",
     "collection_task_retry",
+    "collection_engine_login",
     "app_environment",
     "diagnosis_overview",
     "diagnosis_competitors",

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "description": "稿得快 GEO 客户端前端（React + antd v5）",
+  "description": "搞钱GEO客户端前端（React + antd v5）",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

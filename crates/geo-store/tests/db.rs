@@ -34,7 +34,7 @@ async fn seed_project_graph(pool: &SqlitePool, project_id: &str, set_id: &str) {
     sqlx::query(
         "INSERT INTO projects (id, name, brand_name, aliases, website, region, language, \
          industry, industry_label, tags, status, archived_at, created_at, updated_at) \
-         VALUES ($1,'水泵项目','稿得快','[\"GDK\"]','https://www.gaodekuai.com','华东','zh_cn', \
+         VALUES ($1,'水泵项目','搞钱GEO','[\"GQ\"]','https://www.gaodekuai.com','华东','zh_cn', \
          'enterprise_saas',NULL,'[\"SaaS\"]','active',NULL,$2,$2)",
     )
     .bind(project_id)
@@ -62,7 +62,7 @@ async fn seed_project_graph(pool: &SqlitePool, project_id: &str, set_id: &str) {
     .expect("插入资产");
     sqlx::query(
         "INSERT INTO entity_cards (project_id, fields, field_status, source, completeness, created_at, updated_at) \
-         VALUES ($1,'{\"standard_name\":\"稿得快\"}','{\"standard_name\":\"official\"}','{}',1.0,$2,$2)",
+         VALUES ($1,'{\"standard_name\":\"搞钱GEO\"}','{\"standard_name\":\"official\"}','{}',1.0,$2,$2)",
     )
     .bind(project_id)
     .bind(now)
@@ -71,7 +71,7 @@ async fn seed_project_graph(pool: &SqlitePool, project_id: &str, set_id: &str) {
     .expect("插入实体卡");
     sqlx::query(
         "INSERT INTO entity_card_revisions (id, project_id, field_path, old_value, new_value, status, note, edited_at) \
-         VALUES ('r-1',$1,'standard_name',NULL,'\"稿得快\"','official',NULL,$2)",
+         VALUES ('r-1',$1,'standard_name',NULL,'\"搞钱GEO\"','official',NULL,$2)",
     )
     .bind(project_id)
     .bind(now)

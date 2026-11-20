@@ -343,7 +343,7 @@ export default function PromptSetPage() {
         }
       />
 
-      {/* 2026-11-19 产品裁定：演示边界统一由全局 `DemoModeStrip` 说明，
+      {/* 2026-11-19 产品裁定：演示边界已由 2026-11-19 产品裁定全部移除，
           题库页不再单独挂「演示模式未执行合规扫描」。 */}
       <GeneratePanel
         defaultIndustry={projectQuery.data?.project?.industry ?? 'b2b_manufacturing'}

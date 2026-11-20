@@ -158,7 +158,7 @@ fn now() -> DateTime<Utc> {
 /// 除 `brand_name` 外全空的合法草稿：`validate()` 应当返回 `Ok`。
 fn draft() -> ProjectDraft {
     ProjectDraft {
-        brand_name: "稿得快".to_string(),
+        brand_name: "搞钱GEO".to_string(),
         ..ProjectDraft::default()
     }
 }
@@ -172,7 +172,7 @@ fn broken_draft(mutate: impl FnOnce(&mut ProjectDraft)) -> GeoError {
 
 fn card_fields() -> EntityFields {
     EntityFields {
-        standard_name: "稿得快".to_string(),
+        standard_name: "搞钱GEO".to_string(),
         products: vec![ProductSpec {
             name: "GEO 客户端".to_string(),
             ..ProductSpec::default()
@@ -508,7 +508,7 @@ const SITES: &[Site] = &[
         at: "entity_card.rs:146",
         trigger: || {
             EntityFields {
-                standard_name: "稿得快".to_string(),
+                standard_name: "搞钱GEO".to_string(),
                 founded_year: Some(MIN_FOUNDING_YEAR - 1),
                 ..EntityFields::default()
             }

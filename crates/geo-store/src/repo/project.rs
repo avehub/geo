@@ -292,7 +292,7 @@ mod tests {
     #[tokio::test]
     async fn create_then_get_roundtrips_every_field() {
         let repo = setup().await;
-        let project = sample_project("稿得快 GEO 客户端");
+        let project = sample_project("搞钱GEO客户端");
         repo.create(&project).await.expect("写入项目");
 
         let loaded = repo.get(project.id).await.expect("读取项目");
@@ -338,7 +338,7 @@ mod tests {
         );
         assert_eq!(
             raw_column(&repo, project.id, "aliases").await,
-            r#"["GDK","gaodekuai"]"#
+            r#"["GQ","gaodekuai"]"#
         );
         assert_eq!(
             raw_column(&repo, project.id, "created_at").await,

@@ -141,7 +141,16 @@ jobs:
             --notes-file "$RUNNER_TEMP/notes.md" \
             --target "${GITHUB_SHA}"
 
-          ID="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq ".[] | select(.tag_name==\"${TAG}\") | .id" | head -n1)"
+          # 刚创建的 draft 不保证立刻出现在 releases 列表里（2026-11-20 实测：
+          # 创建成功但同秒查询返回空，导致 v0.2.0 首跑在这里假失败）。改为带退避的重试。
+          ID=""
+          for i in $(seq 1 15); do
+            ID="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq ".[] | select(.tag_name==\"${TAG}\") | .id" 2>/dev/null | head -n1 || true)"
+            [[ -n "$ID" && "$ID" != "null" ]] && break
+            echo "draft $TAG 尚未出现在列表里（第 $i 次），2s 后重试…"
+            sleep 2
+          done
           [[ -n "$ID" && "$ID" != "null" ]] || { echo "::error::拿不到 release id"; exit 1; }
           echo "release_id=$ID" >> "$GITHUB_OUTPUT"
           echo "已创建 draft Release $TAG（id=$ID）"

@@ -1,7 +1,7 @@
 //! M1.5 FAQ 素材库服务（Plan C 第二个纵向切片）。
 //!
-//! 四条命令：`faq_list` / `faq_add` / `faq_update` / `faq_delete`。
-//! `faq_generate` 需要模型成文 + 合规扫描，仍留在 demo-only 清单，**这里不伪造**。
+//! 五条命令：`faq_list` / `faq_add` / `faq_update` / `faq_delete` / `faq_generate`。
+//! 生成走模型成文 + 广告法红线扫描（命中整批拒绝），产物一律 `generated` + `pending_review`。
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -35,7 +35,9 @@ struct FaqCandidate {
     answer_markdown: String,
     #[serde(default)]
     category: Option<String>,
-    intent: IntentCategory,
+    /// 模型输出原文。提示词给的是中文标签，契约要的是 snake_case id，
+    /// 两种写法都在落库前用 [`IntentCategory::from_id_or_label`] 归一。
+    intent: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -179,10 +181,11 @@ impl FaqService {
             .await?;
         let existing = self.faqs().list_by_project(project_id).await?;
 
+        // 🔴 同时给中文标签与稳定 id：模型据此回填 `intent`，后端契约只认后者。
         let intents = options
             .intents
             .iter()
-            .map(|intent| intent.label_zh())
+            .map(|intent| format!("{}（{}）", intent.label_zh(), intent.as_str()))
             .collect::<Vec<_>>()
             .join("、");
         let existing_questions = existing
@@ -217,7 +220,11 @@ impl FaqService {
         );
         let request = ChatRequest::new(vec![
             ChatMessage::system(
-                "你是 GEO 内容编辑。只输出 JSON，结构为 {\"items\":[{\"question\":\"...\",\"answer_markdown\":\"...\",\"category\":\"...\",\"intent\":\"...\"}]}。",
+                "你是 GEO 内容编辑。只输出 JSON，结构为 \
+                 {\"items\":[{\"question\":\"...\",\"answer_markdown\":\"...\",\
+                 \"category\":\"...\",\"intent\":\"...\"}]}；intent 只能取 \
+                 category_awareness、purchase_recommendation、brand_comparison、pricing_plan、\
+                 local_service、after_sales_reputation、professional_long_tail。",
             ),
             ChatMessage::user(prompt),
         ])
@@ -231,9 +238,6 @@ impl FaqService {
                     if item.answer_markdown.trim().is_empty() {
                         return Err("answer_required".to_string());
                     }
-                    if !options.intents.contains(&item.intent) {
-                        return Err("intent_not_requested".to_string());
-                    }
                 }
                 Ok(())
             })
@@ -245,6 +249,14 @@ impl FaqService {
         for candidate in candidates.items {
             if created.len() >= target {
                 break;
+            }
+            // 宽松解析模型回填的意图；解析不出或不在勾选范围内就丢这一条，
+            // 不因单条跑偏让整批 `llm/deserialize` 失败（`target` 是上限，不是必须凑满）。
+            let Some(intent) = IntentCategory::from_id_or_label(&candidate.intent) else {
+                continue;
+            };
+            if !options.intents.contains(&intent) {
+                continue;
             }
             let question = candidate.question.trim().to_string();
             if question.is_empty() || !seen.insert(question.clone()) {
@@ -266,7 +278,7 @@ impl FaqService {
                     .category
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty()),
-                intent: candidate.intent,
+                intent,
                 status: ContentStatus::PendingReview,
                 source: LibrarySource::Generated,
                 position: start + i32::try_from(created.len()).unwrap_or(0),

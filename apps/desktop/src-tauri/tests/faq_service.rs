@@ -247,6 +247,85 @@ async fn generate_persists_model_answers_as_pending_review() {
 }
 
 #[tokio::test]
+async fn generate_accepts_chinese_intent_labels_from_model() {
+    // 2026-11-19：真实模型常把提示词里的中文意图标签原样回填。
+    // 后端契约只认 snake_case id，若直接按枚举反序列化，整批会以
+    // `llm/deserialize {reason: parse_failed}` 失败（AI 生成直接不可用）。
+    let (state, _server, _secrets) = state_with_bodies(vec![faq_json(&[
+        (
+            "滤芯多久换一次？",
+            "视压差而定，一般 3~6 个月。",
+            "售后",
+            "售后口碑",
+        ),
+        (
+            "防爆证怎么办？",
+            "向具备资质的机构申请。",
+            "选型",
+            "选购推荐",
+        ),
+    ])])
+    .await;
+    let project_id = project(&state).await;
+    let service = FaqService::from_state(&state);
+
+    let created = service
+        .generate(
+            project_id,
+            FaqGenerateOptions {
+                intents: vec![
+                    IntentCategory::AfterSalesReputation,
+                    IntentCategory::PurchaseRecommendation,
+                ],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect("中文意图标签也应可用");
+    assert_eq!(created.len(), 2);
+    assert_eq!(created[0].intent, IntentCategory::AfterSalesReputation);
+    assert_eq!(created[1].intent, IntentCategory::PurchaseRecommendation);
+}
+
+#[tokio::test]
+async fn generate_skips_candidates_with_unrequested_intent() {
+    // 模型偶尔会多给一条用户没勾的意图。旧实现让整批 `llm/deserialize`
+    // 失败（追问文案只有 `intent_not_requested`，模型无从改对）；现在只丢这一条。
+    let (state, _server, _secrets) = state_with_bodies(vec![faq_json(&[
+        (
+            "滤芯多久换一次？",
+            "视压差而定。",
+            "售后",
+            "after_sales_reputation",
+        ),
+        (
+            "和竞品比哪个好？",
+            "按工况对比。",
+            "对比",
+            "brand_comparison",
+        ),
+    ])])
+    .await;
+    let project_id = project(&state).await;
+    let service = FaqService::from_state(&state);
+
+    let created = service
+        .generate(
+            project_id,
+            FaqGenerateOptions {
+                intents: vec![IntentCategory::AfterSalesReputation],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect("多出的意图应被跳过而不是整批失败");
+    assert_eq!(created.len(), 1);
+    assert_eq!(created[0].intent, IntentCategory::AfterSalesReputation);
+}
+
+#[tokio::test]
 async fn generate_skips_questions_already_in_the_library() {
     let (state, _server, _secrets) = state_with_bodies(vec![faq_json(&[
         ("已有问题？", "新答案", "售后", "after_sales_reputation"),

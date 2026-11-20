@@ -65,6 +65,22 @@ impl IntentCategory {
             .find(|intent| intent.as_str() == raw)
     }
 
+    /// 宽松解析模型输出：稳定 id（`category_awareness`）与中文标签（`品类认知`）都接受。
+    ///
+    /// 结构化输出里的 `intent` 是**枚举**，但提示词给模型看的是中文标签；
+    /// 模型经常把标签原样回填。只认 snake_case 会让整批 FAQ 以
+    /// `llm/deserialize {reason: parse_failed}` 失败。宽松解析只放宽「模型怎么说」，
+    /// 落库与前端契约仍是稳定 id。
+    pub fn from_id_or_label(raw: &str) -> Option<Self> {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            return None;
+        }
+        Self::all()
+            .into_iter()
+            .find(|intent| intent.as_str() == raw || intent.label_zh() == raw)
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::CategoryAwareness => "category_awareness",
@@ -410,6 +426,26 @@ mod tests {
 
     fn item(text: &str, intent: IntentCategory, weight: u8) -> PromptItem {
         PromptItem::new(PromptSetId::new(), text, intent).with_weight(weight)
+    }
+
+    #[test]
+    fn intent_parses_stable_id_and_chinese_label() {
+        for intent in IntentCategory::all() {
+            assert_eq!(
+                IntentCategory::from_id_or_label(intent.as_str()),
+                Some(intent)
+            );
+            assert_eq!(
+                IntentCategory::from_id_or_label(intent.label_zh()),
+                Some(intent)
+            );
+        }
+        assert_eq!(
+            IntentCategory::from_id_or_label("  售后口碑  "),
+            Some(IntentCategory::AfterSalesReputation)
+        );
+        assert_eq!(IntentCategory::from_id_or_label("随便聊聊"), None);
+        assert_eq!(IntentCategory::from_id_or_label("   "), None);
     }
 
     #[test]

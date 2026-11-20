@@ -33,7 +33,10 @@ export const REPORT_VARIANT_VALUES = [
   'white_label',
 ] as const satisfies readonly ReportVariant[];
 
-/** 导出格式。PDF / PNG 需要桌面端的原生渲染能力，Excel 明细在 demo 里用 CSV 承担。 */
+/**
+ * 导出格式。PDF 由桌面端转换；XLSX 是报告页额外的导出项（不扩这个冻结枚举，见 `ReportExportBar`）。
+ * PNG 仍待桌面端原生渲染；demo 里明细用 CSV 承担。
+ */
 export type ExportFormat = 'markdown' | 'html' | 'csv' | 'docx' | 'pdf' | 'png';
 
 export const EXPORT_FORMAT_VALUES = [
@@ -48,7 +51,8 @@ export const EXPORT_FORMAT_VALUES = [
 /**
  * demo 里**产不出**的格式：按钮照旧渲染（产品负责人要看到完整的导出面），但置灰并给提示。
  *
- * 理由：`docx` 需要文档库、`pdf` / `png` 需要原生渲染或 canvas，纯前端 demo 不引这些依赖
+ * 理由：`docx` 需要文档库、`png` 需要原生渲染或 canvas，`pdf` 需要无头浏览器；
+ * 纯前端 demo 不引这些依赖（桌面端已支持 PDF / XLSX）。
  * （AGENTS 规则 9 的同族取舍：不在 demo 里造一份注定要重写的能力）。
  * 已登记进 `docs/superpowers/specs/2026-09-23-demo-vs-backend-known-divergences.md`。
  */

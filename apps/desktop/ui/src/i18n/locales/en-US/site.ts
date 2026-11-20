@@ -16,6 +16,8 @@ const site: ResourceBundle['site'] = {
   subtitle: 'Turn site prescriptions from the Action Center into patches you can ship, revert and roll back',
   staticNote: 'Demo data: the page list and channel probe results are prebaked static values, not real crawls or probes.',
   demoBody: 'Demo mode never touches your live site: publish / unpublish / rollback only keep a local record and produce downloadable hand-over files.',
+  liveHandoffBody:
+    'This version only produces hand-over files: publish / unpublish / rollback keep a local record and never change the live site directly.',
 
   platforms: {
     wordpress: 'WordPress',
@@ -100,6 +102,7 @@ const site: ResourceBundle['site'] = {
     expand: 'Show pages',
     title: 'Managed pages',
     hint: 'Pick patch targets from this list instead of typing URLs. A real backend discovers these by crawling; demo mode ships six prebaked pages.',
+    liveHint: 'Pick patch targets from this list instead of typing URLs. Pages are discovered by crawling.',
     url: 'Page URL',
     role: 'Page role',
     pageTitle: 'Page title',
@@ -126,7 +129,7 @@ const site: ResourceBundle['site'] = {
     hint: 'The same patch can ship four ways. The hand-over bundle needs no credentials; the other three depend on the access the customer actually has.',
     about: {
       bundle: 'Renders patches into uploadable files plus a hand-over sheet for the webmaster or agency. No credentials and no server access required.',
-      cms: 'Pushes content to WordPress as a draft over the REST API (never straight to live). Needs the site URL, a username and an application password; demo mode collects no password.',
+      cms: 'Pushes content to WordPress as a draft over the REST API (never straight to live). Needs the site URL, a username and an application password.',
       edge: 'Generates an edge-function skeleton plus patches.json for the customer to paste into their own Cloudflare, Tencent EdgeOne or Alibaba ESA console. The function runs in their account and reads the latest patch data at request time, so no redeploy is needed.',
       repo: 'Generates a diff plus a hand-over prompt for a coding agent (Codex, Cursor and friends) or a colleague with repository access to open a merge request. This client never holds a hosting-platform token.',
     },
@@ -153,6 +156,7 @@ const site: ResourceBundle['site'] = {
     credentials: 'Credentials',
     secretRef: 'Keychain reference',
     demoCredentials: 'Demo mode collects no password or token: only a real backend writes to the system keychain, and the database keeps just the reference string.',
+    liveCredentials: 'Credentials are stored in the system keychain; the database keeps only a reference string.',
     configTitle: 'Configuration',
   },
 
@@ -236,6 +240,7 @@ const site: ResourceBundle['site'] = {
   generate: {
     title: 'Generate patch drafts from a prescription',
     hint: 'Demo mode calls no model: the candidates below come from prebaked templates, and everything generated starts as a draft pending review.',
+    liveHint: 'Generated patches always start as drafts pending manual review and never change the live site directly.',
     action: 'Prescription',
     kinds: 'Which patch kinds to generate',
     none: '(this prescription has no prebaked patch templates)',

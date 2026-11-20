@@ -45,6 +45,11 @@ function pathname(): string {
   return screen.getByTestId('pathname').textContent ?? '';
 }
 
+/** DOM 顺序判据：`a` 在 `b` 之前。 */
+function precedes(a: HTMLElement, b: HTMLElement): boolean {
+  return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+}
+
 function stubList() {
   mockInvoke.stubAlways('project_list', (args) => {
     const filter = (args.filter ?? {}) as { query?: string | null; include_archived?: boolean };
@@ -183,6 +188,8 @@ describe('ProjectListPage', () => {
       default_name: '宏宇泵业-竞品.csv',
       content: 'name,aliases,website,note,position\n南方泵业,,,,0',
       with_bom: true,
+      // P2-10（2026-11-07 测试报告）：对话框标题随当前语言传入
+      title: '导出',
     });
     expect(await screen.findByText('竞品 CSV 已导出')).toBeInTheDocument();
 
@@ -359,6 +366,18 @@ describe('ProjectListPage', () => {
     expect(screen.getByText(/^Tip: type in the tags column/)).toBeInTheDocument();
   });
 
+  it('页面提示栏位于页头下方、表格上方', async () => {
+    stubList();
+    renderWithProviders(<ProjectListPage />);
+
+    const heading = await screen.findByRole('heading', { name: '项目' });
+    const hint = screen.getByText(/^提示：标签列可直接输入后回车增删/);
+    const table = screen.getByRole('table');
+
+    expect(precedes(heading, hint)).toBe(true);
+    expect(precedes(hint, table)).toBe(true);
+  });
+
   it('B-2 对照 · 同一批断言在 zh-CN 下渲染成中文（证明英文不是写死进组件的）', async () => {
     stubList();
     renderWithProviders(<ProjectListPage />);
@@ -443,5 +462,31 @@ describe('ProjectListPage · B-3 demo 后端转发（逐命令 stubAlways 闭包
     await userEvent.click(screen.getByRole('button', { name: /新建项目/ }));
 
     await waitFor(() => expect(pathname()).toBe('/projects/new'));
+  });
+
+  /**
+   * P2-01（2026-11-07 测试报告）：归档项目曾经**完全不可达**——侧栏项 disabled、
+   * 项目切换器把它过滤掉、列表行只剩「取消归档 / 导出」三个动作里的两个。
+   * 归档是"暂时不看"不是"删掉"，数据必须还能打开看。
+   * 判据：归档行的项目名是可点的，落到 `/projects/:id/overview`。
+   */
+  it('归档项目的名字可点，打开项目概览（P2-01 可达性）', async () => {
+    stubList();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <ProjectListPage />
+        <Routes>
+          <Route path="*" element={<PathProbe />} />
+        </Routes>
+      </>,
+    );
+    await screen.findByText('宏宇泵业 GEO');
+    await user.click(screen.getByRole('checkbox', { name: /显示已归档/ }));
+
+    const name = await screen.findByText('旧水泵项目');
+    await user.click(name);
+
+    await waitFor(() => expect(pathname()).toBe('/projects/p-archived/overview'));
   });
 });

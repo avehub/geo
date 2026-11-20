@@ -11,9 +11,9 @@
  * 只做「记号 → 词条」与「数字 → 带单位的串」（后者走 `components/format.ts`，
  * 与界面上显示的完全同一份实现，所以导出文件里的数字与预览里的不可能不一致）。
  *
- * # `docx` / `pdf` / `png` 不在这里
- * 那三种要原生渲染或文档库（`DESKTOP_ONLY_EXPORT_FORMATS`），纯前端 demo 不引；
- * 界面上按钮照旧渲染但置灰，提示语在 `report.export.desktopOnly`。
+ * # `docx` / `png` 与二进制转换不在这里
+ * 这里只产出文本：桌面端的 PDF 由 HTML 经无头 Chrome 打印，XLSX 由 CSV 在 Rust 侧转为表格；
+ * demo 仍只呈现文本导出，二进制格式的说明见 `report.export.desktopOnly`。
  */
 import type { TFunction } from 'i18next';
 import dayjs from 'dayjs';
@@ -29,7 +29,10 @@ import { enumLabel } from '../i18n/enum-label';
 /** demo 里真能产出的三种导出格式（其余三种见 `DESKTOP_ONLY_EXPORT_FORMATS`）。 */
 export type ReportExportKind = 'markdown' | 'html' | 'csv';
 
-/** 文件扩展名（CSV 走 `.csv`，Excel 打开中文靠 `export_write_file` 的 BOM）。 */
+/** 桌面端额外产出的二进制格式：PDF 由 HTML 打印，XLSX 由 CSV 转入。 */
+export type ReportBinaryExportKind = 'pdf' | 'xlsx';
+
+/** 文本导出扩展名（CSV 走 `.csv`，Excel 打开中文靠 `export_write_file` 的 BOM）。 */
 const EXTENSIONS: Record<ReportExportKind, string> = {
   markdown: 'md',
   html: 'html',
@@ -45,9 +48,21 @@ const EXTENSIONS: Record<ReportExportKind, string> = {
  * （后者在部分浏览器上会静默丢掉 `download` 属性里的中文）。
  * 报告里已经有标题与品牌名，文件名不需要再承担辨识度。
  */
-export function reportFileName(doc: ReportDocument, kind: ReportExportKind): string {
+function reportFileStem(doc: ReportDocument): string {
   const stamp = dayjs(doc.generated_at).format('YYYYMMDD-HHmm');
-  return `geo-report-${doc.variant}-${stamp}.${EXTENSIONS[kind]}`;
+  return `geo-report-${doc.variant}-${stamp}`;
+}
+
+export function reportFileName(doc: ReportDocument, kind: ReportExportKind): string {
+  return `${reportFileStem(doc)}.${EXTENSIONS[kind]}`;
+}
+
+/** 桌面端二进制导出文件名（PDF / XLSX），与文本导出同一套 ASCII 命名。 */
+export function reportBinaryFileName(
+  doc: ReportDocument,
+  kind: ReportBinaryExportKind,
+): string {
+  return `${reportFileStem(doc)}.${kind}`;
 }
 
 /** 指标行：`Brand Coverage: 55% (+13 pp)`。 */

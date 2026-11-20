@@ -10,26 +10,29 @@
  * 不演一个点了没反应的按钮。Plan C 再加 `storage_open_dir` / `storage_change_dir`
  * 两条命令（spec DR-35 的裁定理由）。
  *
- * # 🔴 这些路径在 demo 里并不存在
+ * # 这些路径在 demo 里并不存在
  * `demo/handlers/app-environment.ts` 端的是一组形状正确的静态值（AGENTS 规则 9：
- * demo 不碰文件系统）。所以段首常驻一句"演示模式不读写磁盘"——少了它，
- * 走查的人会以为那是自己机器上的真实占用。
+ * demo 不碰文件系统）。演示边界统一由全局 `DemoModeStrip` 说明，段首不再重复提示；
+ * 桌面端才显示真实目录说明。
  *
  * # 库大小走 `bytesText`
  * 裸字节数（`3481600`）在设置页里既读不出量级，也会被当成某个 id。
  */
-import { Alert, Button, Card, Descriptions, Space, Typography } from 'antd';
+import { Alert, App, Button, Card, Descriptions, Space, Typography } from 'antd';
 import { FolderOpenOutlined, SwapOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { openPath } from '@tauri-apps/plugin-opener';
 
 import * as client from '../../api/client';
 import { describeIpcError } from '../../api/errors';
 import { bytesText } from '../../components/format';
+import { runtime } from '../../api/runtime';
 import type { SectionProps } from './sections';
 
 export default function StorageSection(_props: SectionProps) {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const environmentQuery = useQuery({
     // 与 `GeneralSection` 共用同一个 queryKey：同一次会话里只发一次 `app_environment`。
     queryKey: ['app-environment'],
@@ -54,9 +57,11 @@ export default function StorageSection(_props: SectionProps) {
       ) : null}
       {storage !== null && (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
-            {t('settings.storage.hint')}
-          </Typography.Paragraph>
+          {runtime === 'tauri' ? (
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+              {t('settings.storage.liveHint')}
+            </Typography.Paragraph>
+          ) : null}
 
           <Descriptions
             size="small"
@@ -106,15 +111,25 @@ export default function StorageSection(_props: SectionProps) {
           />
 
           <Space size={8} wrap>
-            {/* 🔴 置灰而不是隐藏：走查的人要能看到"这个能力存在，只是演示模式给不了"。 */}
-            <Button size="small" icon={<FolderOpenOutlined />} disabled>
+            <Button
+              size="small"
+              icon={<FolderOpenOutlined />}
+              disabled={runtime !== 'tauri'}
+              onClick={() => {
+                void openPath(storage.data_dir).catch(() => {
+                  message.error(t('settings.storage.openFailed'));
+                });
+              }}
+            >
               {t('settings.storage.openDir')}
             </Button>
             <Button size="small" icon={<SwapOutlined />} disabled>
               {t('settings.storage.changeDir')}
             </Button>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t('settings.storage.desktopOnly')}
+              {runtime === 'tauri'
+                ? t('settings.storage.changeDirLater')
+                : t('settings.storage.desktopOnly')}
             </Typography.Text>
           </Space>
         </Space>

@@ -150,8 +150,10 @@ const action: ResourceBundle['action'] = {
     reopen: 'Send back to review',
     statusOk: 'Review state updated',
     generated: 'Demo draft generated; its state is pending review',
+    generatedLive: 'Draft generated; its state is pending review',
     complianceChecked: 'Compliance scan passed',
-    complianceUnchecked: 'Demo mode does not run a compliance scan',
+    complianceUnchecked: 'Compliance scan not run',
+    complianceUncheckedLive: 'No compliance scan has run',
     demoBody:
       'The body is a preset demo draft: demo mode calls no model, so this walks through the shape of the deliverable rather than its writing.',
     pendingNote:
@@ -162,7 +164,8 @@ const action: ResourceBundle['action'] = {
 
   export: {
     title: 'Export',
-    desktopOnly: '{{format}} is provided by the desktop app and is unavailable in demo mode.',
+    desktopOnly: '{{format}} requires the desktop app to export.',
+    unavailableLive: '{{format}} export is not wired up yet.',
     done: 'Exported: {{path}}',
     cancelled: 'Export cancelled',
     onlyApproved: 'Only approved content can be exported. Approve pending or rejected drafts first.',

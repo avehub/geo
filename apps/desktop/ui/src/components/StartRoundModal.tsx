@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Alert, App, Checkbox, Form, Input, Modal, Select } from 'antd';
+import { Alert, App, Button, Checkbox, Form, Input, Modal, Select, Space, Typography } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
@@ -9,6 +9,8 @@ import { runtime } from '../api/runtime';
 import { describeIpcError } from '../api/errors';
 import type { CollectionRound, EngineId } from '../api/types';
 import { availableEngines } from '../api/build-flavor';
+import { enginesNeedingSetup } from '../api/engine-access';
+import type { EngineAccessStatus } from './use-engine-access';
 import { enumLabel } from '../i18n/enum-label';
 
 /** 重复采样的三个档位（产品定义 §3.5：1/2/3）。 */
@@ -17,7 +19,7 @@ const REPEAT_OPTIONS = [1, 2, 3] as const;
 /**
  * 「排一轮采集」弹窗（M3）。
  *
- * 演示模式**不发请求**：提交之后新轮次停在「排队中」、任务队列为空（`collection.start.demoNotice`）。
+ * 演示模式**不发请求**：提交之后新轮次停在「排队中」、任务队列为空（边界由全局 `DemoModeStrip` 说明）。
  * 桌面端会 enqueue 出 `题目数 × 引擎数 × 重复次数` 条任务并在后台逐条跑官方 API
  * （`collection.start.liveNotice` 写明范围与元宝 / 秘塔的跳过口径）。
  *
@@ -28,11 +30,17 @@ export default function StartRoundModal({
   open,
   onClose,
   onQueued,
+  accessStatus,
+  onRequestAccess,
 }: {
   projectId: string;
   open: boolean;
   onClose: () => void;
   onQueued: (round: CollectionRound) => void;
+  /** 各引擎的钥匙串现状（由采集页统一查，弹窗只读）。 */
+  accessStatus: EngineAccessStatus;
+  /** 打开「引擎接入」弹窗（就地补 Key / 看扫码步骤）。 */
+  onRequestAccess: () => void;
 }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
@@ -42,6 +50,14 @@ export default function StartRoundModal({
     repeat_count: number;
     label: string;
   }>();
+
+  // 选中的引擎里哪些确认还没配 Key：只做提示，不拦排队（未知状态不算）。
+  const selectedEngines = (Form.useWatch('engine_scope', form) ?? []) as EngineId[];
+  const notReady = enginesNeedingSetup(
+    selectedEngines,
+    (provider) => accessStatus.byProvider[provider],
+    { currentModelProvider: accessStatus.currentModelProvider },
+  );
 
   const setsQuery = useQuery({
     queryKey: ['prompt-sets', projectId],
@@ -112,14 +128,29 @@ export default function StartRoundModal({
       onCancel={onClose}
       destroyOnHidden
     >
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 12 }}
-        message={t(
-          runtime === 'demo' ? 'collection.start.demoNotice' : 'collection.start.liveNotice',
-        )}
-      />
+      {runtime === 'tauri' && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={t('collection.start.liveNotice')}
+        />
+      )}
+      {notReady.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={t('collection.start.accessWarning', {
+            engines: notReady.map((engine) => enumLabel(t, 'collection.engines', engine)).join(' / '),
+          })}
+          action={
+            <Button size="small" onClick={onRequestAccess}>
+              {t('collection.access.fix')}
+            </Button>
+          }
+        />
+      )}
       <Form
         form={form}
         layout="vertical"
@@ -141,7 +172,25 @@ export default function StartRoundModal({
             }))}
           />
         </Form.Item>
-        <Form.Item name="engine_scope" label={t('collection.start.engines')}>
+        <Form.Item
+          name="engine_scope"
+          label={t('collection.start.engines')}
+          extra={
+            <Space direction="vertical" size={0}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {t('collection.start.accessHint')}
+              </Typography.Text>
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0, height: 'auto' }}
+                onClick={onRequestAccess}
+              >
+                {t('collection.start.accessLink')}
+              </Button>
+            </Space>
+          }
+        >
           <Checkbox.Group
             options={[...availableEngines()].map((engine) => ({
               value: engine,

@@ -86,11 +86,6 @@ export default function InsightPage() {
           description={describeIpcError(roundsQuery.error, t)}
         />
       )}
-      <Alert type="info" showIcon style={{ marginBottom: 8 }} message={t('insight.sampleOnly')} />
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-        {t('insight.staticNote')}
-      </Typography.Paragraph>
-
       {roundsQuery.isError ? null : (
       <Tabs
         items={[

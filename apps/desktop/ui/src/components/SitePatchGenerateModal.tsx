@@ -32,8 +32,8 @@ export interface SitePatchGenerateModalProps {
  * 不能只回一个空列表。这句理由与行动中心的 tooltip 是**同一条词典值**
  * （`site.generate.sourceLayout`），两处措辞不会漂移。
  *
- * # 🔴 demo 不调模型（DR-56④）
- * `hint` 那句常驻：候选来自预置模板，生成出来一律是「草案 + 待人工审核」。
+ * # 运行时中立的生成口径
+ * `liveHint`：生成出来一律是「草案 + 待人工审核」；演示边界由全局细条说明。
  */
 export default function SitePatchGenerateModal({
   actions,
@@ -72,7 +72,7 @@ export default function SitePatchGenerateModal({
       }}
     >
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-        {t('site.generate.hint')}
+        {t('site.generate.liveHint')}
       </Typography.Paragraph>
 
       <Form layout="vertical">

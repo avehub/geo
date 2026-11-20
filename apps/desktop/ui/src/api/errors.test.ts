@@ -477,17 +477,18 @@ describe('F-2 · crawler/empty 的 skipped 扁平串', () => {
     expect(describeIpcError(error, en())).not.toContain('skipped');
   });
 
-  it('三个记号各按词典翻译，url 保留，未知记号原样显示', () => {
+  it('四个记号各按词典翻译，url 保留，未知记号原样显示', () => {
     const error = ipcError('crawler/empty', {
       domain: 'https://a.example/',
       skipped:
-        'https://a.example/news total_timeout; https://a.example/robots.txt robots_disallowed; https://a.example/x fetch_failed; https://a.example/y mystery_token',
+        'https://a.example/news total_timeout; https://a.example/robots.txt robots_disallowed; https://a.example/x fetch_failed; https://a.example/z empty_content; https://a.example/y mystery_token',
     });
     const text = describeIpcError(error, zh());
 
     expect(text).toContain('https://a.example/news（总时长预算用尽）');
     expect(text).toContain('https://a.example/robots.txt（robots.txt 不允许抓取）');
     expect(text).toContain('https://a.example/x（抓取或解析失败）');
+    expect(text).toContain('https://a.example/z（正文为空（脚本渲染或跳转页））');
     expect(text).toContain('https://a.example/y（mystery_token）');
     expect(text).not.toContain('{{');
   });

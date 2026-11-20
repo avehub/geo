@@ -84,7 +84,7 @@ const FIELDS_PREFIX = 'fields.';
  * `renderReason`，而不是在 `CsvToolbar.tsx` 里重写第二份——那会造出第二个、更弱的泄漏面
  * （allowlist 与回退阶梯各存两份，将来改一份忘另一份，漏掉的正是广告法红线守卫）。
  *
- * `csv/row` **不在** `contracts/error-codes.json` 的 43 码里，后端也发不出来，
+ * `csv/row` **不在** `contracts/error-codes.json` 的 44 码里，后端也发不出来，
  * 因此不可能与 `describeIpcError` 的主路撞上，既有 4 级阶梯语义一行未动。
  */
 const CSV_ROW_CODE = 'csv/row';
@@ -382,6 +382,22 @@ function describeUpstream(
  *   `error.message`；`describeNoteLine` 传 code 本身（机器行没有 message 字段，
  *   而 miss 时露出稳定记号比露出一句中文更利于排障）。
  */
+
+/** `browser/unavailable` 的稳定子原因 → 词典键；未登记时回落 code 模板。 */
+const BROWSER_REASON_KEYS: Readonly<Record<string, string>> = {
+  chrome_not_found: 'errors.browserReasons.chrome_not_found',
+  launch_failed: 'errors.browserReasons.launch_failed',
+  debug_port_timeout: 'errors.browserReasons.debug_port_timeout',
+  debug_port_unavailable: 'errors.browserReasons.debug_port_unavailable',
+  connect_failed: 'errors.browserReasons.connect_failed',
+  no_tab: 'errors.browserReasons.no_tab',
+  evaluate_failed: 'errors.browserReasons.evaluate_failed',
+  no_table_found: 'errors.browserReasons.no_table_found',
+  invalid_ws_url: 'errors.browserReasons.invalid_ws_url',
+  browser_disabled: 'errors.browserReasons.browser_disabled',
+  browser_task_failed: 'errors.browserReasons.browser_task_failed',
+};
+
 export function describeErrorCode(
   code: string,
   params: Readonly<Record<string, string>>,
@@ -389,6 +405,13 @@ export function describeErrorCode(
   t: TFunction,
 ): string {
   if (code.startsWith(UPSTREAM_PREFIX)) return describeUpstream(code, params, fallbackMessage, t);
+  if (code === 'browser/unavailable') {
+    const key = BROWSER_REASON_KEYS[params.reason ?? ''];
+    if (key !== undefined) {
+      const text = render(t, key, {});
+      if (text !== null) return text;
+    }
+  }
 
   const values = composeValues(t, code, params);
   const main = render(t, `errors.${code}`, values);

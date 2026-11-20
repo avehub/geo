@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -6,6 +6,8 @@ import ContentPanel from './ContentPanel';
 import type { GeneratedContent } from '../api/types';
 import zh from '../i18n/locales/zh-CN';
 import { renderWithProviders } from '../test/render';
+
+vi.mock('../api/runtime', () => ({ runtime: 'tauri' }));
 
 function content(overrides: Partial<GeneratedContent> = {}): GeneratedContent {
   return {
@@ -58,5 +60,33 @@ describe('ContentPanel · 导出闸门（规则 6）', () => {
     expect(within(drawer).getByRole('button', { name: zh.common.exportFormats.markdown })).toBeEnabled();
     expect(within(drawer).getByRole('button', { name: zh.common.exportFormats.html })).toBeEnabled();
     expect(within(drawer).queryByText(zh.action.export.onlyApproved)).toBeNull();
+  });
+});
+
+describe('ContentPanel · Tauri 运行时', () => {
+  it('合规状态用中性说明；不显示演示提示', async () => {
+    const user = userEvent.setup();
+    renderPanel(content({ status: 'pending_review', compliance_checked: false }));
+
+    await user.click(screen.getByRole('button', { name: zh.action.contents.preview }));
+    const drawer = await screen.findByRole('dialog');
+
+    expect(within(drawer).getByText(zh.action.contents.complianceUnchecked)).toBeInTheDocument();
+    expect(within(drawer).queryByText(/演示模式/)).toBeNull();
+  });
+
+  it('暂未接入的导出格式用中性提示，不出现「演示模式下不可用」', async () => {
+    const user = userEvent.setup();
+    renderPanel(content({ status: 'approved', export_formats: ['markdown', 'docx'] }));
+
+    await user.click(screen.getByRole('button', { name: zh.action.contents.preview }));
+    const drawer = await screen.findByRole('dialog');
+
+    const expected = zh.action.export.unavailableLive.replace(
+      '{{format}}',
+      zh.common.exportFormats.docx,
+    );
+    expect(within(drawer).getByText(expected)).toBeInTheDocument();
+    expect(within(drawer).queryByText(/演示模式下不可用/)).toBeNull();
   });
 });

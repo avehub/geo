@@ -179,7 +179,8 @@ export const SEED_SEARCH_SOURCES: SearchSource[] = [
     id: 'demo-ssrc-gsc', project_id: SEED_ACTIVE_PROJECT_ID, kind: 'gsc',
     auth_mode: 'oauth', ingest_modes: ['api', 'file_import', 'paste_parse'],
     status: 'ready', region: 'global', group: 'webmaster_global',
-    binding: { siteUrl: `${SEED_SITE_DOMAIN}/` }, credentials_state: 'missing',
+    binding: { siteUrl: `${SEED_SITE_DOMAIN}/`, client_id: 'demo-gsc-client' },
+    credentials_state: 'missing',
     secret_ref: 'keyring://search/gsc',
     data_through: SEED_SEARCH_GSC_DATA_THROUGH, checked_at: '2026-09-28T01:30:00Z',
     check_detail: { code: 'search_gsc_export_verified', params: { lag_days: '3', row_cap: '50000' } },
@@ -190,6 +191,7 @@ export const SEED_SEARCH_SOURCES: SearchSource[] = [
     id: 'demo-ssrc-bing', project_id: SEED_ACTIVE_PROJECT_ID, kind: 'bing_wmt',
     auth_mode: 'oauth', ingest_modes: ['api', 'file_import', 'paste_parse'],
     status: 'ready', region: 'global', group: 'webmaster_global',
+    // Bing 只走 API Key ⇒ 不再有 client_id 绑定（与 geo-domain 目录表同源）。
     binding: { siteUrl: `${SEED_SITE_DOMAIN}/` }, credentials_state: 'missing',
     secret_ref: 'keyring://search/bing_wmt',
     data_through: SEED_SEARCH_DATA_THROUGH, checked_at: '2026-09-28T01:34:00Z',

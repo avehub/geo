@@ -1,8 +1,10 @@
-import { Alert, Descriptions, Drawer, Empty, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Descriptions, Drawer, Empty, Image, Space, Table, Tag, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 import * as collection from '../api/collection';
+import { runtime } from '../api/runtime';
 import { describeIpcError } from '../api/errors';
 import type { Citation } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
@@ -15,8 +17,9 @@ import { dateTimeText, latencyText, tokensText } from './format';
  * 采集页的证据表与解析页的解析结果表**共用这一个组件**：两处下钻的是同一条证据，
  * 各写一份就会出现"两个抽屉显示的字段不一样"这种自相矛盾。
  *
- * 🔴 截图那一格永远显示空状态：demo 不抓网页也不截图（`CollectionRecordDetail.screenshot_path`
- * 恒为 `null`），编一个路径就是假证据。文案在 `collection.evidence.noScreenshot`。
+ * 🔴 截图：demo 不抓网页也不截图；Tauri 下元宝浏览器通道会把 PNG 路径写进
+ * `CollectionRecordDetail.screenshot_path`，这里用 `convertFileSrc` 显示。API 通道没有
+ * 引擎页面，截图格显示 `noScreenshotLive`，不伪造图片。
  */
 export default function EvidenceDrawer({
   recordId,
@@ -35,6 +38,13 @@ export default function EvidenceDrawer({
   });
 
   const record = query.data ?? null;
+
+  const screenshotSrc =
+    record?.screenshot_path == null || record.screenshot_path.trim() === ''
+      ? null
+      : runtime === 'tauri'
+        ? convertFileSrc(record.screenshot_path)
+        : null;
 
   return (
     <Drawer
@@ -167,7 +177,17 @@ export default function EvidenceDrawer({
 
           <div>
             <Typography.Title level={5}>{t('collection.evidence.screenshot')}</Typography.Title>
-            <Empty description={t('collection.evidence.noScreenshot')} />
+            {screenshotSrc === null ? (
+              <Empty
+                description={t('collection.evidence.noScreenshotLive')}
+              />
+            ) : (
+              <Image
+                src={screenshotSrc}
+                alt={t('collection.evidence.screenshotAlt')}
+                style={{ maxWidth: '100%', border: '1px solid #f0f0f0' }}
+              />
+            )}
           </div>
         </Space>
       )}

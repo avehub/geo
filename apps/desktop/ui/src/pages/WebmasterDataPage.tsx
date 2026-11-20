@@ -14,7 +14,6 @@ import {
   SEARCH_QUERY_CSV_HEADER,
 } from '../api/constants';
 import { describeIpcError } from '../api/errors';
-import { runtime } from '../api/runtime';
 import { catalogEntryOf, renderableCatalog, searchSecretRef } from '../api/search-catalog';
 import {
   defaultSearchFilter,
@@ -265,12 +264,12 @@ export default function WebmasterDataPage() {
         }
       />
 
-      {/* 🔴 常驻说明①（DR-99）：演示模式不联网、OAuth 一条都没实现。 */}
+      {/* 运行时中立说明（DR-99）：OAuth 尚未接入，当前以导入 / 粘贴 / 填报为主。 */}
       <Alert
         type="warning"
         showIcon
         style={{ marginBottom: 8 }}
-        message={t(runtime === 'demo' ? 'webmasterData.demoBody' : 'webmasterData.liveBody')}
+        message={t('webmasterData.liveBody')}
       />
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
         {t('webmasterData.trademarkNote')}
@@ -333,16 +332,6 @@ export default function WebmasterDataPage() {
           </Typography.Text>
         }
       >
-        {runtime === 'demo' && (
-          <>
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-              {t('webmasterData.staticNote')}
-            </Typography.Paragraph>
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-              {t('webmasterData.opportunity.demoStatic')}
-            </Typography.Paragraph>
-          </>
-        )}
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           {t('webmasterData.opportunity.sampleGate', { min: MINIMUM_SAMPLE_SIZE })}
         </Typography.Paragraph>

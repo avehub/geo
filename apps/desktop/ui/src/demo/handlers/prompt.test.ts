@@ -10,7 +10,7 @@
  *   `prompt_set_rename` 回**摘要**、`prompt_item_update` 回**单条**、`prompt_item_add`/`prompt_item_delete` 回**整份快照**。
  * - **`prompt_set_list` 不加载 items**（`api/types.ts` 的 `PromptSetSummary` 没有 `items` 字段，只有 `item_count`）。
  * - **`position` 是 0 基**（真值源 `prompt_service.rs:787-792` 的 `reindex`：`item.position = index as i32`）。
- * - **不许把题库删空**（`prompt_service.rs:630-637`：`ids.len() >= 条目总数` 就拒，一次最多删 N-1 条）。
+ * - **允许把题库删空**（2026-11-19 产品裁定：最后一条也必须能删；删空后是 0 条快照，可继续生成或整份删除）。
  * - **AGENTS 规则 9**：`sample_size_grade` 不重算、`content_hash` 不算真哈希、去重不算相似度。
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -172,8 +172,8 @@ describe('demo/handlers/prompt · prompt_set_generate', () => {
   it('有题库但**全被清空** ⇒ 同样回落（判据是**条目数**，不是份数）', async () => {
     // R1-2：`richest ?? seedBaselineSet()` 原先只看**份数**，于是「题库存在但 0 条」这条路径
     // 会漏过回落、产出空题库，而同处注释写的是「绝不产出空题库」。
-    // 「题库存在但 0 条」在命令面上到不了（`prompt_item_delete` 不许删空），但 `project_import`
-    // 能把空题库带进来 ⇒ 不是纯理论。白盒造前提，先例：`prompt-csv.test.ts:292-297`。
+    // 「题库存在但 0 条」现在既可由 `prompt_item_delete` 删空造出来，也能由 `project_import`
+    // 带进来。这里直接清内存库造前提（白盒，先例：`prompt-csv.test.ts:292-297`）。
     const db = getDemoDb();
     db.promptItems = [];
 
@@ -593,23 +593,23 @@ describe('demo/handlers/prompt · prompt_item_delete', () => {
     expect(after.items).toHaveLength(PILOT_COUNT);
   });
 
-  it('不许把题库删空：全选删除报 {field:ids, reason:out_of_range, expected:<N, value:N}', async () => {
+  it('允许把题库删空：全选删除返回 0 条快照并落库（最后一条也能删）', async () => {
     const before = await demoInvoke<PromptSet>('prompt_set_get', { id: SEED_PILOT_SET_ID });
     const allIds = before.items.map((item) => item.id);
 
-    const cause = await capture(() =>
-      demoInvoke('prompt_item_delete', { set_id: SEED_PILOT_SET_ID, ids: allIds }),
-    );
-
-    expectCode(cause, 'validation/failed');
-    expect(paramsOf(cause)).toEqual({
-      field: 'ids',
-      reason: 'out_of_range',
-      expected: `<${PILOT_COUNT}`,
-      value: String(PILOT_COUNT),
+    const snapshot = await demoInvoke<PromptSet>('prompt_item_delete', {
+      set_id: SEED_PILOT_SET_ID,
+      ids: allIds,
     });
+
+    expect(snapshot.items).toEqual([]);
     const after = await demoInvoke<PromptSet>('prompt_set_get', { id: SEED_PILOT_SET_ID });
-    expect(after.items).toHaveLength(PILOT_COUNT);
+    expect(after.items).toEqual([]);
+    expect(after.content_hash).toBe(snapshot.content_hash);
+    const summary = (await demoInvoke<PromptSetSummary[]>('prompt_set_list', {
+      project_id: SEED_ACTIVE_PROJECT_ID,
+    })).find((set) => set.id === SEED_PILOT_SET_ID);
+    expect(summary?.item_count).toBe(0);
   });
 });
 

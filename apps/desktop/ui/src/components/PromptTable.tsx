@@ -47,7 +47,8 @@ export default function PromptTable({
       render: (_, item) => <Typography.Text type="secondary">{item.position + 1}</Typography.Text>,
     },
     {
-      title: 'Prompt',
+      // P3-1（2026-11-07 i18n 审计）：词典体系里唯一一处漏网的自然语言字面量，收进词典。
+      title: t('prompt.table.text'),
       dataIndex: 'text',
       key: 'text',
       width: 320,
@@ -80,7 +81,25 @@ export default function PromptTable({
         />
       ),
     },
-    { title: t('prompt.table.group'), dataIndex: 'group_name', key: 'group_name', width: 110 },
+    {
+      title: t('prompt.table.group'),
+      dataIndex: 'group_name',
+      key: 'group_name',
+      width: 110,
+      // P1-03（2026-11-07 测试报告）：后端不再把中文枚举标签写进 `group_name`（给 null），
+      // 这里回落到词典标签；用户自己起过的分组名是**数据**，原样显示。
+      render: (_, item) =>
+        item.group_name === null || item.group_name === '' ? (
+          // 回落标签用弱文本而不是 Tag：意图列的 Tag 是「枚举标签判据」的锚点
+          // （`enum-label.test.tsx` 用 `.ant-tag` 选择器定位），分组列再放一个同文 Tag
+          // 会让那条判据抓到两个节点。
+          <Typography.Text type="secondary">
+            {enumLabel(t, 'prompt.intents', item.intent)}
+          </Typography.Text>
+        ) : (
+          item.group_name
+        ),
+    },
     {
       title: t('prompt.table.tags'),
       dataIndex: 'tags',

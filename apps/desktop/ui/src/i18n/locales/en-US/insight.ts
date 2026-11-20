@@ -112,6 +112,8 @@ const insight: ResourceBundle['insight'] = {
     summary: 'Summary',
     checkedAnswers: 'Answers checked',
     accuracy: 'Fact accuracy',
+    accuracyNoteLive:
+      'Accuracy is the static value from collection time; resolving issues by hand does not change it.',
     accuracyNote:
       'Accuracy is a static figure from collection time: resolving issues manually does not change it, because demo mode does not recompute.',
     falsePositives: 'Marked as false positives',

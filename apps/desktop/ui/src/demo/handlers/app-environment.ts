@@ -25,7 +25,7 @@ import type { DemoHandler } from '../types';
 import type { AppEnvironment } from '../../api/types';
 
 /** 与 `apps/desktop/src-tauri/tauri.conf.json` 的 `version` 同源（判据在 `.test.ts`）。 */
-export const DEMO_APP_VERSION = '0.1.0';
+export const DEMO_APP_VERSION = '0.2.0';
 
 /** demo 没有构建号（没有 CI 打包这一步），诚实标出运行形态而不是编一个数字。 */
 export const DEMO_BUILD_NUMBER = 'web-demo';

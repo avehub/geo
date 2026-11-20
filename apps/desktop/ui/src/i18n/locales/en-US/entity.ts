@@ -52,6 +52,8 @@ const entity: ResourceBundle['entity'] = {
     running: 'Crawling the site and extracting the entity card…',
     emptyDomain: 'Enter the website domain to crawl, e.g. www.example.com',
     success: 'Auto-build finished; field completeness {{percent}}%',
+    degraded:
+      'The site was crawled, but AI extraction did not finish (fields come from the project draft). Check Settings → Model service and try again.',
   },
 
   card: {
@@ -62,6 +64,11 @@ const entity: ResourceBundle['entity'] = {
     completeness: 'Field completeness',
     sourceAi: 'AI-extracted: {{provider}} {{model}}',
     sourceManual: 'Entered by hand',
+    degradedTitle: 'Crawled {{pages}} pages, but AI extraction did not finish',
+    degradedBody:
+      'The current fields come from the project draft, not the website. Check the model name and API key under Settings → Model service, save, then run auto-build again.',
+    degradedAction: 'Open model service settings',
+    sourceCrawledNoAi: 'Site crawled · AI extraction unfinished',
     revisions: 'Revision history',
   },
 };

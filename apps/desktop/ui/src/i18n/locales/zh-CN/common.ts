@@ -33,6 +33,8 @@ const common = {
   loading: '加载中…',
   unknownError: '操作未成功，请稍后重试',
 
+  /** P2-10（2026-11-07 测试报告）：原生「另存为」对话框标题由前端按当前语言传入，Rust 不再硬编码。 */
+  exportDialogTitle: '导出',
   appName: '稿得快 GEO',
   tagline: '生成式引擎优化 · 本地优先',
 
@@ -102,8 +104,8 @@ const common = {
   /**
    * 导出格式标签（`ExportFormat`）。
    *
-   * `docx` / `pdf` / `png` 在演示模式下产不出（`DESKTOP_ONLY_EXPORT_FORMATS`）：
-   * 按钮照旧渲染但置灰，提示语在 `report.export.desktopOnly` / `action.export.desktopOnly`。
+   * `docx` / `png` 在演示模式下产不出，`pdf` / `xlsx` 需要桌面端的原生导出能力：
+   * 按钮照旧渲染，demo 下置灰；报告页的提示语按运行时切换（`report.export.*`）。
    */
   exportFormats: {
     markdown: 'Markdown',
@@ -111,6 +113,7 @@ const common = {
     csv: 'CSV',
     docx: 'Word',
     pdf: 'PDF',
+    xlsx: 'XLSX',
     png: 'PNG',
   },
   /**
@@ -121,7 +124,7 @@ const common = {
     site_bundle_ready: '落地包通道不需要任何凭据；导出走本地文件，已确认导出目录可写。',
     site_bundle_verified: '落地包不需要任何凭据；已确认导出目录可写，最近一次导出为 {{date}} 的资质页交接单。',
     site_edge_not_deployed: '边缘函数尚未部署：patches.json 拉取地址返回 {{status}}。部署后重新自检即可。',
-    site_cms_not_configured: '未配置：需要先填站点 URL 与用户名，并在 WordPress 后台创建应用程序密码（演示模式不收密码）。',
+    site_cms_not_configured: '未配置：需要先填站点 URL 与用户名，并在 WordPress 后台创建应用程序密码。',
 
     site_credentials_missing: '尚未配置凭据：{{kind}} 需要先在系统钥匙串里保存凭据。',
     site_repo_manual_check: '仓库地址已填写；仓库类通道由用户在托管平台提交合并请求，自检只确认配置存在。',
@@ -135,8 +138,11 @@ const common = {
     search_bing_verified_no_api: '站点已通过 DNS 验证；AI Performance 报表今天只有界面、没有接口，Grounding Queries 这一列按原样留在平台独有维度里。',
     search_tongji_verified: '站点 ID 已核对；会话数与来源分析可读。它是站内分析、量纲是会话，永不进曝光合计，只用于流量来源分布与接入建议。',
     search_binding_missing: '尚未完成必填绑定：{{fields}}。',
-    search_binding_blocked: '尚未完成必填绑定：预置探测结论显示平台本身可用，但当前源缺少取数所需的站点绑定；演示模式不发请求。',
+    search_binding_blocked: '尚未完成必填绑定：平台本身可用，但当前源缺少取数所需的站点绑定。',
     search_credentials_missing: '尚未授权：{{kind}} 需要先完成官方授权。',
+    search_credentials_stored: '已授权：{{kind}} 的令牌已存入系统钥匙串。',
+    search_oauth_failed: '官方授权未完成：请重新发起授权，或检查客户端 ID / 回调设置。',
+    search_fetch_failed: '授权已保存，但拉取平台数据失败；可稍后重新授权或改用导入。',
     search_reachable: '站点可达（HTTP {{status}}）。',
     search_unreachable: '站点不可达：{{reason}}。',
     search_manual_no_probe: '人工填报不需要探测：没有平台、没有凭据，填的是哪个区间就是哪个区间。',

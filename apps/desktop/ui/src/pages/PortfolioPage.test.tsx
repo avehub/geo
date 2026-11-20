@@ -179,12 +179,12 @@ describe('PortfolioPage · 分布与口径', () => {
     expect(within(card as HTMLElement).getAllByText(/55/).length).toBeGreaterThan(0);
   });
 
-  it('演示口径常驻：未采集不等于 0 分、比率不做跨项目平均', async () => {
+  it('口径说明常驻：未采集不等于 0 分、比率不做跨项目平均', async () => {
     renderPage();
     await screen.findByText('澜舟工业除尘设备');
     expect(
       screen.getByText(
-        '演示模式下项目摘要来自各项目既有的最近一轮结论；未采集的项目显示「待采集」，不会被当成 0 分。比率只给分布，不做跨项目平均。',
+        '项目摘要来自各项目既有的最近一轮结论；未采集的项目显示「待采集」，不会被当成 0 分。比率只给分布，不做跨项目平均。',
       ),
     ).toBeInTheDocument();
   });

@@ -38,6 +38,7 @@ import PageHeader from '../components/ui/PageHeader';
 
 import * as client from '../api/client';
 import { IpcRequestError } from '../api/client';
+import { runtime } from '../api/runtime';
 import { describeIpcError } from '../api/errors';
 import { toProjectDraft } from '../store/wizard-draft';
 
@@ -166,9 +167,6 @@ export default function AutoBuildProjectPage() {
     <div style={{ maxWidth: 720 }}>
       <PageHeader title={t('project.autobuild.title')} />
 
-      {/* 🔴 常驻：不是"跑完之后才告诉你这是演示"。 */}
-      <Alert type="warning" showIcon style={{ marginBottom: 16 }} message={t('project.autobuild.demoNotice')} />
-
       <Card size="small">
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <div>
@@ -193,9 +191,11 @@ export default function AutoBuildProjectPage() {
                 {t('project.autobuild.start')}
               </Button>
             </Space.Compact>
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
-              {t('project.autobuild.urlExtra')}
-            </Typography.Paragraph>
+            {runtime === 'tauri' ? (
+              <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+                {t('project.autobuild.urlExtraLive')}
+              </Typography.Paragraph>
+            ) : null}
           </div>
 
           <Steps

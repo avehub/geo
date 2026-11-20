@@ -229,8 +229,6 @@ export default function KeywordLibraryPage() {
         title={t('library.keyword.title')}
         description={t('library.keyword.subtitle')}
       />
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t('library.keyword.staticNote')} />
-
       <SectionCard>
         <Space size={12} wrap style={{ marginBottom: 12, width: '100%' }}>
           <Input.Search
@@ -383,7 +381,7 @@ export default function KeywordLibraryPage() {
       <LibraryExportModal
         open={exportOpen}
         title={t('library.export.title')}
-        hint={t('library.actions.demoModeHint')}
+        hint={t('library.actions.liveModeHint')}
         fileName={keywordCsvFileName(projectId)}
         content={composeKeywordCsv(selectedRows.length > 0 ? selectedRows : visible)}
         withBom

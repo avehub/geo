@@ -8,10 +8,9 @@
  * 与 `weekdays`（排期的星期几：它是 1~7 的**数字**而不是枚举串 ⇒ 不走 `enumLabel`，
  * 用 `components/ArticleScheduleTable.tsx` 里那张 `Record<number, TranslationKey>` 查）。
  *
- * # 🔴 两句必须常驻的演示说明（DR-85）
- * `demoHint`（页头）与 `schedules.demoBody`（排期表上方）：demo **没有定时器**也**不调模型**，
- * `next_run_at` 只是显示值、生成物逐字来自预置语料池。不写清楚，产品负责人就会把
- * "排期到点自动出稿"当成本轮已经落地的能力评审。
+ * # 演示边界（2026-11-19 产品裁定）
+ * 全局 `DemoModeStrip` 的 `aboutBody` 统一说明：demo 没有定时器、不调模型、刷新即重置。
+ * 页头与排期表不再重复 `demoHint` / `schedules.demoBody`。
  *
  * # 文案合规（AGENTS 规则 6）
  * 不承诺排名与效果；生成物一律 `pending_review`，`review.complianceUnchecked`
@@ -161,6 +160,8 @@ const article = {
       wordCount: '预览字数 {{total}}',
       kbModules: '引用知识模块',
       kbModulesHint: '只记录引用关系：演示模式不把知识条目拼进提示词，交给真后端的生成管线去做。',
+      kbModulesLiveHint: '只记录引用关系：知识条目会在生成时由后端拼进提示词。',
+      kbModulesNote: '只记录引用关系。',
       bindingsLabel: '绑定素材',
       productNamesLabel: '产品名',
       productNamesPlaceholder: '输入产品名后回车',
@@ -232,7 +233,7 @@ const article = {
     /** 预览抽屉里正文（只读）的可访问名。 */
     previewAria: '文章正文',
     /** 🔴 常驻（规则 6 的 demo 侧对价）：待审行都挂着这一句。 */
-    complianceUnchecked: '演示模式未执行合规扫描',
+    complianceUnchecked: '未执行合规扫描',
     bodyHint: '正文按 Markdown 原文展示，不渲染成 HTML：数据不是标记，与 FAQ 答案同一个口径。',
     meta: {
       direction: '方向',

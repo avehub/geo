@@ -1,4 +1,4 @@
-import { Alert, Form, InputNumber, Modal, Select, Typography } from 'antd';
+import { Form, InputNumber, Modal, Select } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 import type { KeywordGenerateOptions } from '../api/types';
@@ -15,8 +15,8 @@ export interface KeywordGenerateModalProps {
 /**
  * 「AI 生成关键词」弹窗（spec DR-42：demo 的生成是**预置批次**，不调模型）。
  *
- * 🔴 `demoBody` 那句必须显示：不写清楚，产品负责人会拿它当真实的选词质量评审
- * （AGENTS 规则 9 的界面侧对价，与 `ContentGenerateModal` 的 `action.contents.demoBody` 同族）。
+ * 演示边界由全局 `DemoModeStrip` 说明；弹窗不再重复 `demoBody`
+ * （AGENTS 规则 9 的界面侧对价已上收到全局细条）。
  */
 export default function KeywordGenerateModal({
   generating,
@@ -63,10 +63,6 @@ export default function KeywordGenerateModal({
         <Form.Item name="target_count" label={t('library.keyword.targetCountLabel')}>
           <InputNumber min={LIBRARY_GENERATE_MIN} max={LIBRARY_GENERATE_MAX} style={{ width: 120 }} />
         </Form.Item>
-        <Alert type="info" showIcon message={t('library.keyword.demoBody')} />
-        <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-          {t('library.keyword.staticNote')}
-        </Typography.Text>
       </Form>
     </Modal>
   );

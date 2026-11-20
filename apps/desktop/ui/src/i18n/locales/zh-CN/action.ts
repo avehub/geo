@@ -159,8 +159,10 @@ const action = {
     reopen: '打回待审',
     statusOk: '已更新审核态',
     generated: '已生成演示文稿，状态为待人工审核',
+    generatedLive: '已生成文稿，状态为待人工审核',
     complianceChecked: '已过合规扫描',
-    complianceUnchecked: '演示模式未执行合规扫描',
+    complianceUnchecked: '未执行合规扫描',
+    complianceUncheckedLive: '未执行合规扫描',
     demoBody: '正文是预置的演示文稿：演示模式不调用模型，走查的是产物形态而不是文笔。',
     pendingNote: '生成内容默认待人工审核，通过后才可对外发布（合规红线）。',
     empty: '还没有生成过文稿。',
@@ -169,7 +171,8 @@ const action = {
 
   export: {
     title: '导出',
-    desktopOnly: '{{format}} 由桌面端提供，演示模式下不可用。',
+    desktopOnly: '{{format}} 需要桌面端导出。',
+    unavailableLive: '{{format}} 暂未接入导出。',
     done: '已导出：{{path}}',
     cancelled: '已取消导出',
     onlyApproved: '只有审核通过的文稿才能导出；待审或已退回的文稿请先通过审核。',

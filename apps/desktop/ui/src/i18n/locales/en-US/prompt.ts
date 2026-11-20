@@ -51,6 +51,7 @@ const prompt: ResourceBundle['prompt'] = {
   },
 
   table: {
+    text: 'Prompt',
     intent: 'Intent',
     weight: 'Weight',
     weightAria: 'Weight for {{text}}',

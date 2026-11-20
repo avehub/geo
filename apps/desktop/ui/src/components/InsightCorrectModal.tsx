@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Alert, App, Form, InputNumber, Modal, Select, Switch, Typography } from 'antd';
+import { App, Form, InputNumber, Modal, Select, Switch, Typography } from 'antd';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
@@ -81,7 +81,6 @@ export default function InsightCorrectModal({
       onCancel={onClose}
       destroyOnHidden
     >
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t('insight.correct.demoNotice')} />
       {target !== null && (
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           <strong>{t('insight.list.prompt')}</strong>

@@ -7,7 +7,7 @@
  * - 🔴 两句合规相关的口径说明必须显示（`action.staticNote`、`action.attribution.note`）；
  * - 归因卡片的四个数字与诊断页对得上，且「变化」按**百分点**显示（不是 +13%）；
  * - 标记完成能就地生效，但归因数字一动不动；
- * - 生成文稿走一遍：弹窗 → 待人工审核 → 「演示模式未执行合规扫描」；
+ * - 生成文稿走一遍：弹窗 → 待人工审核 → 「未执行合规扫描」；
  * - 🔴 demo 产不出的导出格式按钮置灰，并逐条说明。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +15,8 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import ActionPage from './ActionPage';
+import type { Runtime } from '../api/runtime';
+import { demoInvoke } from '../demo/backend';
 import { resetDemoDb } from '../demo/db';
 import { SEED_ACTIVE_PROJECT_ID } from '../demo/seed/projects';
 import {
@@ -24,9 +26,15 @@ import {
 } from '../demo/seed/actions';
 import { SEED_GENERATED_CONTENTS } from '../demo/seed/contents';
 import { SEED_FACT_CHECK_ISSUES } from '../demo/seed/insights';
+import { mockInvoke } from '../test/invoke-mock';
 import { renderAtRoute } from '../test/render';
 
-vi.mock('../api/runtime', () => ({ runtime: 'demo' }));
+const runtimeBox = vi.hoisted(() => ({ current: 'demo' as Runtime }));
+vi.mock('../api/runtime', () => ({
+  get runtime(): Runtime {
+    return runtimeBox.current;
+  },
+}));
 
 const ROUTE = `/projects/${SEED_ACTIVE_PROJECT_ID}/action`;
 const PATH = '/projects/:id/action';
@@ -73,18 +81,31 @@ async function expandRow(user: ReturnType<typeof userEvent.setup>, title: string
 }
 
 beforeEach(() => {
+  runtimeBox.current = 'demo';
   resetDemoDb();
 });
 
+describe('ActionPage · Tauri 运行时', () => {
+  it('不显示演示静态值说明，处方与归因表仍在', async () => {
+    runtimeBox.current = 'tauri';
+    for (const cmd of ['action_board', 'fact_check_list', 'project_get']) {
+      mockInvoke.stubAlways(cmd, (args) => demoInvoke(cmd, args));
+    }
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.queryByText('处方清单与归因数字在演示模式下是预置静态值，不由前端排序或重算。')).toBeNull();
+    expect(screen.getByText(LINKED_ACTION.title)).toBeInTheDocument();
+  });
+});
+
 describe('ActionPage · 处方清单', () => {
-  it('10 条处方按名次上屏 + 🔴 静态值口径说明 + 快赢汇总', async () => {
+  it('10 条处方按名次上屏 + 不重复演示提示 + 快赢汇总', async () => {
     renderPage();
     await waitLoaded();
 
     expect(dataRowCount(cardOf('Top 处方'))).toBe(SEED_ACTIONS.length);
-    expect(
-      screen.getByText('处方清单与归因数字在演示模式下是预置静态值，不由前端排序或重算。'),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/演示模式/)).not.toBeInTheDocument();
     const quickWins = SEED_ACTIONS.filter((item) => item.quick_win).length;
     expect(quickWins).toBeGreaterThanOrEqual(3); // MVP 验收：≥3 条快赢
     expect(screen.getByText(`其中 ${quickWins} 条预计 1 小时内可完成。`)).toBeInTheDocument();
@@ -208,7 +229,7 @@ describe('ActionPage · 内容生产', () => {
     ).toBeInTheDocument();
     // 种子里那两份是"真后端扫过之后"的样子。
     expect(screen.getAllByText('已过合规扫描')).toHaveLength(2);
-    expect(screen.queryByText('演示模式未执行合规扫描')).not.toBeInTheDocument();
+    expect(screen.queryByText('未执行合规扫描')).not.toBeInTheDocument();
     // 审核态查到了词典（没有裸枚举值上屏）。
     expect(screen.queryByText('pending_review')).not.toBeInTheDocument();
     expect(within(contents).getByText('待人工审核')).toBeInTheDocument();
@@ -239,11 +260,7 @@ describe('ActionPage · 内容生产', () => {
     // 带图标的按钮，可访问名含图标自己的 aria-label ⇒ 用正则。
     await user.click(within(cardOf('内容模板')).getByRole('button', { name: /生成文稿/ }));
     const modal = await screen.findByRole('dialog');
-    expect(
-      within(modal).getByText(
-        '正文是预置的演示文稿：演示模式不调用模型，走查的是产物形态而不是文笔。',
-      ),
-    ).toBeInTheDocument();
+    expect(within(modal).queryByText(/演示模式/)).not.toBeInTheDocument();
     // 从模板区进来 ⇒ 不挂处方（弹窗里没有那张处方说明），默认已选中第一个模板（确定按钮可点）。
     expect(within(modal).queryByText('处方')).not.toBeInTheDocument();
     expect(
@@ -262,7 +279,7 @@ describe('ActionPage · 内容生产', () => {
     // 🔴 新生成的那份：审核态是待人工审核，且明说没跑合规扫描。
     const contents = cardOf('已生成文稿');
     expect(within(contents).getAllByText('待人工审核')).toHaveLength(2);
-    expect(within(contents).getAllByText('演示模式未执行合规扫描')).toHaveLength(1);
+    expect(within(contents).getAllByText('未执行合规扫描')).toHaveLength(1);
     // 新文稿不挂处方（从模板区进来的）。
     expect(within(contents).getAllByText('未关联处方')).toHaveLength(1);
   });
@@ -289,7 +306,7 @@ describe('ActionPage · 内容生产', () => {
       expect(within(after).getByRole('button', { name: '打回待审' })).toBeInTheDocument();
     });
     // 🔴 人工通过 ≠ 合规扫过：那份演示文稿的说明仍要说"未执行合规扫描"。
-    expect(screen.queryByText('演示模式未执行合规扫描')).not.toBeInTheDocument();
+    expect(screen.queryByText('未执行合规扫描')).not.toBeInTheDocument();
     expect(screen.getAllByText('已过合规扫描')).toHaveLength(2);
   });
 
@@ -306,11 +323,7 @@ describe('ActionPage · 内容生产', () => {
 
     const drawer = await screen.findByRole('dialog');
     expect(within(drawer).getByText(SEED_GENERATED_CONTENTS[0].title)).toBeInTheDocument();
-    expect(
-      within(drawer).getByText(
-        '正文是预置的演示文稿：演示模式不调用模型，走查的是产物形态而不是文笔。',
-      ),
-    ).toBeInTheDocument();
+    expect(within(drawer).queryByText(/演示模式/)).not.toBeInTheDocument();
     expect(within(drawer).getByText('已过合规扫描')).toBeInTheDocument();
     // 正文原样落在 <pre> 里（不用 dangerouslySetInnerHTML：数据不是标记）。
     expect(drawer.querySelector('pre')?.textContent).toBe(SEED_GENERATED_CONTENTS[0].body_markdown);
@@ -324,7 +337,7 @@ describe('ActionPage · 内容生产', () => {
     expect(within(drawer).getByText('只有审核通过的文稿才能导出；待审或已退回的文稿请先通过审核。')).toBeInTheDocument();
     expect(within(drawer).getByRole('button', { name: 'Word' })).toBeDisabled();
     expect(
-      within(drawer).getByText('Word 由桌面端提供，演示模式下不可用。'),
+      within(drawer).getByText('Word 暂未接入导出。'),
     ).toBeInTheDocument();
   });
 });

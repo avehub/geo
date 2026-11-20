@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import DemoModeStrip from './DemoModeStrip';
 import zhCN from '../../i18n/locales/zh-CN';
@@ -37,6 +38,16 @@ describe('DemoModeStrip', () => {
     expect(screen.getByText(zhCN.demo.banner)).toBeInTheDocument();
     // 防空跑：细条不是一个空壳。
     expect(strip.textContent).toContain(zhCN.demo.banner);
+  });
+
+  it('演示边界的完整口径收口在帮助层：生成/发布不触达真实环境、密钥不入钥匙串', async () => {
+    runtimeBox.current = 'demo';
+    const user = userEvent.setup();
+    renderWithProviders(<DemoModeStrip />);
+
+    await user.click(screen.getByRole('button', { name: zhCN.demo.about }));
+    expect(await screen.findByText(new RegExp(zhCN.demo.aboutBody))).toBeInTheDocument();
+    expect(zhCN.demo.aboutBody).toContain('系统钥匙串');
   });
 
   it('tauri 运行时：细条不出现（对照组同时证明渲染树是真的在跑）', () => {

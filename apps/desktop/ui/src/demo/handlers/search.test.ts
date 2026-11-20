@@ -202,7 +202,10 @@ describe('demo/handlers/search · search_source_upsert / _remove / _test', () =>
     const source = await demoInvoke<SearchSource>('search_source_upsert', {
       project_id: SEED_ARCHIVED_PROJECT_ID,
       kind: 'gsc',
-      binding: { siteUrl: 'https://www.yunqi-suite.example.com/' },
+      binding: {
+        siteUrl: 'https://www.yunqi-suite.example.com/',
+        client_id: 'demo-gsc-client',
+      },
       note: null,
     });
 
@@ -225,7 +228,7 @@ describe('demo/handlers/search · search_source_upsert / _remove / _test', () =>
     const source = await demoInvoke<SearchSource>('search_source_upsert', {
       project_id: SEED_ACTIVE_PROJECT_ID,
       kind: 'gsc',
-      binding: { siteUrl: `${SEED_SITE_DOMAIN}/` },
+      binding: { siteUrl: `${SEED_SITE_DOMAIN}/`, client_id: 'demo-gsc-client' },
       note: '换了资源库地址',
     });
     const rows = getDemoDb().searchSources.filter((row) => row.kind === 'gsc');

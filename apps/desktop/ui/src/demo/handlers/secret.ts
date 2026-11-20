@@ -23,9 +23,10 @@
  * - `delete_secret`(:183-190)：**幂等**（删不存在的也返回 Ok）。
  *
  * # provider 认不出 ⇒ `llm/config`，不是 `validation/failed`
- * 判据复用 `./settings.ts` 的 `requireKnownProvider`（`parse_provider` 的替身）：
- * 与表单体检是同一份数据、只是 code 不同 ⇒ 不另写一份（依赖单向：secret → settings，
- * 对应 Rust 侧三者本来就是同一个 `SettingsService` 的方法）。
+ * 判据复用 `./settings.ts` 的 `requireSecretProvider`（`parse_secret_provider` 的替身）：
+ * 模型厂商之外还认 `metaso` 等搜索 / OAuth 钥匙串位（设置页「采集与频控」与采集页
+ * 「引擎接入」都要给秘塔配 Key）。与表单体检共用同一份厂商数据、只是 code 不同
+ * ⇒ 不另写一份（依赖单向：secret → settings，对应 Rust 侧三者同一个 `SettingsService`）。
  *
  * # `secret_ref` 复用 `db.ts` 的 `demoSecretRef()`（Task 11 落地）
  * 与后端 `secret_ref(SECRET_KIND = "llm", provider)` 同形 ⇒ `keyring://llm/<provider>`，
@@ -35,7 +36,7 @@ import type { SecretStatus } from '../../api/types';
 import type { DemoHandler } from '../types';
 import { demoError } from '../types';
 import { demoSecretRef, getDemoDb } from '../db';
-import { requireKnownProvider } from './settings';
+import { requireSecretProvider } from './settings';
 import { asString } from './shared';
 
 /**
@@ -44,7 +45,7 @@ import { asString } from './shared';
  */
 export const secretSet: DemoHandler = (args) => {
   const db = getDemoDb();
-  const provider = requireKnownProvider(db, asString(args.provider));
+  const provider = requireSecretProvider(db, asString(args.provider));
 
   // service:153-158：先 trim，空白就拒。🔴 这个 `value` 到这一行为止，往下不留一个字符。
   if (asString(args.value).trim() === '') {
@@ -71,7 +72,7 @@ export const secretSet: DemoHandler = (args) => {
 /** `secret_status`：只回答「配没配」与「引用串是什么」，永不回值。 */
 export const secretStatus: DemoHandler = (args) => {
   const db = getDemoDb();
-  const provider = requireKnownProvider(db, asString(args.provider));
+  const provider = requireSecretProvider(db, asString(args.provider));
   const row = db.secrets.find((item) => item.provider === provider);
 
   // 交出去的是**新造的对象**（真值源也是现构造 `SecretStatus`），不是库里那一行。
@@ -87,7 +88,7 @@ export const secretStatus: DemoHandler = (args) => {
 /** `secret_delete`：幂等（service:183-190 是裸 delete，行不存在也 Ok）。返回 `void`。 */
 export const secretDelete: DemoHandler = (args) => {
   const db = getDemoDb();
-  const provider = requireKnownProvider(db, asString(args.provider));
+  const provider = requireSecretProvider(db, asString(args.provider));
   const row = db.secrets.find((item) => item.provider === provider);
 
   if (row !== undefined) {

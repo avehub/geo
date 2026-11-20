@@ -148,6 +148,44 @@ describe('demo/handlers/secret · 删除是幂等的', () => {
   });
 });
 
+describe('demo/handlers/secret · 非模型钥匙串位（搜索专用 Key）', () => {
+  /**
+   * 真值源 `settings_service.rs` 的 `parse_secret_provider`：密钥三条命令认
+   * `LlmProvider` **加** 五个非模型位（`metaso` / `google_oauth` / `gsc` / `bing_wmt` / `bing_oauth`）。
+   * 采集页的「引擎接入」要给秘塔配搜索 Key，设置页「采集与频控」也一直用 `provider="metaso"`；
+   * 旧 demo 只认模型厂商，这两处都会回 `llm/config unknown_provider`（本轮报障的同族问题）。
+   */
+  it('metaso 是合法的密钥位：未配回 false，写入后翻 true', async () => {
+    expect(await status('metaso')).toEqual({
+      provider: 'metaso',
+      configured: false,
+      secret_ref: 'keyring://llm/metaso',
+    });
+
+    await demoInvoke('secret_set', { provider: 'metaso', value: API_KEY });
+
+    expect((await status('metaso')).configured).toBe(true);
+    // 值照旧不落库（规则 3）。
+    expect(JSON.stringify(getDemoDb())).not.toContain(API_KEY);
+  });
+
+  it('但它仍然不是模型服务商：settings_update 切到 metaso 照旧被表单体检拒绝', async () => {
+    const cause = await capture(() =>
+      demoInvoke('settings_update', {
+        settings: structuredClone({
+          ...SEED_SETTINGS.app,
+          model: { ...SEED_SETTINGS.app.model, provider: 'metaso' },
+        }),
+      }),
+    );
+
+    expect(expectPayload(cause)).toEqual({
+      code: 'validation/failed',
+      params: { field: 'model.provider', reason: 'unknown_provider', value: 'metaso' },
+    });
+  });
+});
+
 describe('demo/handlers/secret · 两个 code 不混用', () => {
   it('四条命令传认不出的 provider 一律 llm/config + 两键，绝不是 validation/failed', async () => {
     const calls: [string, Record<string, unknown>][] = [

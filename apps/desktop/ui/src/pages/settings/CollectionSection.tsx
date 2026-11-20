@@ -8,6 +8,7 @@ import { Card, InputNumber, Space, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 import type { AppSettings, ConcurrencyConfig, RateLimitConfig } from '../../api/types';
+import SecretStatusPanel from '../../components/SecretStatus';
 import type { SectionProps } from './sections';
 
 // 两个补丁函数：`InputNumber` 清空时回调 null，用 `??` 回落到默认值，
@@ -24,6 +25,7 @@ export default function CollectionSection({ settings, patch }: SectionProps) {
   const { t } = useTranslation();
 
   return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
     <Card size="small" title={t('settings.page.crawlerCard')}>
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
         {t('settings.page.crawlerHint')}
@@ -94,5 +96,13 @@ export default function CollectionSection({ settings, patch }: SectionProps) {
         </div>
       </Space>
     </Card>
+
+    <Card size="small" title={t('settings.page.searchKeyCard')}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+        {t('settings.page.searchKeyHint')}
+      </Typography.Paragraph>
+      <SecretStatusPanel provider="metaso" allowTest={false} />
+    </Card>
+    </Space>
   );
 }

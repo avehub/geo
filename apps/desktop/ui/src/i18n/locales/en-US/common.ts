@@ -7,6 +7,8 @@ import type { ResourceBundle } from '../../resources';
  * 两侧值相同是合法的——R-G 那条运行期断言只比较键路径集合，不比较值。
  */
 const common: ResourceBundle['common'] = {
+  // P2-10: native save-dialog title, supplied by the frontend per locale.
+  exportDialogTitle: 'Export',
   // One status vocabulary for the whole app (StatusChip).
   status: {
     ok: 'Healthy',
@@ -78,13 +80,14 @@ const common: ResourceBundle['common'] = {
     csv: 'CSV',
     docx: 'Word',
     pdf: 'PDF',
+    xlsx: 'XLSX',
     png: 'PNG',
   },
   checkDetails: {
     site_bundle_ready: 'The hand-over bundle needs no credentials; exports go to local files and the export directory is writable.',
     site_bundle_verified: 'The hand-over bundle needs no credentials; the export directory is writable, and the latest export was the {{date}} qualification-page bundle.',
     site_edge_not_deployed: 'The edge function is not deployed yet: the patches.json URL returned {{status}}. Deploy it, then run the check again.',
-    site_cms_not_configured: 'Not configured: enter the site URL and username, then create an application password in WordPress (the demo does not accept passwords).',
+    site_cms_not_configured: 'Not configured: enter the site URL and username, then create an application password in WordPress.',
 
     site_credentials_missing: 'Credentials are not configured: {{kind}} needs a credential stored in the system keychain first.',
     site_repo_manual_check: 'The repository URL is set; repository delivery is a merge request opened by the user, so the check only confirms the configuration exists.',
@@ -98,8 +101,11 @@ const common: ResourceBundle['common'] = {
     search_bing_verified_no_api: 'The site passed DNS verification. AI Performance has a UI but no API today, so the Grounding Queries column stays in platform-specific dimensions.',
     search_tongji_verified: 'The site ID has been checked and sessions and source analysis are readable. It is an on-site analytics source measured in sessions, so it never joins impression totals; it is used only for traffic-source distribution and onboarding suggestions.',
     search_binding_missing: 'Required binding is incomplete: {{fields}}.',
-    search_binding_blocked: 'Required binding is incomplete: the preset probe says the platform itself is available, but this source lacks the site binding needed to read data; the demo does not send requests.',
+    search_binding_blocked: 'Required binding is incomplete: the platform itself is available, but this source lacks the site binding needed to read data.',
     search_credentials_missing: 'Not authorized yet: {{kind}} requires official authorization first.',
+    search_credentials_stored: 'Authorized: the {{kind}} token is stored in the system keychain.',
+    search_oauth_failed: 'Authorization did not complete: start it again, or check the client ID and callback settings.',
+    search_fetch_failed: 'Authorization was saved, but pulling platform data failed; retry authorization later or use import.',
     search_reachable: 'The site is reachable (HTTP {{status}}).',
     search_unreachable: 'The site is unreachable: {{reason}}.',
     search_manual_no_probe: 'Manual entry needs no probe: there is no platform and no credential, and the stated period is used as-is.',

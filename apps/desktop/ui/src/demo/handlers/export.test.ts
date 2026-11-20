@@ -262,3 +262,34 @@ describe('demo/handlers/export · 异常路径', () => {
     expect(document.body.querySelectorAll('a[download]')).toHaveLength(0);
   });
 });
+
+describe('demo/handlers/export · 二进制格式（demo 不伪造文件）', () => {
+  for (const format of ['pdf', 'xlsx'] as const) {
+    it(`${format} 走 validation/failed，且不创建下载、不碰 DOM`, async () => {
+      const cause = await capture(() =>
+        write({ default_name: `report.${format}`, content: CSV_BODY, with_bom: false, format }),
+      );
+
+      expect(isIpcErrorPayload(cause)).toBe(true);
+      expect(cause).toMatchObject({
+        code: 'validation/failed',
+        params: { field: 'format', reason: 'not_allowed', value: format },
+      });
+      expect(createObjectURL).not.toHaveBeenCalled();
+      expect(click).not.toHaveBeenCalled();
+      expect(document.body.querySelectorAll('a[download]')).toHaveLength(0);
+    });
+  }
+
+  it('format:"text" 与缺省一样走原有下载路径', async () => {
+    const saved = await write({
+      default_name: FILE_NAME,
+      content: CSV_BODY,
+      with_bom: true,
+      format: 'text',
+    });
+
+    expect(saved).toBe(FILE_NAME);
+    expect(bodyOf()).toBe(`${BOM}${CSV_BODY}`);
+  });
+});

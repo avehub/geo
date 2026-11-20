@@ -292,7 +292,7 @@ describe('demo/handlers/keyword · keyword_delete', () => {
     expect(remaining).toHaveLength(SEED_KEYWORDS.length);
   });
 
-  it('允许删空（素材库没有"题库不许删空"那条约束）', async () => {
+  it('允许删空（与题库同口径：删空是合法操作）', async () => {
     const remaining = await demoInvoke<KeywordItem[]>('keyword_delete', {
       project_id: SEED_ACTIVE_PROJECT_ID,
       ids: SEED_KEYWORDS.map((row) => row.id),

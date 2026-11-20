@@ -92,6 +92,19 @@ export default function OverviewPage() {
     return conclusive.find((round) => round.id === roundId) ?? latestConclusiveRound(rounds);
   }, [conclusive, roundId, rounds]);
   const selectedRoundId = selectedRound?.id ?? null;
+  /**
+   * P3-02（2026-11-07 测试报告）：概览锚定「最近一个有结论轮次」，而诊断页默认取
+   * **最后一轮**（可能在跑）⇒ 不带参数跳过去会看到整页空态。跳转时把锚定轮带上，
+   * 诊断页尊重 `?round=`（参数非法时它自己回落默认）。
+   */
+  const diagnosisPath = useMemo(
+    () =>
+      selectedRoundId === null
+        ? `/projects/${projectId}/diagnosis`
+        : `/projects/${projectId}/diagnosis?round=${selectedRoundId}`,
+    [projectId, selectedRoundId],
+  );
+
   const previousRound = useMemo(
     () => (selectedRoundId === null ? null : previousConclusiveRound(rounds, selectedRoundId)),
     [rounds, selectedRoundId],
@@ -256,11 +269,7 @@ export default function OverviewPage() {
             <InfoHint
               title={t('overview.methodology.title')}
               body={
-                <>
-                  <div>{t('overview.staticNote')}</div>
-                  <div style={{ marginTop: 6 }}>{t('overview.methodology.note')}</div>
-                  <div style={{ marginTop: 6 }}>{t('overview.methodology.demo')}</div>
-                </>
+                <div>{t('overview.methodology.note')}</div>
               }
               label={t('overview.methodology.title')}
             />
@@ -343,7 +352,7 @@ export default function OverviewPage() {
                 risks={risks}
                 loading={[...factQueries, ...reviewQueries].some((query) => query.isPending)}
                 error={riskError}
-                onOpenDiagnosis={() => navigate(`/projects/${projectId}/diagnosis`)}
+                onOpenDiagnosis={() => navigate(diagnosisPath)}
                 onOpenInsight={() => navigate(`/projects/${projectId}/insight`)}
               />
             </Col>
@@ -360,7 +369,7 @@ export default function OverviewPage() {
                   <Button
                     type="link"
                     size="small"
-                    onClick={() => navigate(`/projects/${projectId}/diagnosis`)}
+                    onClick={() => navigate(diagnosisPath)}
                   >
                     {t('overview.trend.open')}
                   </Button>
@@ -447,7 +456,7 @@ export default function OverviewPage() {
                 matrix={competitorsQuery.data ?? null}
                 loading={competitorsQuery.isPending && selectedRoundId !== null}
                 error={competitorsQuery.isError ? competitorsQuery.error : null}
-                onOpen={() => navigate(`/projects/${projectId}/diagnosis`)}
+                onOpen={() => navigate(diagnosisPath)}
               />
             </Col>
           </Row>

@@ -54,8 +54,8 @@ const STATUS_COLORS: Record<SearchSource['status'], string> = {
  *
  * # 🔴 这里不收任何凭据（DR-96 / AGENTS 规则 3）
  * 表单里只有**非敏感**的站点绑定（站点地址 / 站点 ID）与备注；凭据那一栏只展示
- * `keyring://search/<kind>` 这个**引用串**，并常驻 `sourceCards.demoCredentials`
- * 说清"演示模式不收密码与令牌"。
+ * `keyring://search/<kind>` 这个**引用串**；demo 不重复演示提示，桌面端显示
+ * `sourceCards.liveCredentials`。
  */
 export default function SearchSourceDrawer({
   source,
@@ -309,14 +309,12 @@ export default function SearchSourceDrawer({
                 {source.secret_ref ?? searchSecretRef(source.kind)}
               </Typography.Text>
             </Typography.Text>
-            {/* 🔴 常驻（AGENTS 规则 3）：演示模式一个密码与令牌都不收。 */}
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
-              {t(
-                runtime === 'demo'
-                  ? 'webmasterData.sourceCards.demoCredentials'
-                  : 'webmasterData.sourceCards.liveCredentials',
-              )}
-            </Typography.Paragraph>
+            {/* AGENTS 规则 3：凭据只存系统钥匙串；demo 不重复演示提示。 */}
+            {runtime === 'tauri' ? (
+              <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+                {t('webmasterData.sourceCards.liveCredentials')}
+              </Typography.Paragraph>
+            ) : null}
             {runtime === 'tauri' && source.kind === 'gsc' ? (
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>

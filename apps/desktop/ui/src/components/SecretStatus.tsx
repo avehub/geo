@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next';
 
 import * as client from '../api/client';
 import { describeIpcError } from '../api/errors';
-import { runtime } from '../api/runtime';
 import type { LlmTestResult } from '../api/types';
 
 export interface SecretStatusPanelProps {
@@ -125,18 +124,8 @@ function SecretStatusPanelInner({ provider, allowTest = true }: SecretStatusPane
         />
       )}
 
-      {/*
-        计划正文对 demo `secret_*` 的 Produces 逐字要求这句提示：demo 的 `secret_set`
-        **连内存都不存** Key（只把 `configured` 翻成 `true`、值当场丢弃，
-        `demo/handlers/secret.ts:53-62`）⇒ 它是如实描述，不是免责声明。少了它，用户在浏览器里
-        粘一把真 Key 点保存，会以为它进了钥匙串。
-
-        🔴 必须按 `runtime` 条件渲染：真桌面端（Tauri）**确实**写系统钥匙串，在那儿渲染它就是假话。
-        开关与形状都照运行时门禁那一族（`components/ui/DemoModeStrip.tsx`：同一个模块级常量、同一种常驻条，
-        不用 Modal / message：它是背景事实，不许遮挡操作）。
-      */}
-      {runtime === 'demo' && <Alert type="info" showIcon message={t('demo.secretNoKeychain')} />}
-
+      {/* 2026-11-19 产品裁定：demo 密钥边界统一由全局 `DemoModeStrip.aboutBody` 说明，
+          密钥区不再重复「演示模式不会写入系统钥匙串」。 */}
       <Space.Compact style={{ width: '100%', maxWidth: 520 }}>
         <Input.Password
           value={value}

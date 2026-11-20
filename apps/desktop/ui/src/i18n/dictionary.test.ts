@@ -295,11 +295,11 @@ const NOT_FOUND_KINDS = ['project', 'entity_card', 'prompt_set', 'prompt_item', 
  */
 const TRANSPORT_REASONS = ['network', 'timeout', 'other'];
 /**
- * `crawler/empty` 的 `skipped` 记号，3 个。
- * 真值源：`crates/geo-crawler/src/site.rs:66`/`:68`/`:70` 的三个 `pub const`
- * （`SKIP_TOTAL_TIMEOUT` / `SKIP_ROBOTS_DISALLOWED` / `SKIP_FETCH_FAILED`）。
+ * `crawler/empty` 的 `skipped` 记号，4 个。
+ * 真值源：`crates/geo-crawler/src/site.rs` 的四个 `pub const`
+ * （`SKIP_TOTAL_TIMEOUT` / `SKIP_ROBOTS_DISALLOWED` / `SKIP_FETCH_FAILED` / `SKIP_EMPTY_CONTENT`）。
  */
-const SKIP_TOKENS = ['total_timeout', 'robots_disallowed', 'fetch_failed'];
+const SKIP_TOKENS = ['total_timeout', 'robots_disallowed', 'fetch_failed', 'empty_content'];
 
 /**
  * 后端会发出的 `field` 值（出处：`task-5-report.md` §3.2 / §3.3 + geo-domain 的其余站点）。

@@ -95,6 +95,7 @@ const prompt = {
   },
 
   table: {
+    text: 'Prompt',
     intent: '意图',
     weight: '权重',
     weightAria: '权重 {{text}}',

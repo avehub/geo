@@ -104,6 +104,43 @@ beforeEach(() => {
   resetDemoDb();
 });
 
+/**
+ * P3-02（2026-11-07 测试报告）：项目概览锚定「最近一个有结论轮次」，而诊断页默认取
+ * **最后一轮**（可能在跑）⇒ 从概览点「看诊断」会看到整页空态。修法是概览跳转带
+ * `?round=`，诊断页尊重它。这两条用例钉住「带参数落在指定轮」与「参数非法回落默认」。
+ */
+describe('DiagnosisPage · ?round= 跳转锚定（P3-02）', () => {
+  it('URL 带 ?round= 时落在指定轮次，不再默认进行中那轮', async () => {
+    const concluded = SEED_COLLECTION_ROUNDS[2];
+    renderAtRoute(<DiagnosisPage />, PATH, `${ROUTE}?round=${concluded.id}`);
+    await screen.findByRole('heading', { name: '诊断与归因' });
+    // 选择器回显的是**指定轮**（下拉关闭时只有选中项在 DOM 里），不能复用 waitLoaded
+    // （它等的是默认选中项 = 进行中那轮的 label）。
+    await screen.findByText(concluded.label);
+
+    // 空态告警要**等它消失**：选择器回显只证明轮次清单到了，overview 是第二个往返。
+    await waitFor(() =>
+      expect(
+        screen.queryByText('这一轮还没有体检结果：采集未完成或样本不足时不出结论。'),
+      ).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(statisticValue('GEO 体检总分')).toBe(
+        String(SEED_DIAGNOSIS_OVERVIEWS[concluded.id].total_score),
+      ),
+    );
+  });
+
+  it('?round= 指向不存在的轮次时回落默认（进行中那轮），不白屏', async () => {
+    renderAtRoute(<DiagnosisPage />, PATH, `${ROUTE}?round=round-does-not-exist`);
+    await waitLoaded();
+
+    expect(
+      await screen.findByText('这一轮还没有体检结果：采集未完成或样本不足时不出结论。'),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('DiagnosisPage · 「这一轮没有体检结果」是正常形态', () => {
   it('默认选中进行中那轮：体检 / 竞品 / 漏斗都是空状态，页面不报错', async () => {
     renderPage();
@@ -125,13 +162,11 @@ describe('DiagnosisPage · 「这一轮没有体检结果」是正常形态', ()
     ).toBeInTheDocument();
   });
 
-  it('口径说明必须显示：静态值不重算 + 比率是区间不是单点', async () => {
+  it('口径说明保留：比率是区间不是单点；页面不重复演示提示', async () => {
     renderPage();
     await waitLoaded();
 
-    expect(
-      screen.getByText('总分与各维得分在演示模式下是预置静态值，不由前端按权重重算。'),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/演示模式/)).not.toBeInTheDocument();
   });
 });
 

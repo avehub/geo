@@ -301,11 +301,12 @@ export default function SitePage() {
         }
       />
 
-      <Alert type="warning" showIcon style={{ marginBottom: 8 }} message={t('site.demoBody')} />
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-        {t('site.staticNote')}
-      </Typography.Paragraph>
-
+      <Alert
+        type="warning"
+        showIcon
+        style={{ marginBottom: 8 }}
+        message={t('site.liveHandoffBody')}
+      />
       <SiteProfileCard
         profile={board?.profile ?? null}
         pages={pages}

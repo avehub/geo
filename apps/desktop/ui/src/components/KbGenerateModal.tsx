@@ -1,6 +1,8 @@
 import { Alert, Form, InputNumber, Modal, Select } from 'antd';
 import { useTranslation } from 'react-i18next';
 
+import { runtime } from '../api/runtime';
+
 import type { KbModule } from '../api/types';
 import { KB_MODULE_VALUES, LIBRARY_GENERATE_MAX, LIBRARY_GENERATE_MIN } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
@@ -19,9 +21,8 @@ export interface KbGenerateModalProps {
 /**
  * 「AI 生成知识条目」的选项弹窗（M1.2b；模块清单按 taxonomy v2，DR-74）。
  *
- * 🔴 **免责说明必须显示**（AGENTS 规则 9 / 规则 6）：demo 不调模型、生成内容来自预置语料池、
- * 未执行合规扫描 ⇒ 产物一律 `pending_review`。少写一句，产品负责人就会拿演示数据
- * 评审"AI 生成的知识质量"。
+ * 弹窗保留运行时中立的免责说明（AGENTS 规则 9 / 规则 6）：生成内容一律待人工审核，
+ * 桌面端命中广告法红线词会整批拒绝。演示边界由全局 `DemoModeStrip` 说明。
  *
  * 条数上下限**复用**素材库那一档（`LIBRARY_GENERATE_MIN` / `MAX`）：两处各写一份常量
  * 就是下一个漂移面。
@@ -46,7 +47,12 @@ export default function KbGenerateModal({ generating, onCancel, onGenerate }: Kb
           .catch(() => undefined);
       }}
     >
-      <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t('kb.generate.demoNote')} />
+      <Alert
+        type="warning"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message={t(runtime === 'tauri' ? 'kb.generate.liveNote' : 'kb.generate.reviewNote')}
+      />
       <Form<KbGenerateFormValues>
         form={form}
         layout="vertical"

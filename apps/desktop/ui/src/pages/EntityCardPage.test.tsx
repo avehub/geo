@@ -75,6 +75,25 @@ describe('EntityCardPage', () => {
   });
 
   /**
+   * 完整率圈与圈内百分比整体缩到 70%（产品走查：原 64px 圈偏大）。
+   *
+   * 两段分开钉：antd 的圈内字号是 `width * 0.15 + 6`（64 → 15.6px），
+   * 只把 size 调到 45 时字号只降到 12.75px（-18%），并不到 30%；
+   * 所以 format 里显式给 11px（15.6 × 0.7 ≈ 10.9）。
+   */
+  it('完整率圈缩到 70%：圈 45px、百分比字号 11px', async () => {
+    stub({ completeness: 0.8 });
+    renderPage();
+
+    const percentText = await screen.findByText('80%');
+    const inner = percentText.closest('.ant-progress-inner');
+    expect(inner, '抓不到 antd 的进度圈容器').not.toBeNull();
+    expect((inner as HTMLElement).style.width).toBe('45px');
+    expect((inner as HTMLElement).style.height).toBe('45px');
+    expect((percentText as HTMLElement).style.fontSize).toBe('11px');
+  });
+
+  /**
    * 🔴 本轮实体卡瘦身的**靶心**（spec `2026-10-01-entity-card-slim-and-knowledge-base-design.md`
    * DR-59 / DR-60）：字段面 11 → 7。
    *
@@ -190,6 +209,37 @@ describe('EntityCardPage', () => {
       domain: 'www.hongyu-pump.com',
     });
     expect(await screen.findByText('95%')).toBeInTheDocument();
+  });
+
+  /**
+   * 2026-11-06 用户报障（k.gaodekuai.cn）：官网抓到了 8 页，但模型名没配
+   * （Rust 日志 `llm/config reason=missing_model value=custom`），后端按 FR-M1-2
+   * 降级成「建项资料」卡。降级本身不是错误，但界面只写「人工录入 + 20%」，
+   * 用户读不出「抓取成功、AI 没跑」这件事 ⇒ 必须显式告警并给出设置入口。
+   */
+  it('官网已抓取但 AI 抽取未完成时，显式告警并给出模型设置入口', async () => {
+    mockInvoke.stubAlways('entity_card_get', () =>
+      makeEntityCard({
+        source: {
+          crawled_pages: ['https://k.gaodekuai.cn/', 'https://k.gaodekuai.cn/help'],
+          llm_provider: null,
+          llm_model: null,
+          generated_at: '2026-11-07T01:13:58Z',
+        },
+      }),
+    );
+    mockInvoke.stubAlways('entity_card_revisions', () => []);
+    renderPage();
+
+    expect(await screen.findByText('已抓取 2 个页面，但 AI 抽取未完成')).toBeInTheDocument();
+    expect(screen.getByText(/当前字段来自建项资料，不是官网内容/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '前往模型服务设置' })).toHaveAttribute(
+      'href',
+      '/settings/models',
+    );
+    // 来源标签不能再写「人工录入」：这是抓过站的降级卡，不是手填卡。
+    expect(screen.getByText('官网已抓取 · AI 抽取未完成')).toBeInTheDocument();
+    expect(screen.queryByText('人工录入')).not.toBeInTheDocument();
   });
 
   it('域名为空时不发起自动建档', async () => {

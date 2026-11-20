@@ -618,8 +618,10 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     // M9 组合总览再加 1 个 .tsx（分布卡），组装与筛选在 `api/portfolio-compose.ts`。
     // P1 站外对账 / 交付进度再加 2 个 .tsx（`OverviewStationCard` / `OverviewDeliveryCard`）。
     // 2026-11-06 设置 · 模型服务商重排再加 1 个 .tsx（`ui/FormField.tsx`，飞书式纵向表单薄壳）。
-    expect(paths).toHaveLength(111);
-    expect(paths.filter((path) => path.endsWith('.tsx'))).toHaveLength(101);
+    // 2026-11-20 采集页「引擎接入」再加 1 个 .tsx（`EngineAccessModal.tsx`）与 1 个取数模块
+    // （`use-engine-access.ts`：组件文件只导出组件，hook 分住 ⇒ 非组件模块 +1）。
+    expect(paths).toHaveLength(113);
+    expect(paths.filter((path) => path.endsWith('.tsx'))).toHaveLength(102);
     expect(paths).toContain('../components/SideNav.tsx');
     expect(paths).toContain('../components/LibraryReferenceModal.tsx');
     expect(paths).toContain('../components/KbModulePanels.tsx');
@@ -679,9 +681,9 @@ describe('扫描面本身（防空跑：glob 写错时「0 个文件全都干净
     ]);
   });
 
-  it('B-1 · 抽取面 = components(111) + pages(29) + App.tsx + main.tsx，且不含 api/', () => {
+  it('B-1 · 抽取面 = components(113) + pages(29) + App.tsx + main.tsx，且不含 api/', () => {
     const paths = Object.keys(EXTRACTION_SOURCES);
-    expect(paths).toHaveLength(142);
+    expect(paths).toHaveLength(144);
     expect(paths.filter((path) => path.startsWith('../api/'))).toEqual([]);
     expect(paths.filter((path) => EXTRACTION_ROOTS.some((root) => !path.startsWith(root))).length)
       .toBeGreaterThan(0);

@@ -19,7 +19,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
 import * as client from '../../api/client';
-import { runtime } from '../../api/runtime';
 import { describeIpcError } from '../../api/errors';
 import type { Permissions } from '../../api/types';
 import ProxyForm from '../../components/ProxyForm';
@@ -188,11 +187,7 @@ export default function GeneralSection({ settings, patch }: SectionProps) {
             {t('settings.permissionsCard.openSystemSettings')}
           </Button>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t(
-              runtime === 'demo'
-                ? 'settings.permissionsCard.desktopOnly'
-                : 'settings.permissionsCard.liveHint',
-            )}
+            {t('settings.permissionsCard.liveHint')}
           </Typography.Text>
         </Space>
 

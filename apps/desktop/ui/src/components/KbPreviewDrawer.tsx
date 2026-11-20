@@ -24,7 +24,8 @@ const MEDIA_ICONS: Record<string, typeof PictureOutlined> = {
 /**
  * 素材预览侧滑（DR-78）。
  * 🔴 **不加载远端媒体**（规则 2 / 测试不联网同族）：只展示类型图标、mime、地址与图注，
- * 并把原因写在面上（`kb.entry.mediaNote`）——用户不该猜"为什么图是空的"。
+ * 并把原因写在面上（demo: `kb.entry.mediaNote`；桌面端: `kb.entry.mediaNoteLive`）——
+ * 用户不该猜"为什么图是空的"。
  */
 export default function KbPreviewDrawer({ row, onClose }: KbPreviewDrawerProps) {
   const { t } = useTranslation();
@@ -49,7 +50,7 @@ export default function KbPreviewDrawer({ row, onClose }: KbPreviewDrawerProps) 
         >
           <Icon style={{ fontSize: 40 }} aria-hidden />
           <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-            {t('kb.entry.mediaNote')}
+            {t('kb.entry.mediaNoteLive')}
           </Typography.Paragraph>
         </div>
         {row.url === null ? null : (

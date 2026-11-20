@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Alert, App, Descriptions, Modal, Select, Space, Tag, Typography } from 'antd';
+import { App, Descriptions, Modal, Select, Space, Tag, Typography } from 'antd';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
 import * as action from '../api/action';
 import { describeIpcError } from '../api/errors';
+import { runtime } from '../api/runtime';
 import type { ActionItem, ContentTemplate, GeneratedContent } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
 
@@ -55,7 +56,9 @@ export default function ContentGenerateModal({
     mutationFn: () =>
       action.contentGenerate(projectId, selected?.id ?? '', target?.id ?? null),
     onSuccess: (content) => {
-      message.success(t('action.contents.generated'));
+      message.success(
+        t(runtime === 'demo' ? 'action.contents.generated' : 'action.contents.generatedLive'),
+      );
       setTemplateId(null);
       onGenerated(content);
       onClose();
@@ -116,7 +119,6 @@ export default function ContentGenerateModal({
             </Space>
           </>
         )}
-        <Alert type="info" showIcon message={t('action.contents.demoBody')} />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {t('action.contents.pendingNote')}
         </Typography.Text>

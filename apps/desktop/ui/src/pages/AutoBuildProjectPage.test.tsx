@@ -7,7 +7,7 @@
  *    并且把已经建出来的项目**回滚删掉**（先建后抽 ⇒ 抽取失败时项目已落库，不删就留空壳）；
  * ③ 合法网址 ⇒ `抓取中` → `抽取中` → `完成 N% 字段` 三段**依次都能观测到**，不许一步跳完
  *    （等待形态本身就是要验收的东西：真后端抓取要几十秒）；
- * ④ 🔴「演示模式不抓取网页，抽取结果是预置数据」**全程常驻**（开跑前、跑动中都在）；
+ * ④ 🔴 测试跑在 tauri 运行时：不挂「演示模式不抓取网页」，改说抓取范围与逐字段确认；
  * ⑤ 成功后跳 `/projects/:id/entity-card`，且抽出来的卡每个字段都是「待确认」
  *    （真值源 `crates/geo-domain/src/entity_card.rs:243-250` 的 `from_extraction` 用
  *    `FieldStatus::Pending` 建卡）——逐字段确认在实体卡那一页做，这一屏不重复造界面。
@@ -114,7 +114,8 @@ describe('AutoBuildProjectPage · 填网址自动采集（spec §7）', () => {
     // 失败之后不许把进度停在中间态（否则界面上一直是"抽取中"）
     expect(screen.queryByText(COPY.stageExtracting)).not.toBeInTheDocument();
     // 「演示模式不抓取网页」这句失败时也得在
-    expect(screen.getByText(COPY.demoNotice)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.demoNotice)).toBeNull();
+    expect(screen.getByText(COPY.urlExtraLive)).toBeInTheDocument();
   });
 
   it('③④⑤ 合法网址：三段依次可观测、演示提示常驻、跳到实体卡且字段全待确认', async () => {
@@ -122,7 +123,7 @@ describe('AutoBuildProjectPage · 填网址自动采集（spec §7）', () => {
     renderPage();
 
     // ④ 开跑之前就在
-    expect(screen.getByText(COPY.demoNotice)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.demoNotice)).toBeNull();
 
     await user.type(screen.getByPlaceholderText(COPY.urlPlaceholder), VALID_URL);
     await user.click(screen.getByRole('button', { name: COPY.start }));
@@ -130,7 +131,7 @@ describe('AutoBuildProjectPage · 填网址自动采集（spec §7）', () => {
     // ③ 第一段
     expect(await screen.findByText(COPY.stageCrawling)).toBeInTheDocument();
     // ④ 跑动中仍然在
-    expect(screen.getByText(COPY.demoNotice)).toBeInTheDocument();
+    expect(screen.queryByText(COPY.demoNotice)).toBeNull();
     // ③ 第二段
     expect(await screen.findByText(COPY.stageExtracting)).toBeInTheDocument();
     // ③ 第三段：完成 N% 字段

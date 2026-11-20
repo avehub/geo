@@ -15,7 +15,7 @@
  *    这条断言失真）；又因为 Task 4 把上游原文收缩成只进日志，这三条是「测试连接」失败时
  *    用户能看到的**全部**诊断，必须写成可操作指引（裁定 B-7 / R-C3）。
  * 4. `kinds.*`：`{kind}/not_found` 的 kind 取值（壳侧 `NOT_FOUND_KINDS`，5 个）。
- * 5. `skip_tokens.*`：`crawler/empty` 的 `skipped` 里那三个稳定记号。
+ * 5. `skip_tokens.*`：`crawler/empty` 的 `skipped` 里那四个稳定记号。
  * 6. `fragments.*`：**可选**参数的独立片段键。主模板里只写「该组合保证发出」的占位符，
  *    可选信息（`value` / `crawler/network` 的 `url`、`status` / `crawler/empty` 的 `skipped`）
  *    由组合器按需追加——i18next 默认 `skipOnVariables: true`，缺值时会把 `{{value}}`
@@ -126,6 +126,7 @@ const errors = {
     total_timeout: '总时长预算用尽',
     robots_disallowed: 'robots.txt 不允许抓取',
     fetch_failed: '抓取或解析失败',
+    empty_content: '正文为空（脚本渲染或跳转页）',
   },
 
   fragments: {

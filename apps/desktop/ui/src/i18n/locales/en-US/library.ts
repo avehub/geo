@@ -60,6 +60,7 @@ const library: ResourceBundle['library'] = {
     exportCsv: 'Export CSV',
     exportJsonLd: 'Export FAQPage JSON-LD',
     demoModeHint: 'In demo mode the export goes through the browser download; the file name is echoed in the toast.',
+    liveModeHint: 'The desktop app writes the export to a file and shows the saved location when done.',
   },
 
   keyword: {
@@ -120,13 +121,15 @@ const library: ResourceBundle['library'] = {
     generated: 'Generated {{total}} FAQ entries',
     generatedNone:
       'The preset corpus pool has no new entries for these intents. Pick other intents or add them manually.',
+    generatedNoneLive:
+      'The model returned no new entries for the selected intents. Adjust the intents and try again, or add them manually.',
     saved: 'FAQ entry saved',
     deleted: 'Deleted {{total}} FAQ entries',
     deleteConfirmTitle: 'Delete FAQ entries',
     deleteConfirmContent: 'This deletes {{total}} FAQ entries and cannot be undone.',
     requiredQuestion: 'Enter the question',
     requiredAnswer: 'Enter the answer',
-    complianceUnchecked: 'Not compliance-scanned in demo mode',
+    complianceUnchecked: 'Compliance scan not run',
     exportDisabled:
       'Nothing to export: the JSON-LD only includes entries that passed review.',
     jsonldTitle: 'FAQPage structured data preview',

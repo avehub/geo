@@ -3,7 +3,7 @@
  *
  * # 这里钉的是**界面形态**（handler 侧裁定在 `demo/handlers/faq.test.ts`）
  * - 答案是 Markdown 原文，展开行按**预格式文本**呈现，且待审的 AI 答案旁边挂着
- *   「演示模式未执行合规扫描」（规则 6 的界面侧对价）；
+ *   「未执行合规扫描」（规则 6 的界面侧对价，不再重复演示模式前缀）；
  * - 🔴 **JSON-LD 只收已通过**：预览里既有已通过的问答，也**绝不**出现待审/已退回的问题；
  * - 🔴 一条已通过的都没有时，导出按钮**置灰**并给出原因（不是导出一份空壳）；
  * - 引用到 Prompt 题库是真的写路径；FAQ 没有优先级 ⇒ 权重一律用后端默认值 3。
@@ -123,16 +123,15 @@ beforeEach(() => {
 });
 
 describe('FaqLibraryPage · 首屏', () => {
-  it('8 条种子上屏 + 静态值口径说明 + 枚举标签走词典', async () => {
+  it('8 条种子上屏 + 不重复演示提示 + 枚举标签走词典', async () => {
     renderPage();
     await waitLoaded();
 
     expect(
       screen.getByText('问题 + 答案成对沉淀，可导出成官网的 FAQPage 结构化数据，或引用进 Prompt 题库'),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText('AI 生成的问答在演示模式下取自预置语料，未执行合规扫描，采用前请人工核对。'),
-    ).toBeInTheDocument();
+    // 演示边界由全局细条统一说明，页面里不再重复。
+    expect(screen.queryByText(/演示模式/)).not.toBeInTheDocument();
 
     expect(tableRows()).toHaveLength(SEED_FAQS.length);
     expect(screen.getAllByText('AI 生成').length).toBeGreaterThan(0);
@@ -161,7 +160,7 @@ describe('FaqLibraryPage · 首屏', () => {
     expect(expanded, '展开行没渲染').not.toBeNull();
     expect(expanded.textContent).toContain(PENDING_ROW.answer_markdown);
     // 🔴 待审的 AI 答案旁边挂着那句合规说明
-    expect(screen.getByText('演示模式未执行合规扫描')).toBeInTheDocument();
+    expect(screen.getByText('未执行合规扫描')).toBeInTheDocument();
   });
 
   it('按分类筛选：分类是自由文本数据，选项从清单里现算', async () => {
@@ -232,9 +231,7 @@ describe('FaqLibraryPage · AI 生成', () => {
 
     await user.click(screen.getByRole('button', { name: /AI\s*生成/ }));
     await screen.findByText('AI 生成常见问题');
-    expect(
-      screen.getByText('演示模式不调用模型：问答取自预置语料池，走查的是产物形态（分类、意图、审核态、JSON-LD），不是文笔。'),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/演示模式/)).not.toBeInTheDocument();
 
     const dialog = document.querySelector('.ant-modal-content') as HTMLElement;
     await user.click(within(dialog).getByRole('button', { name: /AI\s*生成/ }));

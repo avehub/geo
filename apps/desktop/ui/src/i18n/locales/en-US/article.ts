@@ -129,6 +129,9 @@ const article: ResourceBundle['article'] = {
       kbModules: 'Referenced knowledge modules',
       kbModulesHint:
         'References are recorded only: demo mode does not splice knowledge entries into the prompt. The real generation pipeline does that.',
+      kbModulesLiveHint:
+        'References are recorded only: the backend splices knowledge entries into the prompt during generation.',
+      kbModulesNote: 'References are recorded only.',
       bindingsLabel: 'Bound material',
       productNamesLabel: 'Product names',
       productNamesPlaceholder: 'Type a product name and press Enter',
@@ -193,7 +196,7 @@ const article: ResourceBundle['article'] = {
     exportDisabled: 'No approved article to export: the Markdown book only includes drafts that passed human review.',
     preview: 'Preview',
     previewAria: 'Article body',
-    complianceUnchecked: 'Demo mode ran no compliance scan',
+    complianceUnchecked: 'Compliance scan not run',
     bodyHint: 'The body is shown as raw Markdown, not rendered to HTML: data is not markup, the same rule as FAQ answers.',
     meta: {
       direction: 'Direction',

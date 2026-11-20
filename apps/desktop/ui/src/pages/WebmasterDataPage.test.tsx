@@ -15,7 +15,7 @@
  * # 这里钉的靶心（逐条对走查清单）
  * - 走查 2/3：三分组渲染 + 海外可达性常驻 + 站内分析"不参与曝光合计"常驻；二期源不渲染；
  *   `auth_mode: 'none'` 的源在侧滑里**看不到** OAuth 那一档（DR-93：不置灰，根本不渲染）；
- * - 走查 4/6：`demoBody` / `metricNote` / `staticNote` / `pasteNote` 四句**直接渲染**，
+ * - 走查 4/6：`metricNote` / `pasteNote` 两句直接渲染；演示提示已收口到全局细条，页面不再重复，
  *   断言它们的祖先链上没有 `.ant-tooltip`（藏进问号里就是本条要抓的回归）；
  * - 走查 10/11/12/13：合计行给出区间 + 参与源清单（可展开）+ 旗标；区间收敛到最早的
  *   `data_through` 并**点名**受限源；取消勾选一个平台 ⇒ 合计、CTR、区间三个当场重算；
@@ -26,7 +26,7 @@
  * - 走查 18/21：`self_index_summary` 为 `null` 时是空态而不是抛错；状态卡上没有 CTR 曲线
  *   （自有索引没有点击，DR-118 末条）；后端缺命令时页面出 Alert 而不是白屏。
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import dayjs from 'dayjs';
@@ -55,6 +55,9 @@ import zh from '../i18n/locales/zh-CN';
 import { SEED_ACTIVE_PROJECT_ID } from '../demo/seed/projects';
 import { mockInvoke } from '../test/invoke-mock';
 import { renderAtRoute, renderWithProviders } from '../test/render';
+
+/** 这一份桩在 IPC 边界上 ⇒ 固定 tauri 分派；演示文案的隐藏正是本轮要钉的行为。 */
+vi.mock('../api/runtime', () => ({ runtime: 'tauri' }));
 
 const PROJECT_ID = SEED_ACTIVE_PROJECT_ID;
 const PATH = '/projects/:id/webmaster-data';
@@ -321,6 +324,16 @@ function stubBoard(board: SearchBoardResult = makeBoard()): SearchBoardResult {
     }),
   );
   mockInvoke.stubAlways('search_metric_import_csv', () => structuredClone(EMPTY_IMPORT));
+  mockInvoke.stubAlways('search_oauth_begin', () => ({
+    auth_url: 'https://accounts.google.com/o/oauth2/v2/auth',
+    state: 'state',
+    redirect_uri: 'http://127.0.0.1:4567/oauth2callback',
+  }));
+  mockInvoke.stubAlways('secret_status', (args) => ({
+    provider: args.provider,
+    configured: false,
+    secret_ref: `keyring://llm/${String(args.provider)}`,
+  }));
   mockInvoke.stubAlways('search_opportunity_update', (args) => {
     const row = board.opportunities.find((item) => item.id === args.opportunity_id);
     if (row === undefined) throw new Error('opportunity not found');
@@ -512,7 +525,7 @@ describe('WebmasterDataPage · 数据源三分组（走查 2 / 3）', () => {
     expectPersistent(zh.webmasterData.sourceCards.bindingHint);
   });
 
-  it('oauth 源渲染凭据形态与钥匙串引用串，且演示模式不收凭据这句常驻', async () => {
+  it('oauth 源渲染凭据形态与钥匙串引用串，且凭据落盘说明常驻', async () => {
     const user = userEvent.setup();
     stubBoard();
     renderPage();
@@ -526,21 +539,62 @@ describe('WebmasterDataPage · 数据源三分组（走查 2 / 3）', () => {
 
     expect(await screen.findByText(zh.webmasterData.authModes.oauth)).toBeInTheDocument();
     expect(screen.getByText('keyring://search/gsc')).toBeInTheDocument();
-    expectPersistent(zh.webmasterData.sourceCards.demoCredentials);
+    expectPersistent('凭据保存在系统钥匙串，数据库只留引用串。');
+    // GSC 的 OAuth Client ID 是目录表新增的绑定字段，抽屉自动渲染。
+    expect(screen.getByText(zh.webmasterData.sourceCards.client_id)).toBeInTheDocument();
+    // 桌面端（tauri）GSC 才渲染授权按钮与可选的 client secret 面板；demo 下由 runtime 门禁隐藏。
+    expect(screen.getByText(zh.webmasterData.sourceCards.oauthStart)).toBeInTheDocument();
+    expect(screen.getByText(zh.webmasterData.sourceCards.googleClientSecret)).toBeInTheDocument();
+  });
+
+  it('Bing 在桌面端只走官方 API Key：不渲染 OAuth 授权按钮，渲染 Key 面板', async () => {
+    const user = userEvent.setup();
+    stubBoard();
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      within(cardOf(zh.webmasterData.sources.bing_wmt)).getByRole('button', {
+        name: cjkName(zh.webmasterData.sourceCards.configure),
+      }),
+    );
+
+    expect(await screen.findByText(zh.webmasterData.sourceCards.drawerTitle)).toBeInTheDocument();
+    // Bing 只用 siteUrl：不再要求 client_id，抽屉里也就没有这个输入框。
+    expect(screen.queryByText(zh.webmasterData.sourceCards.client_id)).toBeNull();
+    // Bing 控制台不接受 loopback 回调地址，OAuth 那条路是死路：不给按钮。
+    expect(screen.queryByText('开始 Bing 授权')).toBeNull();
+    // 官方 API Key 是主路径。
+    expect(screen.getByText(zh.webmasterData.sourceCards.bingApiKey)).toBeInTheDocument();
+    expect(screen.getByText(zh.webmasterData.sourceCards.bingApiKeyHint)).toBeInTheDocument();
   });
 });
 
 describe('WebmasterDataPage · 常驻说明与自动采集状态卡（走查 4 / 21）', () => {
   beforeEach(() => mockInvoke.reset());
 
-  it('demoBody / metricNote / staticNote 三句直接渲染，不在问号 tooltip 里', async () => {
+  it('tauri：保留 OAuth 未接入的 live 说明与 metricNote，页面不出现演示提示', async () => {
     stubBoard();
     renderPage();
     await waitLoaded();
 
-    expectPersistent(zh.webmasterData.demoBody);
+    expect(screen.queryByText(/演示模式/)).toBeNull();
+    expectPersistent(
+      'OAuth 尚未接入：当前以导入、粘贴与手工填报为主，汇总、机会与对账仍按已接入的数据计算。',
+    );
     expectPersistent(zh.webmasterData.metricNote);
-    expectPersistent(zh.webmasterData.staticNote);
+  });
+
+  it('liveBody / metricNote 两句直接渲染，不在问号 tooltip 里；demo 专属说明不出现', async () => {
+    stubBoard();
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.queryByText(/演示模式/)).toBeNull();
+    expectPersistent(
+      'OAuth 尚未接入：当前以导入、粘贴与手工填报为主，汇总、机会与对账仍按已接入的数据计算。',
+    );
+    expectPersistent(zh.webmasterData.metricNote);
     expectPersistent(zh.webmasterData.trademarkNote);
   });
 
@@ -1007,7 +1061,7 @@ describe('WebmasterDataPage · 对账区与密集表（走查 6 / 7 / 12）', ()
 describe('WebmasterDataPage · 优化机会（走查 15）', () => {
   beforeEach(() => mockInvoke.reset());
 
-  it('6 张卡覆盖 6 条规则，staticNote 与样本量门槛常驻', async () => {
+  it('6 张卡覆盖 6 条规则，样本量门槛常驻；演示静态说明不出现', async () => {
     stubBoard();
     renderPage();
     await waitLoaded();
@@ -1015,7 +1069,7 @@ describe('WebmasterDataPage · 优化机会（走查 15）', () => {
     for (const key of Object.values(SEARCH_RULE_KEY_BY_ID)) {
       expect(screen.getByText(zh.webmasterData.rules[key].name)).toBeInTheDocument();
     }
-    expectPersistent(zh.webmasterData.opportunity.demoStatic);
+    expect(screen.queryByText(/演示模式/)).toBeNull();
     expectPersistent(filled(zh.webmasterData.opportunity.sampleGate, { min: MINIMUM_SAMPLE_SIZE }));
   });
 
@@ -1161,5 +1215,98 @@ describe('WebmasterDataPage · 加载期取数入口（P3 · board 锚点未就�
     for (const button of [...ingestButtons(), ...configureButtons()]) {
       expect(button).toBeEnabled();
     }
+  });
+});
+
+/**
+ * 百度站长「路径 C：控制系统 Chrome（CDP）」的用户在场取数（2026-11-06）。
+ *
+ * # 这里钉的靶心
+ * - 两个入口**只在桌面端 + 百度两个面**渲染（demo 与其它源看不到）；
+ * - 「读取当前页」在拿到 `ws_url` 之前是禁用的（否则会拿空地址去连）；
+ * - 区间由 `board.as_of` 推导（`period_end = asOf`，`period_start = asOf - 27 天`），
+ *   **不取系统今天**；导入成功后重取 `search_board`。
+ */
+describe('WebmasterDataPage · 百度站长系统 Chrome 取数（路径 C）', () => {
+  beforeEach(() => mockInvoke.reset());
+
+  const SESSION = {
+    ws_url: 'ws://127.0.0.1:9222/devtools/browser/abc',
+    profile_dir: '/tmp/gdk/browser-profile/baidu_ziyuan_ai',
+    target_url: 'https://ziyuan.baidu.com/aiflow/index',
+  };
+
+  async function openDrawer(kind: SearchSourceKind) {
+    const user = userEvent.setup();
+    stubBoard();
+    mockInvoke.stubAlways('search_browser_open', () => SESSION);
+    mockInvoke.stubAlways('search_browser_capture', () => structuredClone(EMPTY_IMPORT));
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      within(cardOf(zh.webmasterData.sources[kind])).getByRole('button', {
+        name: cjkName(zh.webmasterData.sourceCards.configure),
+      }),
+    );
+    await screen.findByText(zh.webmasterData.sourceCards.drawerTitle);
+    return user;
+  }
+
+  it('百度两个面在桌面端各有一个入口，「读取当前页」拿到 ws_url 之前不可点', async () => {
+    const user = await openDrawer('baidu_ziyuan_ai');
+
+    const open = screen.getByRole('button', {
+      name: cjkName(zh.webmasterData.sourceCards.browserOpen),
+    });
+    const capture = screen.getByRole('button', {
+      name: cjkName(zh.webmasterData.sourceCards.browserCapture),
+    });
+    expect(capture).toBeDisabled();
+    expectPersistent(zh.webmasterData.sourceCards.browserHint);
+
+    await user.click(open);
+    await waitFor(() => expect(mockInvoke.callsOf('search_browser_open')).toHaveLength(1));
+    expect(mockInvoke.lastArgsOf('search_browser_open')).toEqual({
+      project_id: PROJECT_ID,
+      kind: 'baidu_ziyuan_ai',
+    });
+    await waitFor(() => expect(capture).toBeEnabled());
+  });
+
+  it('读取当前页用 asOf 推导区间（end = asOf，start = asOf-27 天），成功后重取 board', async () => {
+    const user = await openDrawer('baidu_ziyuan');
+
+    await user.click(
+      screen.getByRole('button', { name: cjkName(zh.webmasterData.sourceCards.browserOpen) }),
+    );
+    const capture = screen.getByRole('button', {
+      name: cjkName(zh.webmasterData.sourceCards.browserCapture),
+    });
+    await waitFor(() => expect(capture).toBeEnabled());
+    const before = mockInvoke.callsOf('search_board').length;
+
+    await user.click(capture);
+    await waitFor(() => expect(mockInvoke.callsOf('search_browser_capture')).toHaveLength(1));
+    expect(mockInvoke.lastArgsOf('search_browser_capture')).toEqual({
+      project_id: PROJECT_ID,
+      kind: 'baidu_ziyuan',
+      ws_url: SESSION.ws_url,
+      period_start: dayjs(AS_OF).subtract(27, 'day').format('YYYY-MM-DD'),
+      period_end: AS_OF,
+    });
+    await waitFor(() => expect(mockInvoke.callsOf('search_board').length).toBeGreaterThan(before));
+  });
+
+  it('非百度源（GSC）的侧滑里没有这两个入口', async () => {
+    const user = await openDrawer('gsc');
+
+    expect(
+      screen.queryByRole('button', { name: cjkName(zh.webmasterData.sourceCards.browserOpen) }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: cjkName(zh.webmasterData.sourceCards.browserCapture) }),
+    ).toBeNull();
+    void user;
   });
 });

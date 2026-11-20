@@ -14,10 +14,8 @@
 const collection = {
   title: '多引擎采集',
   subtitle: '7 家引擎 × 3 种采集通道，原始证据全量留存',
-  /**
-   * 样本子集声明（🔴 必须显示）：种子每轮只收录若干条证据与任务，真后端是全量留存。
-   * 不写这句，界面上的"18 条证据"会被读成"这一轮只采到 18 条"。
-   */
+  // 2026-11-19 产品裁定：演示边界统一由全局 `DemoModeStrip` 说明。
+  // `sampleOnly` / `staticNote` 保留为历史键，模块页不再渲染。
   sampleOnly: '演示数据每轮只收录若干条样本任务与证据，不代表全量采集结果。',
   staticNote: '成功率、耗时与 token 用量在演示模式下是预置静态值，不由前端重算。',
 
@@ -45,6 +43,7 @@ const collection = {
     metricSpec: '指标口径',
     notes: '轮次说明',
     notStarted: '已排队，等待执行。演示模式不会真的调用引擎，这一轮会停在「排队中」。',
+    notStartedLive: '已排队，等待执行。',
     running: '采集进行中，下面的数字还会继续变化。',
     repeatNote: '关键题目重复采样 {{times}} 次，比率类指标按区间读，不当单点用。',
   },
@@ -134,6 +133,7 @@ const collection = {
     finishedAt: '完成时间',
     latency: '耗时',
     retry: '重跑',
+    loginAndRetry: '登录并重跑',
     retryOk: '重跑完成，证据与解析结果已入库',
     retryUnavailable: '演示数据未收录这条任务的重跑结果',
     viewRecord: '看证据',
@@ -171,7 +171,9 @@ const collection = {
     domain: '引用域名',
     sourceType: '来源类型',
     screenshot: '网页截图',
+    screenshotAlt: '原始页面截图',
     noScreenshot: '演示数据未包含截图；真后端会把截图与回答一起留存。',
+    noScreenshotLive: '这条记录没有截图。',
     noCitations: '这条回答没有返回引用链接。',
     model: '模型版本',
     channel: '采集通道',
@@ -209,9 +211,50 @@ const collection = {
     submit: '排队',
     queued: '已排队：{{label}}',
     engineRequired: '至少选择一家引擎',
+    accessHint: '所选引擎需要先完成接入，否则任务会以「需要登录」失败。',
+    accessLink: '查看接入方式',
+    accessWarning: '这些引擎尚未接入：{{engines}}。仍可排队，但对应任务会失败。',
     demoNotice: '演示模式不发请求：新轮次会停在「排队中」，任务队列为空。',
     liveNotice:
-      '将使用已配置的官方 API Key 真实调用：豆包 / DeepSeek / Kimi / 千问 / 百度；元宝与秘塔暂无官方对话接口，会标记为跳过。',
+      '将使用已配置的官方 Key 真实调用：Kimi / 豆包 / 千问 / 百度走官方搜索并在结果上回答；DeepSeek 借用 Kimi/百度搜索；秘塔走官方搜索 + 当前对话模型；元宝会打开本地 Chrome，由你扫码登录后采样并截图。',
+  },
+
+  /**
+   * 引擎接入（2026-11-20）：把「哪个引擎要配哪把 Key / 要不要扫码」摆到采集页上。
+   *
+   * 起因：豆包任务报 `login_required`，但采集页没有一个能补 Key 或扫码的入口。
+   * 本段只描述**接入方式**；Key 本身仍由 `SecretStatusPanel` 直接写钥匙串（规则 3）。
+   */
+  access: {
+    open: '引擎接入',
+    title: '引擎接入',
+    intro:
+      '采集前先完成各引擎的接入：API Key 只写入本机系统钥匙串；腾讯元宝走浏览器扫码登录，不代登录、不绕验证码。',
+    requirement: '接入要求',
+    status: '状态',
+    ready: '已接入',
+    needsSetup: '待配置 Key',
+    unknown: '未检查',
+    browserLogin: '需扫码登录',
+    settingsHint:
+      'Key 与登录态都只留在本机；换机或重装需要重新接入。秘塔还需要「模型服务商」里当前模型的 Key。',
+    openSettings: '打开设置',
+    fix: '去接入',
+    yuanbaoSteps:
+      '元宝没有公开对话 API：排一轮包含元宝的采集时，会打开受控 Chrome 窗口，请在窗口里扫码登录（3 分钟内完成）；登录态保存在本机，之后复用。已有失败任务时，点「登录并重跑」也会打开窗口。',
+    loginFailedTitle: '有 {{failed}} 条任务因「需要登录」失败',
+    loginFailedDesc:
+      '这些引擎还没有完成接入，或 Key 已经失效。补上 / 更新 Key 或扫码登录后，直接点对应任务的「重跑」即可，不用重排整轮。',
+    loginFailedEngines: '涉及的引擎：{{engines}}',
+    notes: {
+      doubao: '使用「火山方舟（豆包）」的 API Key；搜索与回答共用同一把 Key。',
+      deepseek: '使用 DeepSeek 的 API Key；DeepSeek 没有官方搜索接口，会借用已配置的 Kimi / 百度搜索。',
+      kimi: '使用「Kimi（月之暗面）」的 API Key。',
+      qwen: '使用「阿里云百炼（通义千问）」的 API Key。',
+      baidu_ai: '使用「百度千帆（文心一言）」的 API Key。',
+      metaso: '秘塔搜索按次计费，需要单独的搜索 API Key；回答仍使用「模型服务商」里的当前模型，它的 Key 也要配置。',
+      yuanbao: '元宝走浏览器自动化：不需要 API Key，需要在本机浏览器里扫码登录。',
+    },
   },
 
   matrix: {

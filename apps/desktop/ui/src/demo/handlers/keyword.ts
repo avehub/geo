@@ -177,8 +177,8 @@ export const keywordUpdate: DemoHandler = (args) => {
 /**
  * `keyword_delete`：批量删除，回**剩余快照**（照 `prompt_item_delete`）。
  *
- * 与 M2 那条「不许把题库删空」的约束**刻意不同**：素材库没有"空库就失去意义"的语义，
- * 删空是合法操作（界面会给空态与"手动录入 / AI 生成"两个出口）。
+ * 删空是合法操作（界面会给空态与"手动录入 / AI 生成"两个出口）。M2 题库自 2026-11-19
+ * 起同样允许删空，两边口径一致。
  */
 export const keywordDelete: DemoHandler = (args) => {
   const db = getDemoDb();

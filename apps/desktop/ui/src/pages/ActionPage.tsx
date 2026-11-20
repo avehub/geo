@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Button, Card, Select, Typography } from 'antd';
+import { Alert, Button, Card, Select } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -96,10 +96,6 @@ export default function ActionPage() {
           </>
         }
       />
-
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-        {t('action.staticNote')}
-      </Typography.Paragraph>
 
       <Card
         size="small"

@@ -123,16 +123,11 @@ describe('CollectionPage · 看板与轮次', () => {
     );
   });
 
-  it('🔴 三句必须显示的口径说明都在页面上（样本子集 / 静态值 / 浏览器通道记账）', async () => {
+  it('浏览器通道记账说明在；页面不重复演示提示', async () => {
     renderPage();
     await waitLoaded();
 
-    expect(
-      screen.getByText('演示数据每轮只收录若干条样本任务与证据，不代表全量采集结果。'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('成功率、耗时与 token 用量在演示模式下是预置静态值，不由前端重算。'),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/演示模式/)).not.toBeInTheDocument();
     expect(
       screen.getByText('浏览器自动化通道没有 token 记账，耗时也明显高于官方 API。'),
     ).toBeInTheDocument();
@@ -306,6 +301,96 @@ describe('CollectionPage · 失败任务重跑', () => {
   });
 });
 
+describe('CollectionPage · 引擎接入（需要登录时给得出入口）', () => {
+  /** 种子里的元宝失败任务：第 2 轮，失败原因 `login_required`。 */
+  const LOGIN_FAILED_TASK = SEED_COLLECTION_TASKS.find(
+    (task) => task.id === 'demo-task-baseline-003',
+  )!;
+
+  it('轮次里有「需要登录」的失败任务：提示条给出涉及引擎，任务行带「去接入」', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+
+    await selectRound(user, SEED_BASELINE_ROUND_ID);
+
+    // 提示条把「失败原因」翻译成「还没接入 + 补完可直接重跑」。
+    expect(
+      await screen.findByText(/有 1 条任务因「需要登录」失败/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/涉及的引擎：腾讯元宝/)).toBeInTheDocument();
+
+    const row = within(cardOf('任务队列'))
+      .getAllByRole('row')
+      .find((entry) => entry.textContent?.includes(LOGIN_FAILED_TASK.prompt_text));
+    expect(row, '任务队列里找不到那条登录失败任务').toBeDefined();
+    expect(within(row!).getByRole('button', { name: '去接入' })).toBeInTheDocument();
+    // 浏览器通道的登录失败，重跑就是「打开窗口扫码」，标签要说清楚。
+    expect(within(row!).getByRole('button', { name: /登录并重跑/ })).toBeInTheDocument();
+  });
+
+  it('点任务行的「去接入」：弹窗直接展开那家引擎，并给出扫码步骤', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+
+    await selectRound(user, SEED_BASELINE_ROUND_ID);
+
+    const row = within(cardOf('任务队列'))
+      .getAllByRole('row')
+      .find((entry) => entry.textContent?.includes(LOGIN_FAILED_TASK.prompt_text))!;
+    await user.click(within(row).getByRole('button', { name: '去接入' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('引擎接入')).toBeInTheDocument();
+    // 焦点引擎（元宝）已展开，能看到「排一轮 → 扫码」的真实步骤。
+    expect(await within(dialog).findByText(/会打开受控 Chrome 窗口/)).toBeInTheDocument();
+  });
+
+  it('给豆包补一把 Key：状态从「待配置 Key」翻成「已接入」，不用切换模型服务商', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole('button', { name: /引擎接入/ }));
+    const dialog = await screen.findByRole('dialog');
+
+    // 演示库里所有钥匙串位初始都是未配置。
+    const doubao = within(dialog).getByText('豆包').closest('.ant-collapse-item');
+    expect(doubao, '接入弹窗里找不到豆包').not.toBeNull();
+    expect(within(doubao as HTMLElement).getByText('待配置 Key')).toBeInTheDocument();
+
+    await user.click(within(doubao as HTMLElement).getByText('豆包'));
+    const input = await within(doubao as HTMLElement).findByPlaceholderText('请输入 API Key');
+    await user.type(input, 'sk-demo-engine-key');
+    await user.click(within(doubao as HTMLElement).getByRole('button', { name: /保存到钥匙串/ }));
+
+    await waitFor(() =>
+      expect(within(doubao as HTMLElement).getByText('已接入')).toBeInTheDocument(),
+    );
+  });
+
+  it('排一轮采集：未接入的引擎在弹窗里先提示，并能就地打开接入弹窗', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole('button', { name: /排一轮采集/ }));
+    const startDialog = await screen.findByRole('dialog');
+
+    expect(
+      await within(startDialog).findByText(/这些引擎尚未接入/),
+    ).toBeInTheDocument();
+
+    await user.click(within(startDialog).getByRole('button', { name: '去接入' }));
+
+    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(2));
+    expect(screen.getAllByRole('dialog').some((dialog) => dialog.textContent?.includes('引擎接入'))).toBe(
+      true,
+    );
+  });
+});
+
 describe('CollectionPage · 排一轮采集（演示模式不真跑）', () => {
   it('提交后切到新轮次：停在「排队中」，队列与引擎汇总都是空的', async () => {
     const user = userEvent.setup();
@@ -315,20 +400,14 @@ describe('CollectionPage · 排一轮采集（演示模式不真跑）', () => {
     // 带图标的按钮，可访问名会含图标自己的 aria-label ⇒ 用正则而不是全等。
     await user.click(screen.getByRole('button', { name: /排一轮采集/ }));
     const modal = await screen.findByRole('dialog');
-    // 弹窗里那句「演示模式不发请求」必须显示。
-    expect(
-      within(modal).getByText(
-        '演示模式不发请求：新轮次会停在「排队中」，任务队列为空。',
-      ),
-    ).toBeInTheDocument();
+    // 演示边界由全局细条统一说明，弹窗里不再重复。
+    expect(within(modal).queryByText(/演示模式/)).not.toBeInTheDocument();
     expect(within(modal).getByPlaceholderText('留空则沿用品库名')).toBeInTheDocument();
 
     await user.click(within(modal).getByRole('button', { name: /排\s*队/ }));
 
     expect(await screen.findByText(/已排队：/)).toBeInTheDocument();
-    await screen.findByText(
-      '已排队，等待执行。演示模式不会真的调用引擎，这一轮会停在「排队中」。',
-    );
+    await screen.findByText('已排队，等待执行。');
     // 🔴 demo 只排队不执行：两个空状态都在。
     expect(screen.getByText('这一轮还没有任务。')).toBeInTheDocument();
     expect(screen.getByText('这一轮还没有引擎执行记录。')).toBeInTheDocument();
@@ -364,7 +443,7 @@ describe('CollectionPage · 证据下钻', () => {
     expect(within(drawer).getByRole('heading', { name: '引用链接' })).toBeInTheDocument();
     // 🔴 demo 不抓网页也不截图 ⇒ 这一格永远是那句说明，编一个路径就是假证据。
     expect(
-      within(drawer).getByText('演示数据未包含截图；真后端会把截图与回答一起留存。'),
+      within(drawer).getByText('这条记录没有截图。'),
     ).toBeInTheDocument();
   });
 });

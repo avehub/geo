@@ -5,9 +5,8 @@
  * 回答形态）、事实核查（**说错了 / 说旧了 / 漏说了** 三类，逐字段对照 M1 实体卡）、
  * 风险标记、抽取质量保障（置信度 + 低置信度人工复核队列 + 一键纠正）。
  *
- * 🔴 `factCheck.accuracyNote` 那句是**必须显示**的口径说明：事实准确率是采集时的静态值，
- * 人工结办几条问题**不会**让它变化（demo 不重算，AGENTS 规则 9）。少了这句，
- * 界面上"结办了 2 条、准确率没动"看起来像 bug。
+ * `factCheck.accuracyNoteLive` 是运行时中立的口径说明：事实准确率是采集时的静态值，
+ * 人工结办几条问题**不会**让它变化（AGENTS 规则 9）。演示边界统一由全局 `DemoModeStrip` 说明。
  */
 const insight = {
   title: '回答解析与事实核查',
@@ -126,6 +125,7 @@ const insight = {
     checkedAnswers: '已核查回答',
     accuracy: '事实准确率',
     accuracyNote: '准确率是采集时的静态口径：人工结办问题不会让它变化（演示模式不重算）。',
+    accuracyNoteLive: '准确率是采集时的静态口径：人工结办问题不会让它变化。',
     falsePositives: '判为误报',
     byKind: '分类条数',
     noSummary: '这一轮没有可发布的核查汇总（样本不足时不出准确率）。',

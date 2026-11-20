@@ -14,6 +14,8 @@ import {
 import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { useTranslation } from 'react-i18next';
 
+import { runtime } from '../api/runtime';
+
 import type {
   ArticleDirection,
   ArticleSlot,
@@ -81,7 +83,7 @@ const NO_TEXTS: string[] = [];
  * 提交时用 `parseSlots(prompt)` 算，与 handler 的收敛口径逐字相同（同一个清单序）。
  *
  * # 🔴 `kb_modules` 只**记录**不拼接（DR-89）
- * 抽屉里那句 `kbModulesHint` 常驻：勾了模块不会把知识条目塞进提示词，demo 不做真拼接注入。
+ * 抽屉里使用运行时中立的 `kbModulesLiveHint`：这是引用关系说明，不重复演示提示。
  */
 export default function ArticleTemplateDrawer({
   template,
@@ -285,7 +287,11 @@ export default function ArticleTemplateDrawer({
         <Form.Item
           name="kb_modules"
           label={t('article.templates.editor.kbModules')}
-          extra={t('article.templates.editor.kbModulesHint')}
+          extra={t(
+            runtime === 'tauri'
+              ? 'article.templates.editor.kbModulesLiveHint'
+              : 'article.templates.editor.kbModulesNote',
+          )}
         >
           <Select
             mode="multiple"

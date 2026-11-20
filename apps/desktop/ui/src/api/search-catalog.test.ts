@@ -167,13 +167,15 @@ describe('数据截至规则（DR-108 / DR-109）', () => {
 });
 
 describe('绑定与文档链接', () => {
-  it('绑定字段只用 siteUrl / siteId 两个（非敏感，DR-96），人工填报没有绑定', () => {
-    expect(catalogEntryOf('gsc').binding_fields).toEqual(['siteUrl']);
+  it('绑定字段只用 siteUrl / siteId / client_id（非敏感，DR-96），人工填报没有绑定', () => {
+    expect(catalogEntryOf('gsc').binding_fields).toEqual(['siteUrl', 'client_id']);
+    // Bing 只走 API Key ⇒ 不需要 client_id（与 `crates/geo-domain/src/search.rs` 同源）。
+    expect(catalogEntryOf('bing_wmt').binding_fields).toEqual(['siteUrl']);
     expect(catalogEntryOf('baidu_tongji').binding_fields).toEqual(['siteId']);
     expect(catalogEntryOf('manual').binding_fields).toEqual([]);
     for (const entry of SEARCH_SOURCE_CATALOG) {
       for (const field of entry.binding_fields) {
-        expect(['siteUrl', 'siteId'], `${entry.kind} 的绑定字段会收敏感信息`).toContain(field);
+        expect(['siteUrl', 'siteId', 'client_id'], `${entry.kind} 的绑定字段会收敏感信息`).toContain(field);
       }
     }
   });

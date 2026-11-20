@@ -43,7 +43,7 @@ const WEEKDAY_KEYS: Record<number, TranslationKey> = {
  * # 🔴 开关与「立即运行」是两件事（DR-85）
  * - 开关只决定 `next_run_at` 算不算得出来（关掉 ⇒ 空值占位符，不是一个假时间）；
  * - 「立即运行」不受开关约束：停用的排期也能手动跑一次（handler 也不翻 `enabled`）。
- * 演示模式**没有定时器**，到点不会自动出稿 ⇒ 页面上那句 `schedules.demoBody` 常驻，
+ * 演示模式**没有定时器**，到点不会自动出稿（边界由全局 `DemoModeStrip` 说明）；
  * 这张表只提供"手动触发一次"的替身。
  *
  * # 🔴 「运行时间」那一格按频率变形

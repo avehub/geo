@@ -34,8 +34,8 @@ const KIND_COLORS = { wrong: 'error', outdated: 'warning', missing: 'processing'
  * （人工结办 / 误报 / 重开）与一个确认弹窗，职责完整 ⇒ 按 AGENTS「单文件约 400 行就拆」独立成组件。
  * 轮次由页面统一选中后传进来（两个 tab 共用一个选择器），本组件只管这一轮。
  *
- * 🔴 必须显示的口径：`insight.factCheck.accuracyNote`——人工结办不会让准确率变化，
- * demo 不重算（AGENTS 规则 9）。
+ * 口径：`insight.factCheck.accuracyNoteLive`——人工结办不会让准确率变化（AGENTS 规则 9）；
+ * 演示边界由全局细条说明。
  */
 export default function FactCheckPanel({
   roundId,
@@ -139,7 +139,7 @@ export default function FactCheckPanel({
       )}
 
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-        {t('insight.factCheck.accuracyNote')}
+        {t('insight.factCheck.accuracyNoteLive')}
       </Typography.Paragraph>
 
       <Table<FactCheckIssue>

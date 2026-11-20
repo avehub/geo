@@ -34,11 +34,11 @@
  *
  * # 运行环境不支持 blob 下载时
  * 抛**普通 `Error` + 英文开发者信息**（不是 `IpcErrorPayload`）：它给开发者看、不进词典、
- * **不占错误码**（`contracts/error-codes.json` 冻结在 43 条），经 `api/client.ts` 的 `callVia`
+ * **不占错误码**（`contracts/error-codes.json` 冻结在 44 条），经 `api/client.ts` 的 `callVia`
  * 归一化成 `ipc/invoke_failed`——与退休前那个 `notImplemented()` 占位同一条路。
  * 真浏览器里走不到这一支；jsdom 默认没有 `URL.createObjectURL` ⇒ 测试正好覆盖它。
  */
-import type { DemoHandler } from '../types';
+import { demoError, type DemoHandler } from '../types';
 import { asBoolean, asString } from './shared';
 
 /** UTF-8 BOM（与 export.rs 的 `'\u{FEFF}'` 同一个码位）。 */
@@ -72,6 +72,15 @@ function exportBody(content: string, withBom: boolean): string {
  */
 export const exportWriteFile: DemoHandler = (args) => {
   const defaultName = asString(args.default_name);
+  const format = asString(args.format);
+  // demo 只有文本落盘能力：PDF / XLSX 需要无头 Chrome 与 xlsx 库，浏览器侧不伪造二进制文件。
+  if (format !== '' && format !== 'text') {
+    throw demoError('validation/failed', {
+      field: 'format',
+      reason: 'not_allowed',
+      value: format,
+    });
+  }
   const body = exportBody(asString(args.content), asBoolean(args.with_bom));
 
   // jsdom 与老 WebView 都没有这两个静态方法 ⇒ 宁可抛开发者诊断，也不发一个假的「已导出」。

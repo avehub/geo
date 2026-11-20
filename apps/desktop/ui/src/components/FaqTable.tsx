@@ -3,6 +3,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
+import { runtime } from '../api/runtime';
 import type { ContentStatus, FaqItem } from '../api/types';
 import { CONTENT_STATUS_VALUES } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
@@ -156,7 +157,7 @@ export default function FaqTable({
             >
               {row.answer_markdown}
             </Typography.Paragraph>
-            {row.source === 'generated' && row.status !== 'approved' ? (
+            {runtime === 'demo' && row.source === 'generated' && row.status !== 'approved' ? (
               <Typography.Text type="warning" style={{ fontSize: 12 }}>
                 {t('library.faq.complianceUnchecked')}
               </Typography.Text>

@@ -130,16 +130,15 @@ beforeEach(() => {
 });
 
 describe('KeywordLibraryPage · 首屏', () => {
-  it('14 条种子上屏 + 🔴 静态值口径说明常驻 + 枚举标签走词典', async () => {
+  it('14 条种子上屏 + 不重复演示提示 + 枚举标签走词典', async () => {
     renderPage();
     await waitLoaded();
 
     expect(
       screen.getByText('核心词 · 长尾词 · 品牌词 · 竞品词 · 问题词，可直接引用去优化官网或进 Prompt 题库'),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText('月搜索量与竞争难度在演示模式下是预置静态值，不由前端抓取或计算。'),
-    ).toBeInTheDocument();
+    // 演示边界由全局细条统一说明，页面里不再重复。
+    expect(screen.queryByText(/演示模式/)).not.toBeInTheDocument();
 
     expect(tableRows()).toHaveLength(SEED_KEYWORDS.length);
     // 四张标签表都渲染成词典里的中文，不露裸记号
@@ -219,18 +218,14 @@ describe('KeywordLibraryPage · 手动录入', () => {
 });
 
 describe('KeywordLibraryPage · AI 生成', () => {
-  it('弹窗里那句 demo 说明必须在场；生成出来的行是 AI 生成 + 待人工审核', async () => {
+  it('弹窗里不再重复 demo 说明；生成出来的行是 AI 生成 + 待人工审核', async () => {
     const user = userEvent.setup();
     renderPage();
     await waitLoaded();
 
     await user.click(screen.getByRole('button', { name: /AI\s*生成/ }));
     await screen.findByText('AI 生成关键词');
-    expect(
-      screen.getByText(
-        '演示模式不调用模型：生成结果取自预置语料池，走查的是产物形态（类型、意图、审核态），不是选词质量。',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/演示模式/)).not.toBeInTheDocument();
 
     // 弹窗的确认按钮与工具栏那个按钮同名 ⇒ 限定在弹窗里点
     const dialog = document.querySelector('.ant-modal-content') as HTMLElement;

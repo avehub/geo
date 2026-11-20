@@ -96,8 +96,8 @@ const settings = {
   /**
    * 「拉取模型列表」（Plan B Task 4 · DR-34）。
    *
-   * 🔴 `hint` 里那句"演示模式不发请求"是**常驻**的，不是只在失败时才说：
-   * demo 端的是预置清单（`seed/model-catalogs.ts`），走查的人必须随时看得出这是假数据。
+   * 2026-11-19 产品裁定：演示边界统一由全局 `DemoModeStrip` 说明；
+   * 这里只保留运行时中立的 `hintLive` / `emptyLive`。
    * `resultPreset` / `resultUpstream` 两句对应 `ModelsListResult.source` 的两档——
    * 刻意**不**做成 `enumLabel` 命名空间（那会多一个前缀），因为只有两档且各自要说的话不同。
    */
@@ -241,9 +241,7 @@ const settings = {
   /**
    * 数据与存储段（Plan B Task 5 · spec §6 / DR-35）。数据全部来自 `app_environment`。
    *
-   * 🔴 `hint` 与 `desktopOnly` 两句是**如实描述**，不是免责声明：demo 里这些路径
-   * 是 `demo/handlers/app-environment.ts` 端出来的一组静态值，浏览器既没有那个目录、
-   * 也打不开访达。少任何一句，走查的人都会以为"点一下就能打开"。
+   * `desktopOnly` 说明目录操作需要桌面端；demo 不再单独挂"演示模式不读写磁盘"。
    * 两个按钮照旧渲染但置灰（与 M7 对 docx/pdf/png 同一口径），Plan C 再加
    * `storage_open_dir` / `storage_change_dir` 两条命令。
    */
@@ -260,7 +258,7 @@ const settings = {
     openFailed: '打开目录失败',
     changeDirLater: '更改数据目录将在后续版本提供。',
     changeDir: '更改目录',
-    desktopOnly: '目录操作由桌面端提供，演示模式下不可用。',
+    desktopOnly: '目录操作由桌面端提供。',
     hint: '演示模式不读写磁盘，下面是桌面端将使用的位置与一份示例占用。',
     liveHint: '下面是你这台机器上的真实数据目录、数据库与日志位置。',
   },

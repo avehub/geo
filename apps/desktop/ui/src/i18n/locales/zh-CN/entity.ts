@@ -75,6 +75,8 @@ const entity = {
     running: '正在抓取官网并抽取实体卡…',
     emptyDomain: '请输入要抓取的官网域名，例如 www.example.com',
     success: '自动建档完成，字段完整率 {{percent}}%',
+    degraded:
+      '已抓取官网，但 AI 抽取未完成（字段来自建项资料）；请检查「设置 → 模型服务」后重试。',
   },
 
   /**
@@ -92,6 +94,11 @@ const entity = {
     completeness: '字段完整率',
     sourceAi: 'AI 抽取：{{provider}} {{model}}',
     sourceManual: '人工录入',
+    degradedTitle: '已抓取 {{pages}} 个页面，但 AI 抽取未完成',
+    degradedBody:
+      '当前字段来自建项资料，不是官网内容。请检查「设置 → 模型服务」的模型名与 API Key，保存后重新自动建档。',
+    degradedAction: '前往模型服务设置',
+    sourceCrawledNoAi: '官网已抓取 · AI 抽取未完成',
     revisions: '修订历史',
   },
 };

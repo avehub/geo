@@ -23,13 +23,20 @@ import {
 } from '../demo/seed/collection-rounds';
 import { SEED_ANSWER_INSIGHTS, SEED_FACT_CHECK_ISSUES } from '../demo/seed/insights';
 import { SEED_ACTIVE_PROJECT_ID } from '../demo/seed/projects';
-import { renderAtRoute } from '../test/render';
+import { renderAtRoute, renderWithProviders } from '../test/render';
+import { Route, Routes, useLocation } from 'react-router-dom';
 
 vi.mock('../api/runtime', () => ({ runtime: 'demo' }));
 
 const ROUTE = `/projects/${SEED_ACTIVE_PROJECT_ID}/overview`;
 const PATH = '/projects/:id/overview';
 const CONCLUSIVE_IDS = [SEED_TRIAL_ROUND_ID, SEED_BASELINE_ROUND_ID, SEED_RETEST_ROUND_ID];
+
+/** 路由探针：连 search 一起回显，P3-02 要断言的是 `?round=` 这一段。 */
+function FullPathProbe() {
+  const location = useLocation();
+  return <span data-testid="fullpath">{location.pathname + location.search}</span>;
+}
 
 function renderPage() {
   return renderAtRoute(<OverviewPage />, PATH, ROUTE);
@@ -197,5 +204,27 @@ describe('OverviewPage · 空态是正常形态', () => {
     expect(screen.getByRole('button', { name: '去多引擎采集' })).toBeInTheDocument();
     // 项目级待办不依赖轮次结论，仍然要能看到。
     expect(screen.getByText('已完成 5 / 10')).toBeInTheDocument();
+  });
+});
+
+describe('OverviewPage · 跳诊断带轮次锚定（P3-02）', () => {
+  it('「查看诊断」跳转带 ?round= 最近有结论轮次', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <Routes>
+        <Route path="/projects/:id/overview" element={<OverviewPage />} />
+        <Route path="/projects/:id/diagnosis" element={<FullPathProbe />} />
+      </Routes>,
+      { route: ROUTE },
+    );
+    await waitLoaded();
+
+    await user.click(screen.getByRole('button', { name: '查看诊断' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('fullpath').textContent).toBe(
+        `/projects/${SEED_ACTIVE_PROJECT_ID}/diagnosis?round=${SEED_RETEST_ROUND_ID}`,
+      ),
+    );
   });
 });

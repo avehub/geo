@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { SiteOwnership, SitePage, SitePlatform, SiteProfile } from '../api/types';
 import { SITE_OWNERSHIP_VALUES, SITE_PLATFORM_VALUES } from '../api/types';
+import { runtime } from '../api/runtime';
 import { enumLabel } from '../i18n/enum-label';
 import { dateTimeText } from './format';
 
@@ -194,9 +195,11 @@ export default function SiteProfileCard({
         title={t('site.pages.title')}
         style={{ marginTop: 12 }}
         extra={
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t('site.pages.hint')}
-          </Typography.Text>
+          runtime === 'tauri' ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {t('site.pages.liveHint')}
+            </Typography.Text>
+          ) : null
         }
       >
         <Collapse

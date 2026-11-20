@@ -116,16 +116,11 @@ beforeEach(() => {
 });
 
 describe('InsightPage · 解析结果', () => {
-  it('默认选中最新一轮，🔴 三句口径说明都在', async () => {
+  it('默认选中最新一轮，口径说明在；不重复演示提示', async () => {
     renderPage();
     await waitLoaded();
 
-    expect(
-      screen.getByText('演示数据只收录样本条目的解析结果与核查问题。'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('置信度、来源归类与准确率在演示模式下是预置静态值，不由前端重算。'),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/演示模式/)).not.toBeInTheDocument();
     expect(
       screen.getByText(
         `置信度低于 ${REVIEW_CONFIDENCE_FLOOR.toFixed(2)} 的条目进人工复核队列。`,
@@ -207,11 +202,7 @@ describe('InsightPage · 一键纠正', () => {
     const modal = await screen.findByRole('dialog');
     expect(within(modal).getByText('人工纠正')).toBeInTheDocument();
     // 🔴 弹窗里那句"不重算任何比率"必须显示。
-    expect(
-      within(modal).getByText(
-        '纠正只改这一条的展示与证据行投影，不会重算任何比率（演示模式不做计算）。',
-      ),
-    ).toBeInTheDocument();
+    expect(within(modal).queryByText(/演示模式/)).not.toBeInTheDocument();
     // 那行是「问题原文」标签 + 值两个兄弟文本节点，整段匹配不到 ⇒ 用子串匹配。
     expect(within(modal).getByText(QUEUE_HEAD.prompt_text, { exact: false })).toBeInTheDocument();
 
@@ -293,7 +284,7 @@ describe('InsightPage · 事实核查', () => {
     expect(screen.getByText(`漏说了 ${summary.by_kind.missing}`)).toBeInTheDocument();
     // 🔴 这句是"结办了但准确率没动"不像 bug 的唯一保障。
     expect(
-      screen.getByText('准确率是采集时的静态口径：人工结办问题不会让它变化（演示模式不重算）。'),
+      screen.getByText('准确率是采集时的静态口径：人工结办问题不会让它变化。'),
     ).toBeInTheDocument();
 
     const issues = SEED_FACT_CHECK_ISSUES.filter(
@@ -381,7 +372,7 @@ describe('InsightPage · 事实核查', () => {
     expect(within(drawer).getByText('证据详情')).toBeInTheDocument();
     expect(within(drawer).getByText(OPEN_ISSUE.prompt_text)).toBeInTheDocument();
     expect(
-      within(drawer).getByText('演示数据未包含截图；真后端会把截图与回答一起留存。'),
+      within(drawer).getByText('这条记录没有截图。'),
     ).toBeInTheDocument();
   });
 });

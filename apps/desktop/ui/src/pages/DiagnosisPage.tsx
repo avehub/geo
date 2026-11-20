@@ -17,7 +17,7 @@ import {
 } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import * as collection from '../api/collection';
@@ -55,7 +55,10 @@ export default function DiagnosisPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
-  const [roundId, setRoundId] = useState<string | null>(null);
+  // P3-02：概览跳过来时带 `?round=`（锚定的那个有结论轮次）；手输的非法值在
+  // `selectedRoundId` 那里回落默认，不白屏、不报错。
+  const [searchParams] = useSearchParams();
+  const [roundId, setRoundId] = useState<string | null>(searchParams.get('round'));
 
   const boardQuery = useQuery({
     queryKey: ['collection-board', projectId],
@@ -63,7 +66,11 @@ export default function DiagnosisPage() {
     enabled: projectId !== '',
   });
   const rounds = boardQuery.data?.rounds ?? [];
-  const selectedRoundId = roundId ?? rounds[rounds.length - 1]?.id ?? null;
+  // `?round=` 或手动选择都可能指向不在清单里的 id（轮次被删/手输错）⇒ 回落最后一轮，
+  // 与不带参数时的默认口径完全一致。
+  const requestedRoundId =
+    roundId !== null && rounds.some((round) => round.id === roundId) ? roundId : null;
+  const selectedRoundId = requestedRoundId ?? rounds[rounds.length - 1]?.id ?? null;
 
   const overviewQuery = useQuery({
     queryKey: ['diagnosis-overview', selectedRoundId],
@@ -129,10 +136,6 @@ export default function DiagnosisPage() {
           description={describeIpcError(roundsError, t)}
         />
       )}
-
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-        {t('diagnosis.staticNote')}
-      </Typography.Paragraph>
 
       {overviewError !== null ? (
         <Alert

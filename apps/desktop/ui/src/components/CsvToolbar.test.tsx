@@ -166,4 +166,22 @@ describe('CsvToolbar · 行错误经词典渲染', () => {
     expect(await screen.findByText(/共 3 行（含表头 7 列）/)).toBeInTheDocument();
     expect(screen.queryByText(/{{/)).not.toBeInTheDocument();
   });
+
+  /**
+   * P2-10（2026-11-07 测试报告）：原生「另存为」对话框的标题原先在 Rust 里硬编码「导出」，
+   * en-US 用户看到的仍是中文。现在标题由前端按当前语言传进去 ⇒ 断言 IPC 参数带 title。
+   */
+  it('导出把当前语言的对话框标题传给 export_write_file（P2-10）', async () => {
+    mockInvoke.stubAlways('prompt_set_export_csv', () => 'text,intent\na,b\nc,d\n');
+    mockInvoke.stubAlways('export_write_file', () => '/tmp/x.csv');
+    const user = userEvent.setup();
+
+    renderToolbar();
+    await user.click(screen.getByRole('button', { name: /导出 CSV/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /下载/ }));
+
+    await waitFor(() => expect(mockInvoke.callsOf('export_write_file')).toHaveLength(1));
+    expect(mockInvoke.lastArgsOf('export_write_file')).toMatchObject({ title: '导出' });
+  });
 });

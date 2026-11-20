@@ -371,8 +371,8 @@ describe('demo/handlers/prompt-csv · 空导入拒绝', () => {
   });
 
   it('现有题库本来就是空的 ⇒ 不拒绝（拒绝需要**两个**条件同时成立）', async () => {
-    // “空题库”在命令面上**不可达**：`prompt_item_delete` 不许删空（一次最多 N-1 条），
-    // “要清空请显式删除整个快照”是产品纪律。所以这里直接清内存库来造前提（白盒，不是走后门）。
+    // “空题库”现在可由 `prompt_item_delete` 删空造出来，但那条路径会先过一遍删除 GUI；
+    // 这里直接清内存库来造前提（白盒，不是走后门），聚焦「现有题库为空时不拒绝」这一支。
     const db = getDemoDb();
     db.promptItems = db.promptItems.filter((item) => item.set_id !== SEED_PILOT_SET_ID);
     const emptied = await demoInvoke<PromptSet>('prompt_set_get', { id: SEED_PILOT_SET_ID });

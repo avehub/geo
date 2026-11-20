@@ -105,10 +105,6 @@ export default function ReportPage() {
     <div>
       <PageHeader title={t('report.title')} description={t('report.subtitle')} />
 
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-        {t('report.staticNote')}
-      </Typography.Paragraph>
-
       <SectionCard
         title={t('report.settingsTitle')}
         extra={
@@ -196,7 +192,7 @@ export default function ReportPage() {
               <Input value={logoUrl} onChange={(event) => setLogoUrl(event.target.value)} />
             </Form.Item>
             <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-              {`${t('report.whiteLabel.defaultHint')} ${t('report.whiteLabel.applyHint')}`}
+              {`${t('report.whiteLabel.defaultHintLive')} ${t('report.whiteLabel.applyHint')}`}
             </Typography.Paragraph>
           </Form>
         )}

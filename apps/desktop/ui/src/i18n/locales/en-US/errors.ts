@@ -114,6 +114,7 @@ const errors: ResourceBundle['errors'] = {
     total_timeout: 'total time budget exhausted',
     robots_disallowed: 'disallowed by robots.txt',
     fetch_failed: 'fetch or extraction failed',
+    empty_content: 'page had no readable text (script-rendered or redirect page)',
   },
 
   fragments: {

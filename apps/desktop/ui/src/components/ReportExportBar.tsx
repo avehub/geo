@@ -3,46 +3,91 @@ import { App, Button, Card, Space, Typography } from 'antd';
 import { CopyOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
-import * as client from '../api/client';
 import { describeIpcError } from '../api/errors';
-import { composeReport, reportFileName, type ReportExportKind } from '../api/report-compose';
-import { DESKTOP_ONLY_EXPORT_FORMATS, EXPORT_FORMAT_VALUES, type ExportFormat, type ReportDocument } from '../api/types';
+import { exportReportFile } from '../api/export';
+import {
+  composeReport,
+  reportBinaryFileName,
+  reportFileName,
+  type ReportBinaryExportKind,
+  type ReportExportKind,
+} from '../api/report-compose';
+import { runtime } from '../api/runtime';
+import { DESKTOP_ONLY_EXPORT_FORMATS, type ReportDocument } from '../api/types';
 import { dateTimeText } from './format';
 import { enumLabel } from '../i18n/enum-label';
 
-/** demo 里真能产出的三种（`EXPORT_FORMAT_VALUES` 减去桌面端那三种）。 */
+/** demo 里真能产出的三种（`EXPORT_FORMAT_VALUES` 减去桌面端那几种）。 */
 const DEMO_KINDS: readonly ReportExportKind[] = ['markdown', 'html', 'csv'];
 
-function isDemoExportable(format: ExportFormat): format is ReportExportKind {
-  return (DEMO_KINDS as readonly ExportFormat[]).includes(format);
+/** 桌面端额外启用的二进制格式。 */
+const BINARY_KINDS: readonly ReportBinaryExportKind[] = ['pdf', 'xlsx'];
+
+/** 导出条展示的完整格式面：契约里的六种 + 报告页额外的 XLSX。 */
+const REPORT_EXPORT_FORMATS = [
+  'markdown',
+  'html',
+  'csv',
+  'docx',
+  'pdf',
+  'xlsx',
+  'png',
+] as const;
+
+type ReportExportFormat =
+  | ReportExportKind
+  | ReportBinaryExportKind
+  | (typeof REPORT_EXPORT_FORMATS)[number];
+
+function isTextKind(format: ReportExportFormat): format is ReportExportKind {
+  return (DEMO_KINDS as readonly string[]).includes(format);
+}
+
+function isBinaryKind(format: ReportExportFormat): format is ReportBinaryExportKind {
+  return (BINARY_KINDS as readonly string[]).includes(format);
+}
+
+function isExportable(format: ReportExportFormat): format is ReportExportKind | ReportBinaryExportKind {
+  if (isTextKind(format)) return true;
+  return isBinaryKind(format) && runtime === 'tauri';
 }
 
 /**
- * M7 导出与分享条：Markdown / HTML / CSV 真出文件，Word / PDF / PNG 置灰。
+ * M7 导出与分享条。
  *
- * # 🔴 六个按钮都渲染，但只有三个能点
- * 产品负责人要看到**完整的导出面**（M7 的验收里写着这些格式），所以不能把产不出的三种藏起来；
- * 但也不许假装能出（`DESKTOP_ONLY_EXPORT_FORMATS`：docx 要文档库，pdf / png 要原生渲染或 canvas，
- * 纯前端 demo 不引这些依赖）。置灰 + 逐条说明"由桌面端提供"，差异登记在
- * `docs/superpowers/specs/2026-09-23-demo-vs-backend-known-divergences.md`。
+ * # demo 与桌面端的格式面
+ * demo 只有纯前端的文本落盘能力 ⇒ Markdown / HTML / CSV 可点，其余置灰。
+ * 桌面端走 Rust 的 `export_write_file`：PDF 由无头 Chrome 打印 HTML，XLSX 由 CSV 写入表格，
+ * 所以 PDF / XLSX 在桌面端启用；Word / PNG 仍由后续版本提供。
  *
  * # 导出文本与预览同源
  * `composeReport(doc, t, kind)` 用的就是预览那批格式化函数与同一套词典 ⇒ 中文界面导出中文报告，
- * 切到英文再导出就是英文报告（AGENTS 规则 7：导出文件是给用户看的产物，同样归双语管）。
- * CSV 走 `with_bom`，Excel 打开中文不乱码（与 `CsvToolbar` 同一个取舍）。
+ * 切到英文再导出就是英文报告（AGENTS 规则 7）。CSV 走 `with_bom`，Excel 打开中文不乱码。
  */
 export default function ReportExportBar({ doc }: { doc: ReportDocument }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  const [busy, setBusy] = useState<ReportExportKind | null>(null);
+  const [busy, setBusy] = useState<ReportExportFormat | null>(null);
 
-  async function exportAs(kind: ReportExportKind) {
-    setBusy(kind);
+  async function exportAs(format: ReportExportKind | ReportBinaryExportKind) {
+    setBusy(format);
     try {
-      const path = await client.exportWriteFile(
-        reportFileName(doc, kind),
-        composeReport(doc, t, kind),
-        kind === 'csv',
+      const content =
+        format === 'pdf'
+          ? composeReport(doc, t, 'html')
+          : format === 'xlsx'
+            ? composeReport(doc, t, 'csv')
+            : composeReport(doc, t, format);
+      const name =
+        format === 'pdf' || format === 'xlsx'
+          ? reportBinaryFileName(doc, format)
+          : reportFileName(doc, format);
+      const path = await exportReportFile(
+        name,
+        content,
+        format === 'csv',
+        format === 'pdf' || format === 'xlsx' ? format : 'text',
+        t('common.exportDialogTitle'),
       );
       if (path === null) {
         message.info(t('report.export.cancelled'));
@@ -70,14 +115,14 @@ export default function ReportExportBar({ doc }: { doc: ReportDocument }) {
   return (
     <Card size="small" title={t('report.export.title')} style={{ marginBottom: 12 }}>
       <Space size={8} wrap style={{ marginBottom: 8 }}>
-        {[...EXPORT_FORMAT_VALUES].map((format) => (
+        {REPORT_EXPORT_FORMATS.map((format) => (
           <Button
             key={format}
             size="small"
             icon={<DownloadOutlined />}
-            disabled={!isDemoExportable(format)}
+            disabled={!isExportable(format)}
             loading={busy === format}
-            onClick={() => isDemoExportable(format) && void exportAs(format)}
+            onClick={() => isExportable(format) && void exportAs(format)}
           >
             {enumLabel(t, 'common.exportFormats', format)}
           </Button>
@@ -88,13 +133,38 @@ export default function ReportExportBar({ doc }: { doc: ReportDocument }) {
       </Space>
 
       <Space direction="vertical" size={2} style={{ width: '100%' }}>
-        {[...DESKTOP_ONLY_EXPORT_FORMATS].map((format) => (
-          <Typography.Text key={format} type="secondary" style={{ fontSize: 12 }}>
-            {t('report.export.desktopOnly', {
-              format: enumLabel(t, 'common.exportFormats', format),
-            })}
-          </Typography.Text>
-        ))}
+        {runtime === 'tauri'
+          ? (
+              <>
+                {BINARY_KINDS.map((format) => (
+                  <Typography.Text key={format} type="secondary" style={{ fontSize: 12 }}>
+                    {t('report.export.desktopReady', {
+                      format: enumLabel(t, 'common.exportFormats', format),
+                    })}
+                  </Typography.Text>
+                ))}
+                {DESKTOP_ONLY_EXPORT_FORMATS.filter((format) => format !== 'pdf').map(
+                  (format) => (
+                    <Typography.Text key={format} type="secondary" style={{ fontSize: 12 }}>
+                      {t('report.export.desktopPending', {
+                        format: enumLabel(t, 'common.exportFormats', format),
+                      })}
+                    </Typography.Text>
+                  ),
+                )}
+              </>
+            )
+          : (
+              <>
+                {[...DESKTOP_ONLY_EXPORT_FORMATS, 'xlsx' as const].map((format) => (
+                  <Typography.Text key={format} type="secondary" style={{ fontSize: 12 }}>
+                    {t('report.export.desktopOnly', {
+                      format: enumLabel(t, 'common.exportFormats', format),
+                    })}
+                  </Typography.Text>
+                ))}
+              </>
+            )}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {`${t('report.export.generatedAt')}: ${dateTimeText(doc.generated_at)}`}
         </Typography.Text>

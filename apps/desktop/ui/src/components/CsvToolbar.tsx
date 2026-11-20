@@ -115,7 +115,12 @@ export default function CsvToolbar({ setId, filenamePrefix, onChanged }: CsvTool
   /** 走系统「另存为」对话框写文件；用户取消则不提示成功。 */
   async function downloadCsv() {
     try {
-      const path = await client.exportWriteFile(`${filenamePrefix}-prompts.csv`, csv, true);
+      const path = await client.exportWriteFile(
+        `${filenamePrefix}-prompts.csv`,
+        csv,
+        true,
+        t('common.exportDialogTitle'),
+      );
       if (path === null) return;
       message.success(t('prompt.csv.exported', { path }));
       setMode(null);

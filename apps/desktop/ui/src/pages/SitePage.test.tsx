@@ -18,7 +18,9 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import SitePage from './SitePage';
+import type { Runtime } from '../api/runtime';
 import type { SitePatch } from '../api/types';
+import { demoInvoke } from '../demo/backend';
 import { dateTimeText } from '../components/format';
 import { getDemoDb, resetDemoDb, sitePatchEventsOf, sitePatchesOf } from '../demo/db';
 import { SEED_ACTIONS } from '../demo/seed/actions';
@@ -33,9 +35,16 @@ import {
   SEED_SITE_PROFILE,
 } from '../demo/seed/site';
 import { clickClickablePopupItem } from '../test/dropdown';
+import { mockInvoke } from '../test/invoke-mock';
 import { renderAtRoute } from '../test/render';
 
-vi.mock('../api/runtime', () => ({ runtime: 'demo' }));
+/** 运行时盒子：同一份文件里切换 demo / tauri，getter 让组件在每次渲染时读到当前值。 */
+const runtimeBox = vi.hoisted(() => ({ current: 'demo' as Runtime }));
+vi.mock('../api/runtime', () => ({
+  get runtime(): Runtime {
+    return runtimeBox.current;
+  },
+}));
 
 const PATH = '/projects/:id/site';
 const ROUTE = `/projects/${SEED_ACTIVE_PROJECT_ID}/site`;
@@ -180,6 +189,7 @@ const EVENT_LABEL: Record<string, string> = {
 };
 
 beforeEach(() => {
+  runtimeBox.current = 'demo';
   resetDemoDb();
   if (typeof URL.createObjectURL !== 'function') {
     URL.createObjectURL = vi.fn(() => 'blob:demo');
@@ -187,16 +197,18 @@ beforeEach(() => {
 });
 
 describe('pages/SitePage · 四块都渲染出来（DR-54）', () => {
-  it('标题、副标题，以及两句**常驻**提示都在（规则 6 / 规则 9 的界面侧对价）', async () => {
+  it('标题、副标题与运行时中立的交接说明都在；页面不重复演示提示', async () => {
     renderPage();
     await waitLoaded();
 
     expect(screen.getByText('把行动中心的站点处方落成可下发、可撤回、可回滚的补丁台账')).toBeDefined();
-    // 🔴 这两句是硬性要求：少一句就是把演示数据说成了真实结果。
+    // 演示边界由全局细条统一说明；页面只保留运行时中立的能力限制。
     expect(
-      screen.getByText(/演示模式不会改动线上站点：发布 \/ 撤回 \/ 回滚只在本地记账/),
+      screen.getByText(
+        '当前版本只生成交接文件：发布 / 撤回 / 回滚只在本地记账，不会直接改动线上站点。',
+      ),
     ).toBeDefined();
-    expect(screen.getByText(/页面清单与通道自检结论都是预置静态值/)).toBeDefined();
+    expect(screen.queryByText(/演示模式/)).toBeNull();
   });
 
   it('站点档案：域名是项目官网的镜像，形态与"谁在管"按种子端出来', async () => {
@@ -229,7 +241,7 @@ describe('pages/SitePage · 四块都渲染出来（DR-54）', () => {
     expect(within(card).getAllByText('被挡住')).toHaveLength(SEED_SITE_PAGES.length - crawlable);
   });
 
-  it('落地通道：四张卡，零凭据那条说"不需要凭据"，其余说"演示模式不收密码"', async () => {
+  it('落地通道：四张卡，零凭据那条说"不需要凭据"，其余不渲染密码输入框', async () => {
     renderPage();
     await waitLoaded();
 
@@ -240,11 +252,11 @@ describe('pages/SitePage · 四块都渲染出来（DR-54）', () => {
     }
     // 零凭据那条明说"不需要凭据"
     expect(within(cardOf('落地包与交接单')).getByText('不需要凭据')).toBeDefined();
-    // 🔴 规则 3 的界面侧对价：要凭据的那几条一律挂这句，且**不给**密码输入框
+    // 规则 3：demo 不接收凭据，也不给密码输入框。
     const cms = cardOf('CMS 连接器（WordPress）');
-    expect(within(cms).getByText(/演示模式不收任何密码与令牌/)).toBeDefined();
+    expect(within(cms).queryByText(/演示模式/)).toBeNull();
     expect(within(cms).queryByText(/凭据已入钥匙串/)).toBeNull();
-    expect(within(cardOf('边缘函数（CDN）')).getByText(/演示模式不收任何密码与令牌/)).toBeDefined();
+    expect(within(cardOf('边缘函数（CDN）')).queryByText(/演示模式/)).toBeNull();
   });
 
   it('补丁工作台：种子里那几条台账全上屏，计数条对上', async () => {
@@ -519,7 +531,7 @@ describe('pages/SitePage · 从处方生成（DR-50 / DR-56④）', () => {
 
     await user.click(screen.getByRole('button', { name: /从处方生成/ }));
     const dialog = await openModal();
-    expect(within(dialog).getByText('演示模式不调模型：下面这些候选来自预置模板，生成后一律是「草案 + 待人工审核」。')).toBeDefined();
+    expect(within(dialog).getByText('生成的补丁一律先落「草案 + 待人工审核」，不会直接改动线上站点。')).toBeDefined();
 
     await user.click(within(dialog).getByRole('combobox'));
     await clickClickablePopupItem(user, action!.title);
@@ -701,5 +713,37 @@ describe('pages/SitePage · 导出落地文件（DR-53）', () => {
       expect(entry.body).toBe(SEED_SITE_PATCHES.find((row) => row.id === entry.id)?.published_body);
     }
     expect(payload.patches.some((row) => row.id === PENDING.id)).toBe(false);
+  });
+});
+
+
+/**
+ * Tauri 运行时：演示文案不出现在桌面上，但「只生成交接文件」这条真实限制必须留下。
+ *
+ * 🔴 数据仍取 demo 种子（`demoInvoke`）——本用例钉的是**渲染条件**，不是分派路径；
+ * tauri 分派会走 `invoke`，所以三条首屏命令在这里逐条打桩。
+ */
+describe('pages/SitePage · Tauri 运行时', () => {
+  async function stubTauriBoard() {
+    const projectId = SEED_ACTIVE_PROJECT_ID;
+    mockInvoke.stubAlways('site_board', await demoInvoke('site_board', { project_id: projectId }));
+    mockInvoke.stubAlways('action_board', await demoInvoke('action_board', { project_id: projectId }));
+    mockInvoke.stubAlways('project_get', await demoInvoke('project_get', { id: projectId }));
+  }
+
+  it('隐藏 demoBody / staticNote，保留 live 交接说明与凭据落盘说明', async () => {
+    runtimeBox.current = 'tauri';
+    await stubTauriBoard();
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.queryByText(/演示模式不会改动线上站点/)).toBeNull();
+    expect(screen.queryByText(/页面清单与通道自检结论都是预置静态值/)).toBeNull();
+    expect(
+      screen.getByText(
+        '当前版本只生成交接文件：发布 / 撤回 / 回滚只在本地记账，不会直接改动线上站点。',
+      ),
+    ).toBeDefined();
+    expect(screen.getAllByText('凭据保存在系统钥匙串，数据库只留引用串。').length).toBeGreaterThan(0);
   });
 });

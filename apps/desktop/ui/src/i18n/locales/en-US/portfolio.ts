@@ -9,6 +9,8 @@ const portfolio: ResourceBundle['portfolio'] = {
   subtitle: 'GEO results, risks, and data freshness across projects',
   demoNote:
     'In demo mode each project summary comes from its latest conclusive round. Projects without collection show "To collect" and are never treated as a zero score. Ratios are shown as distributions, never averaged across projects.',
+  liveNote:
+    'Each project summary comes from its latest conclusive round. Projects without collection show "To collect" and are never treated as a zero score. Ratios are shown as distributions, never averaged across projects.',
   stats: {
     projects: 'Projects',
     withRound: 'With conclusion',

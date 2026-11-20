@@ -15,13 +15,15 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ApiOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import * as collection from '../api/collection';
 import { runtime } from '../api/runtime';
+import { availableEngines } from '../api/build-flavor';
+import { ENGINE_ACCESS, loginRequiredEngines } from '../api/engine-access';
 import { describeIpcError } from '../api/errors';
 import type {
   CollectionStatus,
@@ -32,6 +34,8 @@ import type {
   UsageRow,
 } from '../api/types';
 import CollectionMatrix from '../components/CollectionMatrix';
+import EngineAccessModal from '../components/EngineAccessModal';
+import { useEngineAccessStatus } from '../components/use-engine-access';
 import EvidenceDrawer from '../components/EvidenceDrawer';
 import EvidenceTable from '../components/EvidenceTable';
 import PageHeader from '../components/ui/PageHeader';
@@ -52,10 +56,8 @@ const STATUS_COLORS: Record<CollectionStatus, string> = {
  * M3 多引擎采集：轮次列表、各引擎执行情况、任务队列（失败可单独重跑）、
  * 原始证据（可下钻到回答全文与引用链接）与用量看板。
  *
- * 🔴 三句必须显示的口径（都在页面顶部）：
- * - `collection.sampleOnly`：种子每轮只收录样本，不是全量；
- * - `collection.staticNote`：成功率 / 耗时 / token 是静态值，前端不重算；
- * - `collection.start.demoNotice`（在弹窗里）：演示模式不真的调用引擎。
+ * 演示边界统一由全局 `DemoModeStrip` 说明；页面只保留运行时中立说明
+ * （例如浏览器通道没有 token 记账）。
  */
 export default function CollectionPage() {
   const { id: projectId = '' } = useParams();
@@ -67,6 +69,18 @@ export default function CollectionPage() {
   const [filters, setFilters] = useState<RecordFilter>({});
   const [evidenceId, setEvidenceId] = useState<string | null>(null);
   const [startOpen, setStartOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [accessEngine, setAccessEngine] = useState<EngineId | null>(null);
+
+  const engines = useMemo(() => [...availableEngines()], []);
+  // 只在「引擎接入」或「排一轮」打开时才查钥匙串：采集页本身不读密钥状态。
+  const accessStatus = useEngineAccessStatus(engines, accessOpen || startOpen);
+
+  /** 打开接入弹窗；`engine` 非空时直接展开那一家。 */
+  const openAccess = (engine: EngineId | null = null) => {
+    setAccessEngine(engine);
+    setAccessOpen(true);
+  };
 
   const boardQuery = useQuery({
     queryKey: ['collection-board', projectId],
@@ -127,6 +141,13 @@ export default function CollectionPage() {
     return Math.min(100, Math.round((usage.total_queries / usage.quota_queries) * 100));
   }, [usage]);
 
+  const tasks = detailQuery.data?.tasks ?? [];
+  // 「需要登录」不是异常，是接入没做完：聚合成一条提示，并把入口指到对应引擎。
+  const loginFailed = tasks.filter(
+    (task) => task.status === 'failed' && task.failure_reason === 'login_required',
+  );
+  const loginFailedEngines = loginRequiredEngines(loginFailed);
+
   if (boardQuery.isError) {
     return (
       <Alert type="error" showIcon message={describeIpcError(boardQuery.error, t)} />
@@ -140,6 +161,9 @@ export default function CollectionPage() {
         description={t('collection.subtitle')}
         actions={
           <>
+            <Button icon={<ApiOutlined />} onClick={() => openAccess()}>
+              {t('collection.access.open')}
+            </Button>
             <Button icon={<ReloadOutlined />} onClick={invalidateAll}>
               {t('common.refresh')}
             </Button>
@@ -149,11 +173,6 @@ export default function CollectionPage() {
           </>
         }
       />
-
-      <Alert type="info" showIcon style={{ marginBottom: 8 }} message={t('collection.sampleOnly')} />
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-        {t('collection.staticNote')}
-      </Typography.Paragraph>
 
       <Card
         size="small"
@@ -182,7 +201,12 @@ export default function CollectionPage() {
         ) : (
           <>
             {round.status === 'queued' && (
-              <Alert type="warning" showIcon style={{ marginBottom: 8 }} message={t('collection.round.notStarted')} />
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 8 }}
+                message={t('collection.round.notStartedLive')}
+              />
             )}
             {round.status === 'running' && (
               <Alert type="info" showIcon style={{ marginBottom: 8 }} message={t('collection.round.running')} />
@@ -342,6 +366,32 @@ export default function CollectionPage() {
         </Col>
       </Row>
 
+      {loginFailed.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={t('collection.access.loginFailedTitle', { failed: loginFailed.length })}
+          description={
+            <Space direction="vertical" size={2}>
+              <span>{t('collection.access.loginFailedDesc')}</span>
+              <span>
+                {t('collection.access.loginFailedEngines', {
+                  engines: loginFailedEngines
+                    .map((engine) => enumLabel(t, 'collection.engines', engine))
+                    .join(' / '),
+                })}
+              </span>
+            </Space>
+          }
+          action={
+            <Button size="small" onClick={() => openAccess(loginFailedEngines[0] ?? null)}>
+              {t('collection.access.open')}
+            </Button>
+          }
+        />
+      )}
+
       <Card size="small" title={t('collection.tasks.title')} style={{ marginBottom: 12 }}>
         <Table<CollectionTask>
           size="small"
@@ -367,7 +417,7 @@ export default function CollectionPage() {
             {
               title: t('collection.tasks.status'),
               dataIndex: 'status',
-              width: 180,
+              width: 220,
               render: (value: CollectionStatus, row) => (
                 <Space size={4}>
                   <Tag color={STATUS_COLORS[value]}>{enumLabel(t, 'collection.taskStatuses', value)}</Tag>
@@ -375,6 +425,17 @@ export default function CollectionPage() {
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       {enumLabel(t, 'collection.failureReasons', row.failure_reason)}
                     </Typography.Text>
+                  )}
+                  {/* 「需要登录」必须带一个能修的动作，否则用户只能看着失败原因。 */}
+                  {row.failure_reason === 'login_required' && (
+                    <Button
+                      type="link"
+                      size="small"
+                      style={{ padding: 0, height: 'auto' }}
+                      onClick={() => openAccess(row.engine)}
+                    >
+                      {t('collection.access.fix')}
+                    </Button>
                   )}
                 </Space>
               ),
@@ -392,7 +453,10 @@ export default function CollectionPage() {
                       loading={retryMutation.isPending && retryMutation.variables === row.id}
                       onClick={() => retryMutation.mutate(row.id)}
                     >
-                      {t('collection.tasks.retry')}
+                      {row.failure_reason === 'login_required' &&
+                      ENGINE_ACCESS[row.engine].kind === 'browser_login'
+                        ? t('collection.tasks.loginAndRetry')
+                        : t('collection.tasks.retry')}
                     </Button>
                   )}
                   {row.record_id !== null && (
@@ -425,9 +489,17 @@ export default function CollectionPage() {
       )}
 
       <EvidenceDrawer recordId={evidenceId} onClose={() => setEvidenceId(null)} />
+      <EngineAccessModal
+        open={accessOpen}
+        onClose={() => setAccessOpen(false)}
+        focusEngine={accessEngine}
+        status={accessStatus}
+      />
       <StartRoundModal
         projectId={projectId}
         open={startOpen}
+        accessStatus={accessStatus}
+        onRequestAccess={() => openAccess()}
         onClose={() => setStartOpen(false)}
         onQueued={(queued) => {
           setRoundId(queued.id);

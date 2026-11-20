@@ -12,6 +12,7 @@ import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { describeIpcError } from '../api/errors';
+import { runtime } from '../api/runtime';
 import * as library from '../api/library';
 import { adoptedFaqCount, composeFaqJsonLd, faqJsonLdFileName } from '../api/library-compose';
 import type {
@@ -168,7 +169,13 @@ export default function FaqLibraryPage() {
     mutationFn: (options: FaqGenerateOptions) => library.faqGenerate(projectId, options),
     onSuccess: (added) => {
       if (added.length === 0) {
-        message.info(t('library.faq.generatedNone'));
+        message.info(
+          t(
+            runtime === 'demo'
+              ? 'library.faq.generatedNone'
+              : 'library.faq.generatedNoneLive',
+          ),
+        );
       } else {
         message.success(t('library.faq.generated', { total: added.length }));
       }
@@ -222,8 +229,6 @@ export default function FaqLibraryPage() {
   return (
     <div>
       <PageHeader title={t('library.faq.title')} description={t('library.faq.subtitle')} />
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t('library.faq.staticNote')} />
-
       <SectionCard>
         <Space size={12} wrap style={{ marginBottom: 12, width: '100%' }}>
           <Input.Search

@@ -42,6 +42,9 @@ export default function NewProjectPage() {
     <div style={{ maxWidth: 860 }}>
       <PageHeader title={t('project.new.title')} description={t('project.new.subtitle')} />
 
+      {/* 提示栏固定在页头副标题下：它在两张卡之前给出「两条路字段口径一致」的前提。 */}
+      <Alert type="info" showIcon style={{ marginBottom: 16 }} message={t('project.new.sameFields')} />
+
       <Row gutter={16}>
         <Col span={12}>
           <Card
@@ -83,8 +86,6 @@ export default function NewProjectPage() {
           </Card>
         </Col>
       </Row>
-
-      <Alert type="info" showIcon style={{ marginTop: 16 }} message={t('project.new.sameFields')} />
     </div>
   );
 }

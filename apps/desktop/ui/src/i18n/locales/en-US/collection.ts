@@ -40,6 +40,7 @@ const collection: ResourceBundle['collection'] = {
     notes: 'Round notes',
     notStarted:
       'Queued and waiting to run. Demo mode does not call any engine, so this round stays in the queued state.',
+    notStartedLive: 'Queued and waiting to run.',
     running: 'Collection is still running; the numbers below will keep changing.',
     repeatNote:
       'Key prompts were sampled {{times}} times, so ratio metrics should be read as a range rather than a single point.',
@@ -125,6 +126,7 @@ const collection: ResourceBundle['collection'] = {
     finishedAt: 'Finished at',
     latency: 'Latency',
     retry: 'Retry',
+    loginAndRetry: 'Sign in and retry',
     retryOk: 'Retry finished; the evidence record and its insight were stored',
     retryUnavailable: 'Demo data has no preset retry outcome for this task',
     viewRecord: 'View evidence',
@@ -162,6 +164,8 @@ const collection: ResourceBundle['collection'] = {
     domain: 'Cited domain',
     sourceType: 'Source type',
     screenshot: 'Page screenshot',
+    screenshotAlt: 'Captured page screenshot',
+    noScreenshotLive: 'This record has no screenshot.',
     noScreenshot:
       'Demo data contains no screenshots; the real backend stores a screenshot alongside each answer.',
     noCitations: 'This answer returned no citations.',
@@ -201,10 +205,49 @@ const collection: ResourceBundle['collection'] = {
     submit: 'Queue',
     queued: 'Queued: {{label}}',
     engineRequired: 'Select at least one engine',
+    accessHint:
+      'Selected engines must be set up first, otherwise their tasks fail with "Login required".',
+    accessLink: 'View setup',
+    accessWarning: 'Not set up yet: {{engines}}. You can still queue, but their tasks will fail.',
     demoNotice:
       'Demo mode sends no requests: the new round stays queued and its task list is empty.',
     liveNotice:
-      'This will call the configured official APIs for real: Doubao / DeepSeek / Kimi / Qwen / Baidu. Yuanbao and Metaso have no official chat API and will be marked as skipped.',
+      'This calls the configured official keys for real: Kimi / Doubao / Qwen / Baidu use official search and answer over the results; DeepSeek borrows Kimi/Baidu search; Metaso uses official search plus your current chat model; Yuanbao opens local Chrome for you to sign in, then samples and captures a screenshot.',
+  },
+
+  access: {
+    open: 'Engine access',
+    title: 'Engine access',
+    intro:
+      'Set up each engine before collecting: API keys are stored only in the local system keychain; Tencent Yuanbao uses a browser sign-in that you complete yourself, with no automated login or CAPTCHA bypass.',
+    requirement: 'Requirement',
+    status: 'Status',
+    ready: 'Ready',
+    needsSetup: 'API key missing',
+    unknown: 'Not checked',
+    browserLogin: 'Browser sign-in',
+    settingsHint:
+      'Keys and sign-in state stay on this machine; a new machine or reinstall needs setup again. Metaso also needs the API key of the current model under Model providers.',
+    openSettings: 'Open settings',
+    fix: 'Set up',
+    yuanbaoSteps:
+      'Yuanbao has no public chat API: when a round includes Yuanbao, a controlled Chrome window opens and waits up to 3 minutes for you to sign in by QR code. The sign-in state stays on this machine and is reused. For an existing failed task, "Sign in and retry" opens the same window.',
+    loginFailedTitle: '{{failed}} tasks failed with "Login required"',
+    loginFailedDesc:
+      'These engines are not set up yet, or their key is no longer valid. Add or update the API key, or complete the browser sign-in, then retry the task — no need to queue the whole round again.',
+    loginFailedEngines: 'Engines involved: {{engines}}',
+    notes: {
+      doubao: 'Uses the Volcengine Ark (Doubao) API key; search and answers share the same key.',
+      deepseek:
+        'Uses the DeepSeek API key. DeepSeek has no official search API, so it borrows a configured Kimi or Baidu search key.',
+      kimi: 'Uses the Kimi (Moonshot) API key.',
+      qwen: 'Uses the Alibaba Cloud Bailian (Qwen) API key.',
+      baidu_ai: 'Uses the Baidu Qianfan (ERNIE) API key.',
+      metaso:
+        'Metaso search is billed per query and needs its own search key; answers still use the current model under Model providers, whose key must also be configured.',
+      yuanbao:
+        'Yuanbao runs through browser automation: no API key, but you need to sign in by QR code in the local browser.',
+    },
   },
 
   matrix: {

@@ -102,6 +102,7 @@ export default function ContentPanel({
         contentFileName(content, kind),
         composeContent(content, kind),
         false,
+        t('common.exportDialogTitle'),
       );
       if (path === null) {
         message.info(t('action.export.cancelled'));
@@ -147,7 +148,7 @@ export default function ContentPanel({
         )}
         {unavailable.map((format) => (
           <Typography.Text key={format} type="secondary" style={{ fontSize: 12 }}>
-            {t('action.export.desktopOnly', {
+            {t('action.export.unavailableLive', {
               format: enumLabel(t, 'common.exportFormats', format),
             })}
           </Typography.Text>
@@ -336,9 +337,6 @@ export default function ContentPanel({
               {preview.compliance_checked
                 ? t('action.contents.complianceChecked')
                 : t('action.contents.complianceUnchecked')}
-            </Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t('action.contents.demoBody')}
             </Typography.Text>
             <pre
               style={{

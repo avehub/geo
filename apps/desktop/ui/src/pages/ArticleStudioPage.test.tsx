@@ -25,6 +25,8 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import ArticleStudioPage from './ArticleStudioPage';
+import type { Runtime } from '../api/runtime';
+import { demoInvoke } from '../demo/backend';
 import zhCN from '../i18n/locales/zh-CN';
 import { getDemoDb, resetDemoDb } from '../demo/db';
 import {
@@ -35,9 +37,15 @@ import {
 } from '../demo/seed/articles';
 import { SEED_ACTIVE_PROJECT_ID, SEED_PROJECTS } from '../demo/seed/projects';
 import { clickClickablePopupItem } from '../test/dropdown';
+import { mockInvoke } from '../test/invoke-mock';
 import { renderAtRoute } from '../test/render';
 
-vi.mock('../api/runtime', () => ({ runtime: 'demo' }));
+const runtimeBox = vi.hoisted(() => ({ current: 'demo' as Runtime }));
+vi.mock('../api/runtime', () => ({
+  get runtime(): Runtime {
+    return runtimeBox.current;
+  },
+}));
 
 const ROUTE = `/projects/${SEED_ACTIVE_PROJECT_ID}/articles`;
 const PATH = '/projects/:id/articles';
@@ -149,6 +157,7 @@ function filterSelect(label: string): HTMLElement {
 }
 
 beforeEach(() => {
+  runtimeBox.current = 'demo';
   resetDemoDb();
 });
 
@@ -176,11 +185,35 @@ describe('ArticleStudioPage · 首屏与方向工作区', () => {
       A.directions.statusArchived,
     );
     expect(text).toContain(A.sources.manual);
-    expect(text).toContain(A.demoHint);
+    expect(text).not.toContain(A.demoHint);
     expect(text).toContain(A.directions.hint);
     for (const token of ['archived', 'manual', 'generated', 'article.tabs', 'pending_review']) {
       expect(text, `裸记号 ${token} 上屏了`).not.toContain(token);
     }
+  });
+
+  it('tauri：页头、方向、排期与评审都不挂演示文案或演示合规标签', async () => {
+    runtimeBox.current = 'tauri';
+    for (const cmd of [
+      'article_direction_list',
+      'article_template_list',
+      'article_schedule_list',
+      'article_list',
+      'project_get',
+    ]) {
+      mockInvoke.stubAlways(cmd, (args) => demoInvoke(cmd, args));
+    }
+    renderPage();
+    await waitLoaded();
+
+    const text = document.body.textContent ?? '';
+    expect(text).not.toContain(A.demoHint);
+    expect(text).not.toContain(A.directions.generateDemoBody);
+    expect(text).not.toContain(A.schedules.demoBody);
+    expect(text).not.toContain(A.review.complianceUnchecked);
+    // 对照：页面主体与评审队列仍在（证明不是整页没渲染）。
+    expect(screen.getByRole('heading', { name: A.title })).toBeInTheDocument();
+    expect(screen.getByText(A.review.title)).toBeInTheDocument();
   });
 
   it('「AI 生成方向」从预置池里多出一张卡，且挂 AI 生成来源标签', async () => {
@@ -363,11 +396,11 @@ describe('ArticleStudioPage · 排期与文章工作区（DR-86③）', () => {
     await screen.findByText(A.review.title);
   });
 
-  it('排期表：频率 / 时间 / 下次运行都是词典标签与格式化值，那句「不跑真实定时任务」常驻', () => {
+  it('排期表：频率 / 时间 / 下次运行都是词典标签与格式化值，不再重复演示提示', () => {
     const text = document.body.textContent ?? '';
 
     expect(tableRows(SCHEDULE_TABLE)).toHaveLength(SEED_ARTICLE_SCHEDULES.length);
-    expect(text).toContain(A.schedules.demoBody);
+    expect(text).not.toContain(A.schedules.demoBody);
     expect(rowOf(DAILY_SCHEDULE.id).textContent).toContain(A.freqs.daily);
     expect(rowOf(DAILY_SCHEDULE.id).textContent).toContain(DAILY_SCHEDULE.time);
     expect(rowOf(DAILY_SCHEDULE.id).textContent).toContain(String(DAILY_SCHEDULE.run_count));

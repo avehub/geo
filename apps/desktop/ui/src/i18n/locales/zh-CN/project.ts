@@ -161,9 +161,8 @@ const project = {
   /**
    * 自动采集屏（Plan B Task 7 · spec §7）。
    *
-   * 🔴 `demoNotice` 全程**常驻**，不是只在跑完之后出现：demo 不联网、不真抓网页
-   * （AGENTS 规则 2 / 9），少了这句，走查的人会以为刚才那三段进度真的抓了站点。
-   * 与 M3「不采集」、M4「不跑模型」同一口径。
+   * 演示边界统一由全局 `DemoModeStrip` 说明：demo 不联网、不真抓网页
+   * （AGENTS 规则 2 / 9）。`demoNotice` 保留为历史键，页面不再渲染。
    *
    * 三段进度是**演出**：真后端抓取要几十秒，"等待形态"本身就是这轮要验收的东西，
    * 所以分三段而不是一步跳完（`stageCrawling` → `stageExtracting` → `stageDone`）。
@@ -174,6 +173,7 @@ const project = {
     urlLabel: '官网网址',
     urlPlaceholder: 'https://www.example.com',
     urlExtra: '只抓自有域名；演示模式不发任何网络请求',
+    urlExtraLive: '只抓自有域名，遵守 robots.txt；抽取结果需要逐字段确认',
     start: '开始采集',
     demoNotice: '演示模式不抓取网页，抽取结果是预置数据',
     stepCrawl: '抓取网页',
@@ -240,6 +240,8 @@ const project = {
     active: '进行中',
     updatedAt: '更新时间',
     updatedShort: '更新于 {{time}}',
+    /** P2-01：归档项目可达性——项目名是可点的，这是它的可访问名（带项目名便于读屏区分行）。 */
+    openOverview: '打开项目概览：{{name}}',
     openEntityCard: '实体卡',
     openPrompts: '题库',
     archive: '归档',

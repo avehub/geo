@@ -49,7 +49,9 @@ const ALL_FILTERS: KbFilters = {
  *
  * # demo 的边界（规则 9 / 规则 2 / 规则 6）
  * 「AI 生成」不调模型（预置语料池）、图片与视频不拉流、搜索是 `includes`——
- * 三件事都在界面上写明（`demoHint` 常驻 + 生成弹窗免责 + 预览抽屉那句媒体说明）。
+ * 三件事都在界面上写明（`demoHint` + 生成弹窗免责 + 预览抽屉那句媒体说明）。
+ * 🔴 2026-11-06 产品确认：`demoHint` **只在 demo 运行时**（`mise run web`）渲染；
+ * 桌面端接真后端，不能说自己是预置样本。
  */
 export default function KnowledgeBasePage() {
   const { id: projectId = '' } = useParams();
@@ -121,7 +123,21 @@ export default function KnowledgeBasePage() {
     });
   }, [rows, filters]);
 
-  const groups = useMemo(() => groupByModule(visible), [visible]);
+  /**
+   * P3-03（2026-11-07 测试报告）：表格分页 20 行/页，而种子有 21 条 ⇒ 新建条目
+   * 落在**第二页**，用户看到「已新增 1 条」却找不到那条（搜索能命中是因为搜索把
+   * 结果压到一页内）。按更新时间倒序后「刚建的」永远在第一页第一行。
+   * 分组视图不受影响：`groupByModule` 内部按 position 再排一次。
+   */
+  const ordered = useMemo(
+    () =>
+      [...visible].sort(
+        (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
+      ),
+    [visible],
+  );
+
+  const groups = useMemo(() => groupByModule(ordered), [ordered]);
 
   const addMutation = useMutation({
     mutationFn: (drafts: Parameters<typeof kb.kbEntryAdd>[1]) => kb.kbEntryAdd(projectId, drafts),
@@ -130,6 +146,10 @@ export default function KnowledgeBasePage() {
       setEditorOpen(false);
       setEditing(null);
       setImportOpen(false);
+      // P3-03（2026-11-07 测试报告）：筛选复位到全量——否则搜索词/模块/状态筛选
+      // 会把刚建的条目藏起来，用户只看到「已新增 N 条」却找不到那条。
+      setFilters(ALL_FILTERS);
+      setSelectedIds([]);
       refresh();
     },
     onError: (error) => message.error(describeIpcError(error, t)),
@@ -273,8 +293,6 @@ export default function KnowledgeBasePage() {
   return (
     <div>
       <PageHeader title={t('kb.title')} description={t('kb.lead')} />
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t('kb.demoHint')} />
-
       {board === null ? null : <KbBoardHeader stats={board.stats} />}
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
@@ -323,7 +341,7 @@ export default function KnowledgeBasePage() {
           />
         ) : (
           <KbTable
-            rows={visible}
+            rows={ordered}
             selectedIds={selectedIds}
             busyId={busyId}
             onSelectIds={setSelectedIds}
@@ -389,7 +407,9 @@ export default function KnowledgeBasePage() {
         title={exportKind === 'json' ? t('kb.export.jsonTitle') : t('kb.export.markdownTitle')}
         hint={`${
           exportKind === 'json' ? t('kb.export.jsonHint') : t('kb.export.markdownHint')
-        } · ${t('kb.actions.demoModeHint')}`}
+        } · ${t(
+          'kb.actions.liveModeHint',
+        )}`}
         fileName={exportKind === 'json' ? kbJsonFileName(projectId) : kbMarkdownFileName(projectId)}
         content={exportContent ?? ''}
         withBom={false}

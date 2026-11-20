@@ -19,6 +19,8 @@ function openModal() {
       open
       onClose={() => {}}
       onQueued={() => {}}
+      accessStatus={{ byProvider: {}, loading: false, error: false, currentModelProvider: null }}
+      onRequestAccess={() => {}}
     />,
   );
 }

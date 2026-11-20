@@ -566,7 +566,7 @@ describe('PromptSetPage', () => {
  * 该行自带测试 `degradation_note_is_a_single_line_ascii_machine_record` 钉住了这个形状。
  * 散文行取自同文件 `report_quota_shortfall()` 的真实格式串（竞品同框配额不足那条）。
  *
- * ⚠ 复审举例用的 `"code":"llm/timeout"` **不在** `contracts/error-codes.json` 的 43 码里
+ * ⚠ 复审举例用的 `"code":"llm/timeout"` **不在** `contracts/error-codes.json` 的 44 码里
  * （超时是 `llm/transport` 的 `reason`，不是独立 code）。这里用契约内真实存在的
  * `llm/transport` + `reason:"timeout"`，另有一条用例专门钉「契约外的 code 走 raw passthrough」。
  */
@@ -818,5 +818,36 @@ describe('PromptSetPage · 分组筛选哨兵 NO_GROUP（§B-0）', () => {
         .filter((call) => JSON.stringify(call.args).includes(SET_ID))
         .map((call) => call.cmd),
     ).not.toEqual([]);
+  });
+});
+
+describe('PromptSetPage · 分组列回落词典（P1-03）', () => {
+  beforeEach(() => mockInvoke.reset());
+
+  /**
+   * P1-03（2026-11-07 测试报告）：真后端不再把中文枚举标签写进 `group_name`
+   * （`PromptItem::new` / csv 导入给 `null`），分组列必须回落到**词典**标签——
+   * en-US 下显示英文；用户自己起过的分组名是数据，原样显示。
+   */
+  it('group_name 为 null 时 en-US 分组列显示词典英文标签', async () => {
+    stub('sufficient', [
+      makePromptItem(0, { id: 'item-null-group', group_name: null }),
+      makePromptItem(1, { id: 'item-own-group', group_name: '我自己起的组名' }),
+    ]);
+    renderAtRoute(<PromptSetPage />, '/projects/:id/prompts', ROUTE, 'en-US');
+
+    const table = await screen.findByRole('table');
+    const rows = within(table).getAllByRole('row');
+    const nullRow = rows.find((row) => (row.textContent ?? '').includes('编号 0'));
+    const ownRow = rows.find((row) => (row.textContent ?? '').includes('编号 1'));
+    expect(nullRow, 'group_name=null 的行').toBeDefined();
+    expect(ownRow, '用户自填分组的行').toBeDefined();
+    // 意图列与分组列都会显示词典标签 ⇒ 行内至少一处英文标签
+    await waitFor(() =>
+      expect(within(nullRow as HTMLElement).getAllByText('Category awareness').length).toBeGreaterThan(0),
+    );
+    expect(within(ownRow as HTMLElement).getByText('我自己起的组名')).toBeInTheDocument();
+    // 中文枚举标签不得再上屏（这正是 P1-03 的泄漏面）
+    expect(within(table).queryByText('品类认知')).not.toBeInTheDocument();
   });
 });

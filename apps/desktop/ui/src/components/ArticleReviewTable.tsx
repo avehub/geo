@@ -3,6 +3,7 @@ import { Button, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useTranslation } from 'react-i18next';
 
+import { runtime } from '../api/runtime';
 import type { Article, ArticleStatus } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
 import { dateTimeText } from './format';
@@ -68,7 +69,7 @@ export default function ArticleReviewTable({
       render: (_, row) => (
         <Space direction="vertical" size={2}>
           <Typography.Text strong>{row.title}</Typography.Text>
-          {row.status === 'pending_review' ? (
+          {row.status === 'pending_review' && runtime === 'demo' ? (
             <Tag color="orange">{t('article.review.complianceUnchecked')}</Tag>
           ) : null}
         </Space>

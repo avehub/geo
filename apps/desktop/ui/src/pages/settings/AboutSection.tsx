@@ -230,11 +230,6 @@ export default function AboutSection(_props: SectionProps) {
             </Typography.Paragraph>
           </Modal>
 
-          {runtime === 'demo' && (
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
-              {t('settings.about.phase2')}
-            </Typography.Paragraph>
-          )}
         </Space>
       )}
     </Card>

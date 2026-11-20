@@ -8,7 +8,6 @@ import type { TFunction } from 'i18next';
 
 import * as client from '../api/client';
 import { describeErrorCode, describeIpcError } from '../api/errors';
-import { runtime } from '../api/runtime';
 import type {
   GenerateOptions,
   IntentCategory,
@@ -344,17 +343,8 @@ export default function PromptSetPage() {
         }
       />
 
-      {/*
-        演示模式不跑广告法红线扫描（与 E-1 同一条取舍）。这是**如实说明**，不是免责声明：
-        `prompt_item_add/update` 在 demo 里只做 Rust `PromptItem::validate` 的镜像校验，
-        真正的 `compliance::check` 在 Rust 侧。文案复用素材库同一条词典键，避免第二份措辞漂移。
-      */}
-      {runtime === 'demo' && (
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          {t('library.faq.complianceUnchecked')}
-        </Typography.Paragraph>
-      )}
-
+      {/* 2026-11-19 产品裁定：演示边界统一由全局 `DemoModeStrip` 说明，
+          题库页不再单独挂「演示模式未执行合规扫描」。 */}
       <GeneratePanel
         defaultIndustry={projectQuery.data?.project?.industry ?? 'b2b_manufacturing'}
         loading={generateMutation.isPending}

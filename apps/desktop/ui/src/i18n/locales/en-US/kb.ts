@@ -6,6 +6,7 @@
 const kb = {
   title: 'Knowledge base',
   lead: 'Turn brand facts, cases, selling points, talk tracks, messaging and media into one reusable, editable knowledge set.',
+  /** Demo runtime only (product decision 2026-11-06); hidden in the desktop app. */
   demoHint: 'Demo mode: sample data only; AI generation does not call a model; images and videos are not fetched.',
   dutyNote:
     'The entity card holds structured facts about who you are; the knowledge base holds reusable wording and assets. They do not sync with each other — use “Import from entity card” for a one-time copy.',
@@ -125,6 +126,7 @@ const kb = {
     collapse: 'Collapse',
     preview: 'Preview asset',
     mediaNote: 'Demo mode does not fetch remote media; only the asset card and its address are shown.',
+    mediaNoteLive: 'This preview shows the asset address only; remote media is not loaded in the client.',
     scenarioLabel: 'Scenario',
   },
 
@@ -141,6 +143,7 @@ const kb = {
     exportMarkdown: 'Export Markdown',
     exportJson: 'Export JSON',
     demoModeHint: 'Demo mode: exported content is sample data',
+    liveModeHint: 'The desktop app writes the export to a file and shows the saved location when done.',
   },
 
   import: {
@@ -166,6 +169,8 @@ const kb = {
     empty: 'No preset corpus for the selected modules; pick others or add manually',
     done: 'Generated {{added}} entries, pending review',
     demoNote: 'Demo mode does not call a model: rows come verbatim from a preset pool; no compliance scan runs.',
+    liveNote: 'Generated entries start as pending manual review; a batch is rejected when it hits an advertising-law red-line term.',
+    reviewNote: 'Generated entries start as pending manual review; verify them before use.',
   },
 
   export: {

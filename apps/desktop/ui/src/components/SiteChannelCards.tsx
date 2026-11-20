@@ -3,6 +3,7 @@ import { Button, Card, Col, Input, Row, Space, Tag, Tooltip, Typography } from '
 import { ApiOutlined, ClearOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
+import { runtime } from '../api/runtime';
 import type { SiteChannel, SiteChannelKind, SiteChannelStatus } from '../api/types';
 import { SITE_CHANNEL_KIND_VALUES } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
@@ -38,8 +39,7 @@ const NEEDS_USERNAME: readonly SiteChannelKind[] = ['cms'];
 /**
  * 哪几条通道要凭据。🔴 真值源在 `demo/handlers/site.ts` 的 `CREDENTIALS_BY_KIND`
  * （组件不许 import demo 侧），这里只用来给**还没有通道行**的那张空卡推一个初始显示值：
- * 一行都不存在时后端无从回答"凭据面是什么状态"，而界面上又必须说清
- * "演示模式不收密码"⇒ 按 kind 静态推导，与后端逐字同形。
+ * 一行都不存在时后端无从回答"凭据面是什么状态"⇒ 按 kind 静态推导，与后端逐字同形。
  */
 const CREDENTIAL_REQUIRED_KINDS: readonly SiteChannelKind[] = ['cms', 'edge'];
 
@@ -59,8 +59,8 @@ const CREDENTIAL_REQUIRED_KINDS: readonly SiteChannelKind[] = ['cms', 'edge'];
  *
  * # 🔴 凭据面（DR-48 / AGENTS 规则 3）
  * 卡上只有**非敏感**配置（落点地址 / 用户名 / 备注）与一个 `secret_ref` 引用串。
- * 演示模式一个密码都不收，所以 `credentials_state` 恒不为 `stored`，
- * 并且每张需要凭据的卡都常驻 `channels.demoCredentials` 那一句。
+ * demo 一个密码都不收，所以 `credentials_state` 恒不为 `stored`；
+ * 桌面端才显示 `channels.liveCredentials`，demo 不重复演示提示。
  */
 export default function SiteChannelCards({
   channels,
@@ -229,9 +229,11 @@ function ChannelCard({
           </Typography.Paragraph>
         )}
         {credentials === 'not_required' ? null : (
-          <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
-            {t('site.channels.demoCredentials')}
-          </Typography.Paragraph>
+          runtime === 'tauri' ? (
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+              {t('site.channels.liveCredentials')}
+            </Typography.Paragraph>
+          ) : null
         )}
       </Space>
     </Card>

@@ -64,6 +64,22 @@ function buttons(text: string): HTMLButtonElement[] {
   return byText<HTMLButtonElement>('button', text);
 }
 
+/**
+ * 按**行内标题**取该行的「编辑」按钮。
+ * P3-03 把表格改成更新时间倒序后，行序不再是种子序；用下标取行会让用例绑死排序。
+ */
+function editButtonOf(title: string): HTMLButtonElement {
+  const row = [...document.body.querySelectorAll('.ant-table-row')].find((node) =>
+    (node.textContent ?? '').includes(title),
+  );
+  if (row === undefined) throw new Error(`row not found: ${title}`);
+  const found = [...row.querySelectorAll('button')].find(
+    (node) => (node.textContent ?? '').replace(/\s+/g, '') === '编辑',
+  );
+  if (found === undefined) throw new Error(`edit button not found in row: ${title}`);
+  return found as HTMLButtonElement;
+}
+
 function button(text: string): HTMLButtonElement {
   const found = buttons(text);
   if (found.length === 0) throw new Error(`button not found: ${text}`);
@@ -147,6 +163,13 @@ describe('首屏', () => {
     });
   });
 
+  it('桌面端页头不挂演示模式说明条（2026-11-06 产品确认）', async () => {
+    await renderPage();
+    const text = document.body.textContent ?? '';
+    expect(text).not.toContain('演示模式：数据为预置样本');
+    expect(text).not.toContain('图片与视频不加载远端文件');
+  });
+
   it('🔴 同步块 UI 彻底消失：三个旧按钮一个都不剩（DR-73）', async () => {
     await renderPage();
     expect(buttons('去实体卡修改')).toEqual([]);
@@ -195,8 +218,9 @@ describe('卡片交互（DR-78 / DR-79）', () => {
     await waitFor(() => expect(buttons('预览素材').length).toBeGreaterThan(0));
     fireEvent.click(button('预览素材'));
     await waitFor(() => {
-      expect(document.body.textContent).toContain('演示模式不加载远端媒体文件');
+      expect(document.body.textContent).toContain('当前预览只展示素材地址');
     });
+    expect(document.body.textContent).not.toContain('演示模式不加载远端媒体文件');
     expect(document.body.querySelectorAll('.ant-drawer img, .ant-drawer video, .ant-drawer iframe')).toHaveLength(0);
   });
 
@@ -264,9 +288,10 @@ describe('AI 生成（规则 6 / 9）', () => {
     await renderPage();
     fireEvent.click(button('AI 生成'));
     await waitFor(() => {
-      if (!document.body.textContent?.includes('演示模式不调用模型')) {
+      if (!document.body.textContent?.includes('生成内容默认待人工审核')) {
         throw new Error('generate modal not ready');
       }
+      expect(document.body.textContent).not.toContain('演示模式不调用模型');
     });
     // 选一个池子里有货的模块：产品卖点
     const select = [...document.body.querySelectorAll('.ant-modal .ant-select')][0];
@@ -302,6 +327,8 @@ describe('导出闸门（DR-72 续）', () => {
     await waitFor(() => {
       expect(document.body.textContent).toContain('Markdown 知识册');
     });
+    expect(document.body.textContent).toContain('桌面端会把导出写成文件');
+    expect(document.body.textContent).not.toContain('演示模式：导出内容为预置样本');
   });
 });
 
@@ -334,7 +361,18 @@ describe('编辑侧滑的「修订历史」页签（DR-119）', () => {
   it('没改过的条目显示空态（kb.revisions.empty）', async () => {
     await renderPage();
     // 第二张卡 = `demo-kb-102` 品牌故事：种子没给它任何留痕。
-    fireEvent.click(buttons('编辑')[1]);
+    // 表格按更新时间倒序 + 20 行/页：先用搜索把目标条目隔离到当前页（真实用户路径），
+    // 再按标题取行，用例就不绑死排序与分页。
+    fireEvent.change(
+      document.body.querySelector('input[placeholder="搜索标题、正文或标签"]') as HTMLInputElement,
+      { target: { value: '品牌故事' } },
+    );
+    await waitFor(() => {
+      if (![...document.body.querySelectorAll('.ant-table-row')].some((node) => (node.textContent ?? '').includes('品牌故事'))) {
+        throw new Error('search did not isolate the row');
+      }
+    });
+    fireEvent.click(editButtonOf('品牌故事'));
     await drawerReady('品牌故事');
     fireEvent.click(tab('修订历史'));
     await waitFor(() => {
@@ -349,7 +387,18 @@ describe('编辑侧滑的「修订历史」页签（DR-119）', () => {
 
   it('改一个字段 ⇒ 页签里当场多一条留痕，新旧值并排（走查 22）', async () => {
     await renderPage();
-    fireEvent.click(buttons('编辑')[1]);
+    // 表格按更新时间倒序 + 20 行/页：先用搜索把目标条目隔离到当前页（真实用户路径），
+    // 再按标题取行，用例就不绑死排序与分页。
+    fireEvent.change(
+      document.body.querySelector('input[placeholder="搜索标题、正文或标签"]') as HTMLInputElement,
+      { target: { value: '品牌故事' } },
+    );
+    await waitFor(() => {
+      if (![...document.body.querySelectorAll('.ant-table-row')].some((node) => (node.textContent ?? '').includes('品牌故事'))) {
+        throw new Error('search did not isolate the row');
+      }
+    });
+    fireEvent.click(editButtonOf('品牌故事'));
     await drawerReady('品牌故事');
     const titleInput = [...document.body.querySelectorAll('.ant-drawer input')].find((node) =>
       (node as HTMLInputElement).value.includes('品牌故事'),
@@ -361,7 +410,18 @@ describe('编辑侧滑的「修订历史」页签（DR-119）', () => {
     });
 
     // 保存后侧滑关掉 ⇒ 重新打开同一条，页签里应多出那条 `title` 留痕。
-    fireEvent.click(buttons('编辑')[1]);
+    // 表格按更新时间倒序 + 20 行/页：先用搜索把目标条目隔离到当前页（真实用户路径），
+    // 再按标题取行，用例就不绑死排序与分页。
+    fireEvent.change(
+      document.body.querySelector('input[placeholder="搜索标题、正文或标签"]') as HTMLInputElement,
+      { target: { value: '品牌故事' } },
+    );
+    await waitFor(() => {
+      if (![...document.body.querySelectorAll('.ant-table-row')].some((node) => (node.textContent ?? '').includes('品牌故事'))) {
+        throw new Error('search did not isolate the row');
+      }
+    });
+    fireEvent.click(editButtonOf('品牌故事'));
     await drawerReady('品牌故事 v2');
     fireEvent.click(tab('修订历史'));
     await waitFor(() => {
@@ -393,5 +453,56 @@ describe('筛选与批量选择（防止动到看不见的行）', () => {
     });
 
     await waitFor(() => expect(button('删除选中').disabled).toBe(true));
+  });
+
+  /**
+   * P3-03（2026-11-07 测试报告）：新增知识成功后，若当前筛选（搜索词/模块/状态…）
+   * 会把新条目藏起来，用户只看到「已新增 1 条知识」却找不到那条。
+   * 修法：新增成功后把筛选复位到全量，让新条目立刻在板上。
+   */
+  it('新增知识后筛选复位，新条目立刻可见（P3-03）', async () => {
+    await renderPage();
+    await waitFor(() => expect(document.body.textContent).toContain('品牌定义句'));
+
+    // 先造一个「会藏住新条目」的筛选态
+    const search = document.body.querySelector(
+      'input[placeholder="搜索标题、正文或标签"]',
+    ) as HTMLInputElement;
+    expect(search).not.toBeNull();
+    fireEvent.change(search, { target: { value: 'zzz-不存在的词' } });
+    await waitFor(() => expect(document.body.textContent).not.toContain('品牌定义句'));
+
+    fireEvent.click(button('新增知识'));
+    // 新增抽屉的标题框是**空的**，不能复用 drawerReady（它等的是编辑侧滑的回显值）。
+    await waitFor(() => {
+      if (document.body.querySelectorAll('.ant-drawer input').length === 0) {
+        throw new Error('drawer not ready');
+      }
+    });
+    // 模块 / 形式是必填 Select：显式选一次，不依赖抽屉默认值（默认值变了这条用例不该假红）
+    // 抽屉里第 0 个 Select 是模块、第 1 个是形式：各选一次，别两次都点第 0 个。
+    for (const [selectIndex, optionText] of [
+      [0, '品牌概况'],
+      [1, '定义句'],
+    ] as const) {
+      const select = [...document.body.querySelectorAll('.ant-drawer .ant-select-selector')][
+        selectIndex
+      ];
+      fireEvent.mouseDown(select);
+      await waitFor(() => {
+        const option = [...document.body.querySelectorAll('.ant-select-item-option')].find(
+          (node) => (node.textContent ?? '').includes(optionText),
+        );
+        if (option === undefined) throw new Error(`option not found: ${optionText}`);
+        fireEvent.click(option);
+      });
+    }
+    const title = document.body.querySelector('.ant-drawer #title') as HTMLInputElement;
+    expect(title).not.toBeNull();
+    fireEvent.change(title, { target: { value: '自动化走查知识条目' } });
+    fireEvent.click(button('保存'));
+
+    await waitFor(() => expect(document.body.textContent).toContain('自动化走查知识条目'));
+    expect(search.value).toBe('');
   });
 });

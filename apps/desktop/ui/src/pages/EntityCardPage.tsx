@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { Alert, App, Card, Col, Empty, Progress, Row, Space, Typography } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import * as client from '../api/client';
@@ -72,10 +72,32 @@ export default function EntityCardPage() {
 
   const card = cardQuery.data ?? null;
   const percent = card ? Math.round(card.completeness * 100) : 0;
+  /**
+   * 抓到了页面、但 `llm_provider` 为空 ⇒ 后端走了 FR-M1-2 的降级分支：
+   * 字段来自建项资料，不是官网内容。这个状态必须说破——否则「20% + 人工录入」
+   * 会被读成「模型抽了但没抽到」，用户不知道该去配模型（2026-11-06 报障）。
+   */
+  const degraded =
+    card !== null && card.source.crawled_pages.length > 0 && card.source.llm_provider === null;
 
   return (
     <div>
       <PageHeader title={t('entity.card.title')} />
+
+      {degraded && card !== null && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t('entity.card.degradedTitle', { pages: card.source.crawled_pages.length })}
+          description={
+            <Space direction="vertical" size={4}>
+              <span>{t('entity.card.degradedBody')}</span>
+              <Link to="/settings/models">{t('entity.card.degradedAction')}</Link>
+            </Space>
+          }
+        />
+      )}
 
       <AutoBuildPanel
         projectId={projectId}
@@ -99,7 +121,19 @@ export default function EntityCardPage() {
               title={
                 <Space size={16}>
                   <span>{t('entity.card.completeness')}</span>
-                  <Progress type="circle" size={64} percent={percent} />
+                  {/*
+                    圈与圈内百分比整体缩到 70%（产品走查：64px 圈偏大）。
+                    antd 的圈内字号是 `width * 0.15 + 6`：只改 size 到 45 时字号只降到
+                    12.75px（-18%），所以用 format 显式给 11px（15.6 × 0.7 ≈ 10.9）。
+                  */}
+                  <Progress
+                    type="circle"
+                    size={45}
+                    percent={percent}
+                    format={(value) => (
+                      <span style={{ fontSize: 11 }}>{`${value ?? 0}%`}</span>
+                    )}
+                  />
                 </Space>
               }
               extra={
@@ -109,7 +143,9 @@ export default function EntityCardPage() {
                         provider: card.source.llm_provider,
                         model: card.source.llm_model ?? '',
                       })
-                    : t('entity.card.sourceManual')}
+                    : card.source.crawled_pages.length > 0
+                      ? t('entity.card.sourceCrawledNoAi')
+                      : t('entity.card.sourceManual')}
                 </Typography.Text>
               }
             >

@@ -8,7 +8,7 @@
  *   `prompt_set_rename` 回**摘要**、`prompt_item_update` 回**单条**、
  *   `prompt_item_add` / `prompt_item_delete` 回**整份快照**；
  * - **`position` 是 0 基**（service:787-792 的 `reindex`：`item.position = index as i32`）；
- * - **不许把题库删空**（service:630-637：`ids.len() >= 条目总数` 就拒，一次最多删 N-1 条）；
+ * - **允许把题库删空**（2026-11-19 产品裁定：最后一条也必须能删；删空后是 `item_count = 0` 的快照）；
  * - **列表不加载 items**（`api/types.ts` 的 `PromptSetSummary` 只有 `item_count`）。
  *
  * # 🔴 题库两份视图的单一真值落点（`db.ts` 留给本轮的收口）
@@ -465,12 +465,11 @@ export const promptItemAdd: DemoHandler = (args) => {
 };
 
 /**
- * `prompt_item_delete`：删掉后 0 基重排，回**整份快照**。三道守卫按此顺序：
+ * `prompt_item_delete`：删掉后 0 基重排，回**整份快照**。两道守卫按此顺序：
  * ① 空 `ids` ⇒ `{field:'ids', reason:'empty'}`；
- * ② **不许删空**（service:630-637）⇒ `ids.len() >= 条目总数` 就拒
- *    `{field:'ids', reason:'out_of_range', expected:'<N', value:'N'}`（要清空请显式删掉整份题库）；
- * ③ 含不属于该题库的 id ⇒ `prompt_item/not_found`。
- * 🔴 三道守卫**全部先跑完**才动库：任一失败都是 0 副作用（真后端单事务整体回滚）。
+ * ② 含不属于该题库的 id ⇒ `prompt_item/not_found`。
+ * 允许把题库删空（2026-11-19 产品裁定：最后一条也必须能删，空题库是合法的 0 条快照）。
+ * 🔴 两道守卫**全部先跑完**才动库：任一失败都是 0 副作用（真后端单事务整体回滚）。
  */
 export const promptItemDelete: DemoHandler = (args) => {
   const db = getDemoDb();
@@ -482,14 +481,6 @@ export const promptItemDelete: DemoHandler = (args) => {
     throw demoError('validation/failed', { field: 'ids', reason: 'empty' });
   }
   const items = promptItemsOf(db, setId);
-  if (ids.length >= items.length) {
-    throw demoError('validation/failed', {
-      field: 'ids',
-      reason: 'out_of_range',
-      expected: `<${items.length}`,
-      value: String(ids.length),
-    });
-  }
   const requested = new Set(ids);
   for (const id of requested) {
     if (!items.some((item) => item.id === id)) {

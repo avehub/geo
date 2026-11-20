@@ -36,6 +36,12 @@ export default function AutoBuildPanel({ projectId, defaultDomain = '', onBuilt 
     mutationFn: (value: string) => client.entityCardAutobuild(projectId, value),
     onSuccess: (card) => {
       onBuilt(card);
+      // 抓到页面但 `llm_provider` 为空 = 后端降级成建项资料（FR-M1-2）。
+      // 这时再说「自动建档完成 N%」会把降级读成成功，必须换一条 warning。
+      if (card.source.crawled_pages.length > 0 && card.source.llm_provider === null) {
+        message.warning(t('entity.autobuild.degraded'));
+        return;
+      }
       message.success(
         t('entity.autobuild.success', { percent: Math.round(card.completeness * 100) }),
       );

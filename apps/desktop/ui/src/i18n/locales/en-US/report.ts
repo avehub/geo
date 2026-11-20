@@ -119,6 +119,7 @@ const report: ResourceBundle['report'] = {
     logoUrl: 'Logo URL',
     logoOptional: 'Leave empty to omit the logo',
     defaultHint: 'Leave all three empty to use the default signature (the sample agency in the demo data).',
+    defaultHintLive: 'Leave all three empty to use the default signature.',
     applyHint: 'Click "Render report" after editing the white-label details.',
     none: 'No branding',
     preparedBy: 'Prepared by {{agency}}',
@@ -129,7 +130,9 @@ const report: ResourceBundle['report'] = {
 
   export: {
     title: 'Export and sharing',
-    desktopOnly: '{{format}} is provided by the desktop app and is unavailable in demo mode.',
+    desktopOnly: '{{format}} requires the desktop app to export.',
+    desktopReady: '{{format}} is exported natively by the desktop app.',
+    desktopPending: '{{format}} will be provided by the desktop app in a later release.',
     done: 'Exported: {{path}}',
     cancelled: 'Export cancelled',
     generatedAt: 'Generated at',

@@ -321,6 +321,7 @@ describe('枚举标签 · project.industries（6 个行业）', () => {
     renderWithProviders(
       <ProjectTable
         projects={[makeProject({ industry: 'mystery_industry' as Industry, industry_label: null })]}
+        onOpenOverview={noop}
         onOpenEntityCard={noop}
         onOpenPrompts={noop}
         onToggleArchive={noop}

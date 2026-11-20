@@ -96,7 +96,12 @@ export default function SiteExportModal({
 
   const downloadMutation = useMutation({
     mutationFn: () =>
-      client.exportWriteFile(siteExportFileName(projectId, kind), content ?? '', siteExportNeedsBom(kind)),
+      client.exportWriteFile(
+        siteExportFileName(projectId, kind),
+        content ?? '',
+        siteExportNeedsBom(kind),
+        t('common.exportDialogTitle'),
+      ),
     onSuccess: (path) => {
       // 真后端回最终路径，demo 回文件名，用户取消回 null（三种都不该报成功）。
       if (path === null) return;

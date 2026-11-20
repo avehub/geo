@@ -26,6 +26,8 @@ const EXPORT_MENU_ITEMS: { key: ProjectExportKind; labelKey: TranslationKey }[] 
 export interface ProjectTableProps {
   projects: Project[];
   loading?: boolean;
+  /** P2-01：项目名可点 → 概览。归档项目在侧栏/切换器里不可达，这是它唯一的打开入口。 */
+  onOpenOverview: (project: Project) => void;
   onOpenEntityCard: (project: Project) => void;
   onOpenPrompts: (project: Project) => void;
   onToggleArchive: (project: Project) => void;
@@ -60,6 +62,7 @@ function industryLabel(t: TFunction, project: Project): string {
 export default function ProjectTable({
   projects,
   loading = false,
+  onOpenOverview,
   onOpenEntityCard,
   onOpenPrompts,
   onToggleArchive,
@@ -99,13 +102,29 @@ export default function ProjectTable({
           // 单行主单元格：行高才能稳在 48（密度口径）。品牌 / 行业 / 地域 / 更新时间
           // 放在名字右侧的弱文本里，超长省略、悬停看全文——飞书表格同族。
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
-            <Typography.Text
-              strong
-              ellipsis
-              style={{ flexShrink: 0, maxWidth: '60%', fontSize: 14, lineHeight: '24px' }}
+            <Button
+              type="link"
+              size="small"
+              aria-label={t('project.table.openOverview', { name: project.name })}
+              onClick={() => onOpenOverview(project)}
+              style={{
+                flexShrink: 0,
+                maxWidth: '60%',
+                height: 24,
+                padding: 0,
+                fontSize: 14,
+                lineHeight: '24px',
+                fontWeight: 600,
+              }}
             >
-              {project.name}
-            </Typography.Text>
+              <Typography.Text
+                strong
+                ellipsis
+                style={{ fontSize: 14, lineHeight: '24px', color: 'inherit' }}
+              >
+                {project.name}
+              </Typography.Text>
+            </Button>
             <Tooltip title={meta} placement="topLeft">
               <span
                 style={{

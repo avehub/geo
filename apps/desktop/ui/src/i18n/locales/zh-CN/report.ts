@@ -134,6 +134,7 @@ const report = {
     logoUrl: 'Logo 链接',
     logoOptional: '留空则不放 Logo',
     defaultHint: '三项都留空时使用默认署名（演示数据里的那一家服务商）。',
+    defaultHintLive: '三项都留空时使用默认署名。',
     applyHint: '改完白标信息后点「生成报告」生效。',
     none: '不带署名',
     preparedBy: '本报告由 {{agency}} 出品',
@@ -145,7 +146,9 @@ const report = {
 
   export: {
     title: '导出与分享',
-    desktopOnly: '{{format}} 由桌面端提供，演示模式下不可用。',
+    desktopOnly: '{{format}} 需要桌面端导出。',
+    desktopReady: '{{format}} 由桌面端原生导出。',
+    desktopPending: '{{format}} 将在桌面端后续提供。',
     done: '已导出：{{path}}',
     cancelled: '已取消导出',
     generatedAt: '生成时间',

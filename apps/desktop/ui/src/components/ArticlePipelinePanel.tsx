@@ -1,5 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons';
-import { Alert, Button, Space, Typography } from 'antd';
+import { Button, Space, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 import type { Article, ArticleSchedule } from '../api/types';
@@ -42,9 +42,9 @@ export interface ArticlePipelinePanelProps {
  * 它们是同一条因果链的两端：排期跑出稿子，稿子进队列等人审。分成两个 Tab 会让人
  * 点完「立即运行」还要再点一次才看得见产出（走查清单第 7 条要看的正是"点一下多出一篇待审"）。
  *
- * # 🔴 那句「不跑真实定时任务」常驻（DR-85）
- * 演示模式没有定时器，`next_run_at` 只是按 freq + time 算出来的显示值。这句话是本页
- * 两句必须常驻的说明之一（另一句是页头的 `demoHint`），不写清楚就会被当成已落地的能力评审。
+ * # 演示边界（2026-11-19 产品裁定）
+ * demo 没有定时器，`next_run_at` 只是按 freq + time 算出来的显示值；
+ * 该边界统一由全局 `DemoModeStrip` 说明，本面板不再重复。
  *
  * # 🔴 纯展示组件
  * 写路径全在页面层（`pages/ArticleStudioPage.tsx`）：本组件不直连 IPC，也不持有任何状态，
@@ -79,12 +79,6 @@ export default function ArticlePipelinePanel({
   return (
     <>
       <Typography.Title level={5}>{t('article.schedules.title')}</Typography.Title>
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 12 }}
-        message={t('article.schedules.demoBody')}
-      />
       <Space wrap size={8} style={{ marginBottom: 12 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={onCreateSchedule}>
           {t('article.schedules.create')}

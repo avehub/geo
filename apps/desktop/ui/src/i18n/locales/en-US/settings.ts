@@ -209,7 +209,7 @@ const settings: ResourceBundle['settings'] = {
     openFailed: 'Could not open the folder',
     changeDirLater: 'Changing the data folder will be available in a later version.',
     changeDir: 'Change folder',
-    desktopOnly: 'Folder actions are provided by the desktop app and are unavailable in the demo.',
+    desktopOnly: 'Folder actions are available in the desktop app.',
     hint: 'The demo neither reads nor writes the disk. These are the locations the desktop app will use, with a sample size.',
     liveHint: 'These are the real data, database and log locations on this machine.',
   },

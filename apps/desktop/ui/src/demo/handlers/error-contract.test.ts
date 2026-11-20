@@ -15,7 +15,7 @@
  * # 怎么收集「demo 发出的每个 code」（非空洞的关键）
  * **不**正则扫源码（脆）。把 demo 已接线的每条错误路径都**真的触发一遍**，catch 到 payload 后逐条比对
  * ⇒「发出去的」与「被钉的」是同一批对象。最后那条总扫用例还会断言收集到的 code 集合
- * **正好是** `SCENARIOS` 里那 47 条路径会发出的那 9 个码，证明触发面没有漏。
+ * **正好是** `SCENARIOS` 里那 46 条路径会发出的那 9 个码，证明触发面没有漏。
  *
  * ⚠ 本文件**不许**降级成「只断言 code 存在」，也**不许**为了过测试去改 `contracts/**`（禁改）。
  */
@@ -57,7 +57,7 @@ interface Scenario {
   name: string;
   cmd: string;
   /**
-   * 可选的**白盒前提**：在触发之前改内存库（先例：本文件的 `allPilotItemIds()` 直接读
+   * 可选的**白盒前提**：在触发之前改内存库（先例：`prompt-csv.test.ts:292-297` 直接改
    * `getDemoDb()`）。只有「命令入参造不出这个前提」时才用它，且要在用例里写明是白盒。
    */
   setup?: () => void;
@@ -70,8 +70,6 @@ interface Scenario {
 const NOT_FOUND_KEYS = ['id', 'kind'];
 const VALIDATION_2 = ['field', 'reason'];
 const VALIDATION_3 = ['field', 'reason', 'value'];
-/** `prompt_item_delete` 的「不许删空」那一支：`expected` 装 `<N`、`value` 装请求条数。 */
-const VALIDATION_4 = ['expected', 'field', 'reason', 'value'];
 /** `prompt_set/empty_import` 在契约里登记的 params 是**空数组** ⇒ 一个键都不许加。 */
 const VALIDATION_0: string[] = [];
 /**
@@ -79,13 +77,6 @@ const VALIDATION_0: string[] = [];
  * 契约给这条码登记了两个键，发射点也是两个 ⇒ 与 `validation/failed` 的三键形态**不能混**。
  */
 const LLM_CONFIG_2 = ['reason', 'value'];
-
-/** 小样本题库的全部条目 id（造「一次删光」这个前提用）。 */
-function allPilotItemIds(): string[] {
-  return getDemoDb()
-    .promptItems.filter((item) => item.set_id === SEED_PILOT_SET_ID)
-    .map((item) => item.id);
-}
 
 /** 一份表头合法、但唯一数据行 `text` 为空的 CSV（⇒ 0 条可导入）。 */
 const EMPTY_IMPORT_CSV = `${PROMPT_CSV_HEADER.join(',')}\n ,pricing_plan,3,,,,1`;
@@ -380,7 +371,7 @@ const SCENARIOS: Scenario[] = [
     keys: NOT_FOUND_KEYS,
   },
 
-  // ---- M2：validation/failed 的四个发射点（键集分别是 2 / 2 / 2 / 4 个）----
+  // ---- M2：validation/failed 的三个发射点（键集都是 2 个）----
   {
     name: 'prompt_set_rename with a blank label',
     cmd: 'prompt_set_rename',
@@ -401,13 +392,6 @@ const SCENARIOS: Scenario[] = [
     args: () => ({ set_id: SEED_PILOT_SET_ID, ids: [] }),
     code: 'validation/failed',
     keys: VALIDATION_2,
-  },
-  {
-    name: 'prompt_item_delete that would empty the whole set',
-    cmd: 'prompt_item_delete',
-    args: () => ({ set_id: SEED_PILOT_SET_ID, ids: allPilotItemIds() }),
-    code: 'validation/failed',
-    keys: VALIDATION_4,
   },
   {
     name: 'prompt_set_import_csv with a missing header column',
@@ -601,11 +585,11 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
 
   it('总扫：把每条错误路径全部触发一遍，逐条比对契约词表，并证明触发面没有漏', async () => {
     // 条数写死在这里而不是标题里：将来加一条路径必须同时改这个数，改不动就是没真的加。
-    expect(SCENARIOS).toHaveLength(47);
+    expect(SCENARIOS).toHaveLength(46);
     // 🔴 **顺序执行**，不是 `Promise.all`（15b #45 / Task 14 R1 复审 M-1）。
     //
     // `emit` 的形状是「先 `scenario.setup?.()`，再 `demoInvoke`」，而 `demo/backend.ts:170-171`
-    // 在**分派之前**就 `await withLatency()` ⇒ `Promise.all(map(...))` 下 47 个 setup 会**全部**
+    // 在**分派之前**就 `await withLatency()` ⇒ `Promise.all(map(...))` 下 46 个 setup 会**全部**
     // 先于任何 handler 跑完，于是「后一条场景的前提」污染「前一条场景的调用」。
     // 实测后果：`custom without a base url` 拿到了下一条 setup 填进去的 base_url，
     // 发的是 `missing_model` 而不是 `missing_base_url`；而总扫原先只比 **code + 键集**、
@@ -665,7 +649,7 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
     // 复审席注入探针实测：`custom without a base url` 那条名字叫「没有 base_url」，
     // 但它实际发的是 `missing_model` —— 因为 `emit` 先跑 `setup`、而 `demo/backend.ts:170-171`
     // 是 `await withLatency()` **在分派之前**，总扫用 `Promise.all(map(...))` ⇒
-    // **全部 47 个 setup 先于任何 handler 跑完**，于是下一条场景的 setup（填 base_url）
+    // **全部 46 个 setup 先于任何 handler 跑完**，于是下一条场景的 setup（填 base_url）
     // 污染了这一条。总扫原先只断言 **code + 键集**、不比键值 ⇒ 最后两条 payload 完全相同却静默通过。
     const reasonOf = (name: string): string => {
       const index = SCENARIOS.findIndex((scenario) => scenario.name === name);
@@ -700,7 +684,7 @@ describe('demo/handlers · 错误契约第 1 层：发出的键必须落在契�
     // 这一维上**同盲**（两者都忽略），换成 `toEqual` 并不比原来强；`toStrictEqual` 才真把它纳入判据。
     // ⚠ `scenario.setup` 是**造前提**（属场景本身，例如把库里的 `base_url` 填上），不是「调用的
     // 副作用」⇒ 先跑一遍把前提铺好再快照。`emit` 里还会再跑一次，那些 setup 都是幂等赋值，
-    // 所以快照之后库只会因**调用**而变——判据强度不变（本文件 47 条路径一条都不许改库）。
+    // 所以快照之后库只会因**调用**而变——判据强度不变（本文件 46 条路径一条都不许改库）。
     for (const scenario of SCENARIOS) {
       scenario.setup?.();
     }

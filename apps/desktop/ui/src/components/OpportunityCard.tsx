@@ -1,6 +1,7 @@
 import { Button, Card, Space, Tag, Tooltip, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 
+import { runtime } from '../api/runtime';
 import type { SearchOpportunity, SearchOpportunityStatus } from '../api/types';
 import { SEARCH_RULE_KEY_BY_ID } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
@@ -33,8 +34,8 @@ const STATUS_COLORS: Record<SearchOpportunityStatus, string> = {
  * "为什么给我这条建议"要能在卡上就地回答，而不是让用户去猜算法。
  *
  * # 🔴 采纳**不**自动生成处方（DR-102）
- * 采纳只是把它排进下一轮处方排序，所以翻成 `adopted` 之后卡上常驻
- * `opportunity.adopted` 那一句，免得用户等着看处方长出来。
+ * 采纳只是把它排进下一轮处方排序；桌面端翻成 `adopted` 后显示 `adoptedLive`，
+ * demo 不重复演示提示。
  *
  * # 🔴 规则名走 `SEARCH_RULE_KEY_BY_ID`，不走数据里的 `title_key`
  * 两者内容相同，但 `rule_id` 是 1~6 的**数字联合**（编译期穷尽），`title_key` 是自由字符串
@@ -86,9 +87,9 @@ export default function OpportunityCard({
         </Tag>
       </Space>
 
-      {opportunity.status === 'adopted' ? (
+      {opportunity.status === 'adopted' && runtime === 'tauri' ? (
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          {t('webmasterData.opportunity.adopted')}
+          {t('webmasterData.opportunity.adoptedLive')}
         </Typography.Paragraph>
       ) : null}
       {opportunity.status === 'ignored' ? (

@@ -8,8 +8,8 @@
  * 那正是 `entity.contentStatuses` 那个已被收掉的缺陷类（判据在 `i18n/enum-label-prefixes.test.ts`）。
  *
  * # 文案合规（AGENTS 规则 6）
- * 不承诺排名与效果；`staticNote` / `demoBody` 两句必须显示——搜索量、竞争难度与 AI 生成的问答
- * 在演示模式下都是**预置静态值**，不写清楚就等于让产品负责人拿演示数据当真实调研评审。
+ * 不承诺排名与效果；搜索量、竞争难度与 AI 生成的问答在 demo 里都是**预置静态值**。
+ * 演示边界统一由全局 `DemoModeStrip` 说明，模块页与弹窗不再重复 `staticNote` / `demoBody`。
  *
  * ⚠ 插值变量一律不叫 `count`（i18next 会走复数分支去找 `_one` / `_other`，本词典没有）。
  */
@@ -76,6 +76,7 @@ const library = {
     exportCsv: '导出 CSV',
     exportJsonLd: '导出 FAQPage JSON-LD',
     demoModeHint: '演示模式下导出走浏览器下载，文件名回显在提示里。',
+    liveModeHint: '导出由桌面端写入文件，完成后显示保存位置。',
   },
 
   keyword: {
@@ -127,13 +128,14 @@ const library = {
     demoBody: '演示模式不调用模型：问答取自预置语料池，走查的是产物形态（分类、意图、审核态、JSON-LD），不是文笔。',
     generated: '已生成 {{total}} 条常见问题',
     generatedNone: '预置语料池里没有符合这些意图的新问答了：换个意图，或手动录入。',
+    generatedNoneLive: '模型这次没有返回符合所选意图的新问答：请调整意图后重试，或手动录入。',
     saved: '已保存常见问题',
     deleted: '已删除 {{total}} 条常见问题',
     deleteConfirmTitle: '删除常见问题',
     deleteConfirmContent: '将删除 {{total}} 条常见问题，此操作不可撤销。',
     requiredQuestion: '请填写问题',
     requiredAnswer: '请填写答案',
-    complianceUnchecked: '演示模式未执行合规扫描',
+    complianceUnchecked: '未执行合规扫描',
     exportDisabled: '没有「已通过」的问答可导出：JSON-LD 只收录人工审核通过的条目。',
     jsonldTitle: 'FAQPage 结构化数据预览',
     jsonldHint: '把这段 JSON-LD 放进官网页面的 head 里，搜索引擎与 AI 助手可以直接读取问答对。',

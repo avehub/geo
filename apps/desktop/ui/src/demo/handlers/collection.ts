@@ -10,7 +10,7 @@
  *   重跑之后**也不重算**——重算就等于在 demo 里实现记账口径，那必然与真后端漂移。
  * 以上差异登记在 `docs/superpowers/specs/2026-09-23-demo-vs-backend-known-divergences.md`。
  *
- * # 错误码：只用契约里已有的（`contracts/error-codes.json` 冻结在 43 条）
+ * # 错误码：只用契约里已有的（`contracts/error-codes.json` 冻结在 44 条）
  * - 项目不存在 ⇒ `project/not_found`（`kind: 'project'`）；
  * - 题库不存在 ⇒ `prompt_set/not_found`（`kind: 'prompt_set'`）；
  * - 轮次 / 任务 / 证据的 id 认不出 ⇒ `validation/failed` + `reason: 'invalid_id'`

@@ -102,24 +102,24 @@ describe('设置 · 数据与存储段', () => {
     expect(screen.queryByText('/tmp/gdk-stub/exports')).not.toBeInTheDocument();
   });
 
-  it('「打开目录」「更改目录」置灰，并说明由桌面端提供', async () => {
+  it('桌面端「打开目录」可用，「更改目录」置灰并说明后续版本', async () => {
     stub();
     renderStorage();
     await screen.findByText('/tmp/gdk-stub/data');
 
     // ⚠ 用正则而不是全字符串：antd 的图标 span 自带 `aria-label`（`folder-open` / `swap`），
     // 它会算进按钮的可访问名，`{ name: '打开目录' }` 因此匹配不上（与「保存设置」那条同口径）。
-    expect(screen.getByRole('button', { name: /打开目录/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /打开目录/ })).toBeEnabled();
     expect(screen.getByRole('button', { name: /更改目录/ })).toBeDisabled();
-    expect(screen.getByText('目录操作由桌面端提供，演示模式下不可用。')).toBeInTheDocument();
+    expect(screen.getByText('更改数据目录将在后续版本提供。')).toBeInTheDocument();
   });
 
-  it('常驻一句"演示模式不读写磁盘"：这些路径在浏览器里并不存在', async () => {
+  it('桌面端显示真实目录说明，不再说“演示模式不读写磁盘”', async () => {
     stub();
     renderStorage();
 
     expect(
-      await screen.findByText('演示模式不读写磁盘，下面是桌面端将使用的位置与一份示例占用。'),
+      await screen.findByText('下面是你这台机器上的真实数据目录、数据库与日志位置。'),
     ).toBeInTheDocument();
   });
 
@@ -139,7 +139,7 @@ describe('设置 · 数据与存储段', () => {
     // 先等数据到位：`app_environment` 回来之前这一段渲染的是 Card 的 loading 骨架。
     await screen.findByText('/tmp/gdk-stub/data');
     expect(screen.getByText('Data directory')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Open folder/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Open folder/ })).toBeEnabled();
     expect(screen.getByRole('button', { name: /Change folder/ })).toBeDisabled();
     // 路径本身语言无关，照旧上屏
     expect(screen.getByText('/tmp/gdk-stub/data')).toBeInTheDocument();

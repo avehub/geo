@@ -8,12 +8,12 @@
  * 比描述性的「搜索数据」更有指向性。en 侧同理选 `Webmaster Data` 而不是 `Search Console Data`
  * ——后者会让人以为只有 Google。
  *
- * # 🔴 三句常驻说明（DR-99，照 M6.5 `site.demoBody` / `site.staticNote` 的双常驻纪律）
- * `demoBody`（页顶）/ `staticNote`（机会段顶）/ `metricNote`（汇总段顶）**都不许藏进问号 tooltip**。
+ * # 说明收口（2026-11-19 产品裁定）
+ * 演示边界统一由全局 `DemoModeStrip` 的 `aboutBody` 说明；页面保留 `liveBody`（运行时中立）
+ * 与 `metricNote`（汇总口径），不再重复 `demoBody` / `staticNote`。
  * 这一页是"一半真一半假"：映射查表、A 类求和、B 类重算、筛选与交集区间在前端**真做**
  * （导入之后合计真的会变），而 DR-100 那 6 条规则的判定是 `geo-domain` 纯函数、
- * demo 只端静态机会清单（导入不会长出新机会）。这个不对称不说清，
- * 产品负责人就会把它误读成"分析坏了"（差异台账 E-68 ④ 点名的正是这一条）。
+ * demo 只端静态机会清单（导入不会长出新机会）。这个不对称由 `aboutBody` 统一说明。
  *
  * # 🔴 三层归一的措辞刻意避开「分级 / 档位」
  * `dictionary.test.ts` 的 #22 判据是"同一句里同时出现『分级|档位』与『重算』⇒ 红"，

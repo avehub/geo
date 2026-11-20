@@ -7,7 +7,7 @@
  * - 出不了报告的轮次在选择器里置灰，并说明为什么；
  * - 🔴 三个版本的差别由**后端给哪些节**决定，前端不裁剪（预览里就是那几个节标题）；
  * - 白标信息要显式点「生成报告」才生效，留空回落默认署名；
- * - 🔴 六个导出按钮都渲染，但只有三个能点，其余逐条说明"由桌面端提供"；
+ * - 🔴 七个导出按钮都渲染，demo 里只有三个能点，其余逐条说明"由桌面端提供"；
  * - 免责声明与口径说明每一版都在（合规红线，AGENTS 规则 6）。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -125,14 +125,12 @@ beforeEach(() => {
 });
 
 describe('ReportPage · 生成之前', () => {
-  it('🔴 空状态 + 出不了报告的轮次置灰并说明原因 + 静态值口径', async () => {
+  it('🔴 空状态 + 出不了报告的轮次置灰并说明原因；页面不重复演示提示', async () => {
     renderPage();
     await waitLoaded();
 
     expect(screen.getByText('选择一轮已完成的采集，再生成报告。')).toBeInTheDocument();
-    expect(
-      screen.getByText('报告里的数字取自诊断页的静态口径，演示模式不重算。'),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/演示模式/)).not.toBeInTheDocument();
     expect(
       screen.getByText('排队中、采集中或失败的轮次不能出报告。'),
     ).toBeInTheDocument();
@@ -168,7 +166,7 @@ describe('ReportPage · 生成之前', () => {
     expect(screen.getByText('服务商名称')).toBeInTheDocument();
     expect(
       screen.getByText(
-        '三项都留空时使用默认署名（演示数据里的那一家服务商）。 改完白标信息后点「生成报告」生效。',
+        '三项都留空时使用默认署名。 改完白标信息后点「生成报告」生效。',
       ),
     ).toBeInTheDocument();
   });
@@ -230,7 +228,7 @@ describe('ReportPage · 老板版', () => {
     ).toBeInTheDocument();
   });
 
-  it('🔴 六个导出按钮都渲染，Word / PDF / PNG 置灰并逐条说明', async () => {
+  it('🔴 七个导出按钮都渲染，Word / PDF / XLSX / PNG 在 demo 置灰并逐条说明', async () => {
     const user = userEvent.setup();
     renderPage();
     await waitLoaded();
@@ -240,10 +238,10 @@ describe('ReportPage · 老板版', () => {
     for (const format of ['Markdown', 'HTML', 'CSV']) {
       expect(within(bar).getByRole('button', { name: new RegExp(format) })).toBeEnabled();
     }
-    for (const format of ['Word', 'PDF', 'PNG']) {
+    for (const format of ['Word', 'PDF', 'XLSX', 'PNG']) {
       expect(within(bar).getByRole('button', { name: new RegExp(format) })).toBeDisabled();
       expect(
-        within(bar).getByText(`${format} 由桌面端提供，演示模式下不可用。`),
+        within(bar).getByText(`${format} 需要桌面端导出。`),
       ).toBeInTheDocument();
     }
     expect(within(bar).getByRole('button', { name: /复制正文/ })).toBeEnabled();

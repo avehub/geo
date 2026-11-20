@@ -10,6 +10,7 @@
  * ——回退它就等于把泄漏面原地留着，而且会让"词典漏了一个 id"从显眼的机器记号
  * 变成静默的中文串。
  */
+import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -68,7 +69,7 @@ function makeProvider(provider: string): ProviderInfo {
   return {
     provider,
     label_zh: ZH_SENTINEL,
-    base_url: `https://api.${provider}.example/v1`,
+    base_url: provider === 'custom' ? '' : `https://api.${provider}.example/v1`,
     default_model: `${provider}-chat`,
     input_per_mtok: 1,
     output_per_mtok: 2,
@@ -89,7 +90,7 @@ function renderSelect(
       providers={providers}
       value={value}
       onChange={noop}
-      baseUrl=""
+      baseUrl={null}
       onBaseUrlChange={noop}
       protocol={protocol}
       onProtocolChange={noopProtocol}
@@ -140,30 +141,35 @@ describe('ProviderSelect · 12 个稳定 id 的词条', () => {
 });
 
 describe('ProviderSelect · 不再渲染后端的 label_zh', () => {
-  it('zh-CN 下渲染词典里的中文名，哨兵串一次都不出现', () => {
-    const { container } = renderSelect(STABLE_PROVIDER_IDS.map(makeProvider), 'moonshot');
+  it('zh-CN 下渲染词典里的中文名，哨兵串一次都不出现', async () => {
+    const user = userEvent.setup();
+    renderSelect(STABLE_PROVIDER_IDS.map(makeProvider), 'moonshot');
 
-    expect(screen.getByRole('radio', { name: 'Kimi（月之暗面）' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'DeepSeek（深度求索）' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: '自定义服务商' })).toBeInTheDocument();
-    expect(container.textContent).not.toContain(ZH_SENTINEL);
+    // 选中项在收起的选择器上；其余项展开下拉后读，断言的是词典标签而不是后端 label_zh。
+    expect(screen.getByText('Kimi（月之暗面）')).toBeInTheDocument();
+    await user.click(screen.getByLabelText('模型服务商'));
+    expect(await screen.findByTitle('DeepSeek（深度求索）')).toBeInTheDocument();
+    expect(screen.getByTitle('自定义服务商')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(ZH_SENTINEL);
   });
 
-  it('en-US 下渲染英文名，哨兵串同样不出现（这才是原泄漏面）', () => {
-    const { container } = renderSelect(STABLE_PROVIDER_IDS.map(makeProvider), 'moonshot', 'en-US');
+  it('en-US 下渲染英文名，哨兵串同样不出现（这才是原泄漏面）', async () => {
+    const user = userEvent.setup();
+    renderSelect(STABLE_PROVIDER_IDS.map(makeProvider), 'moonshot', 'en-US');
 
-    expect(screen.getByRole('radio', { name: 'Kimi (Moonshot)' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Custom' })).toBeInTheDocument();
-    expect(container.textContent).not.toContain(ZH_SENTINEL);
+    expect(screen.getByText('Kimi (Moonshot)')).toBeInTheDocument();
+    await user.click(screen.getByLabelText('Model provider'));
+    expect(await screen.findByTitle('Custom')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(ZH_SENTINEL);
     // 英文界面里不许残留任何中文品牌名
-    expect(container.textContent).not.toContain('月之暗面');
+    expect(document.body.textContent).not.toContain('月之暗面');
   });
 
   it('词典查不到的 provider id 回退成 id 本身，绝不回退 label_zh', () => {
-    const { container } = renderSelect([makeProvider('mystery_llm')], 'mystery_llm');
+    renderSelect([makeProvider('mystery_llm')], 'mystery_llm');
 
-    expect(screen.getByRole('radio', { name: 'mystery_llm' })).toBeInTheDocument();
-    expect(container.textContent).not.toContain(ZH_SENTINEL);
+    expect(screen.getByText('mystery_llm')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(ZH_SENTINEL);
   });
 
   it('自证（对照组）：哨兵判据不是永真的——把 label_zh 当 children 渲染就会被抓到', () => {
@@ -247,6 +253,63 @@ describe('#25 · 查表机制只有一份实现 + 接口地址占位提示走词
 });
 
 /**
+ * 2026-11-06 飞书式重排：所有服务商的接口地址都改成**可编辑输入框**，
+ * 预设值只是预填，用户可改成企业网关或代理。旧形态对预设厂商只渲染只读文本。
+ */
+describe('ProviderSelect · 接口地址（飞书式重排）', () => {
+  it('预设服务商的接口地址是可编辑输入框，并带入官方默认地址', () => {
+    renderSelect(STABLE_PROVIDER_IDS.map(makeProvider), 'deep_seek');
+
+    const input = screen.getByLabelText(zhCN.settings.providerForm.baseUrl);
+    expect(input).toBeEnabled();
+    expect(input).toHaveValue('https://api.deep_seek.example/v1');
+    expect(screen.getByText(zhCN.settings.providerForm.baseUrlHint)).toBeInTheDocument();
+    expect(screen.queryByText(zhCN.settings.providerForm.baseUrlCustomHint)).not.toBeInTheDocument();
+  });
+
+  it('自定义服务商同样用输入框；空值给占位提示与必填说明', () => {
+    renderSelect(STABLE_PROVIDER_IDS.map(makeProvider), 'custom');
+
+    const input = screen.getByLabelText(zhCN.settings.providerForm.baseUrl);
+    expect(input).toBeEnabled();
+    expect(input).toHaveValue('');
+    expect(input).toHaveAttribute('placeholder', zhCN.settings.providerForm.baseUrlPlaceholder);
+    expect(screen.getByText(zhCN.settings.providerForm.baseUrlCustomHint)).toBeInTheDocument();
+  });
+
+  it('修改接口地址经 onBaseUrlChange 出去（受控）', async () => {
+    const user = userEvent.setup();
+    const seen: Array<string | null> = [];
+
+    function Harness() {
+      const [baseUrl, setBaseUrl] = useState<string | null>(null);
+      return (
+        <ProviderSelect
+          providers={STABLE_PROVIDER_IDS.map(makeProvider)}
+          value="deep_seek"
+          onChange={noop}
+          baseUrl={baseUrl}
+          onBaseUrlChange={(next) => {
+            seen.push(next);
+            setBaseUrl(next);
+          }}
+          protocol="openai_compat"
+          onProtocolChange={noopProtocol}
+        />
+      );
+    }
+
+    renderWithProviders(<Harness />);
+    const input = screen.getByLabelText(zhCN.settings.providerForm.baseUrl);
+    await user.clear(input);
+    await user.type(input, 'https://gateway.example.com/v1');
+
+    expect(input).toHaveValue('https://gateway.example.com/v1');
+    expect(seen.at(-1)).toBe('https://gateway.example.com/v1');
+  });
+});
+
+/**
  * Plan B Task 4：**模型协议**控件（spec §6 / DR-34）。
  *
  * 判据是"只在自定义下出现"这一条**结构事实**，不是样式：预设厂商与中转站的协议由后端固定，
@@ -301,7 +364,7 @@ describe('ProviderSelect · 模型协议（Task 4）', () => {
         providers={STABLE_PROVIDER_IDS.map(makeProvider)}
         value="custom"
         onChange={noop}
-        baseUrl=""
+        baseUrl={null}
         onBaseUrlChange={noop}
         protocol="anthropic"
         onProtocolChange={(protocol) => seen.push(protocol)}

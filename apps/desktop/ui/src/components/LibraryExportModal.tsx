@@ -40,7 +40,7 @@ export default function LibraryExportModal({
   const { message } = App.useApp();
 
   const downloadMutation = useMutation({
-    mutationFn: () => client.exportWriteFile(fileName, content, withBom),
+    mutationFn: () => client.exportWriteFile(fileName, content, withBom, t('common.exportDialogTitle')),
     onSuccess: (path) => {
       if (path === null) return;
       message.success(t('library.export.downloaded', { path }));

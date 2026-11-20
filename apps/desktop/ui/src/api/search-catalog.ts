@@ -162,7 +162,8 @@ export const SEARCH_SOURCE_CATALOG: readonly SearchSourceCatalogEntry[] = [
     // ✅ OAuth 排期第 2 位（DR-93）；🔴 sensitive scope 的应用验证材料**现在就递**（周级流程）。
     auth_mode: 'oauth',
     ingest_modes: ['api', 'file_import', 'paste_parse'],
-    binding_fields: ['siteUrl'],
+    // GSC 需要 OAuth Client ID（非敏感应用标识）；client secret 另走钥匙串。
+    binding_fields: ['siteUrl', 'client_id'],
     alias_columns: aliasColumnsOf('gsc'),
     // 官方"数据延迟约 2~3 天"⇒ 取上界 3（宁可区间收敛得早一点，也不要静默少算）。
     data_through_rule: { lag_days: 3, cadence: 'daily' },
@@ -174,7 +175,9 @@ export const SEARCH_SOURCE_CATALOG: readonly SearchSourceCatalogEntry[] = [
     group: 'webmaster_global',
     region: 'global',
     phase: 1,
-    // ✅ OAuth 排期第 3 位；🔴 必须走 **REST**（SOAP / POX 已于 2026-08-31 退役，DR-93）。
+    // 🔴 必须走 **REST**（SOAP / POX 已于 2026-08-31 退役，DR-93）。
+    // 凭据是官方 API Key（钥匙串 `keyring://llm/bing_wmt`）：Bing 的 OAuth 控制台
+    // 不接受 loopback 回调地址，所以没有授权流程、也不再有 client_id 绑定。
     auth_mode: 'oauth',
     ingest_modes: ['api', 'file_import', 'paste_parse'],
     binding_fields: ['siteUrl'],

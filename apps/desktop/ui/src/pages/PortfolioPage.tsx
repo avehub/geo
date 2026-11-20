@@ -314,7 +314,7 @@ export default function PortfolioPage() {
       />
 
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-        {t('portfolio.demoNote')}
+        {t('portfolio.liveNote')}
       </Typography.Paragraph>
 
       <Row gutter={12} style={{ marginBottom: 12 }}>

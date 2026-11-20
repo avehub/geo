@@ -1,6 +1,7 @@
 import { Descriptions, Drawer, Input, Space, Tag, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 
+import { runtime } from '../api/runtime';
 import type { Article, ArticleStatus } from '../api/types';
 import { enumLabel } from '../i18n/enum-label';
 import { dateTimeText } from './format';
@@ -53,7 +54,7 @@ export default function ArticlePreviewDrawer({
             {enumLabel(t, 'article.statuses', article.status)}
           </Tag>
           <Tag>{enumLabel(t, 'article.sources', article.source)}</Tag>
-          {article.status === 'pending_review' ? (
+          {article.status === 'pending_review' && runtime === 'demo' ? (
             <Tag color="orange">{t('article.review.complianceUnchecked')}</Tag>
           ) : null}
         </Space>

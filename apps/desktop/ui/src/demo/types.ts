@@ -390,7 +390,7 @@ export interface ArticleDirectionSeedRow {
 /**
  * 造一个 `IpcErrorPayload` 形状的错误（简报 §B-7）。
  *
- * - **只造形状、不新增码**：`contracts/error-codes.json` 冻结在 43 条，`code` 必须是里面已有的；
+ * - **只造形状、不新增码**：`contracts/error-codes.json` 冻结在 44 条，`code` 必须是里面已有的；
  * - **`params` 的键集要同时满足两层**（B-13②，更正原先「必须完全一致」的口径，见简报 §A-11）：
  *   ① **对契约（词表）**——发出的每个键都 **∈** 该 code 在 `contracts/error-codes.json` 登记的 `params`
  *   数组（**子集**关系，不是相等）；② **对发射点（真值表）**——**精确键集以该 code 的 Rust 发射点为准**：

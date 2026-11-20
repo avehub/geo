@@ -363,8 +363,6 @@ export default function ArticleStudioPage() {
   return (
     <div>
       <PageHeader title={t('article.title')} description={t('article.lead')} />
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t('article.demoHint')} />
-
       {/* 三栏工作台（2026-11-02 产品裁定）：方向 → 模板 → 排期/评审同屏。
           窄窗（<1200）自动折行成两栏/一栏；每栏内部仍是原来的面板，写路径不变。 */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' }}>

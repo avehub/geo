@@ -536,14 +536,13 @@ describe('常驻守卫（第 9 条）· 每个页面/分段在 en-US 下整页�
     );
     await screen.findByRole('heading', { name: 'Knowledge base' });
     await expectDataLanded();
-    // 🔴 点名扫这五处：模块名（动态 key）、演示模式提示（本文件 mock 的是 demo 运行时，
-    // 2026-11-06 产品确认后它只在 demo 出现，漏翻就成了"假素材"）、
-    // 职责说明条（DR-73：同步横幅退役之后由它承担"实体卡与知识库不互相同步、导入是一次性复制"
-    // 的口径告知，漏了用户会以为改一处另一处跟着变）、统计条新加的那一格（`kb.stats.scripts`）、
-    // 与工具条上的导入入口（DR-81）。
+    // 🔴 点名扫这四处：模块名（动态 key）、职责说明条（DR-73：同步横幅退役之后由它承担
+    // "实体卡与知识库不互相同步、导入是一次性复制"的口径告知，漏了用户会以为改一处另一处跟着变）、
+    // 统计条新加的那一格（`kb.stats.scripts`）、与工具条上的导入入口（DR-81）。
+    // 演示边界由全局细条承担，页面里不再重复 Demo mode 提示。
     expectRendered('New entry');
     expect(screen.getAllByText(/Brand overview/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Demo mode: sample data only/)).toBeInTheDocument();
+    expect(screen.queryByText(/Demo mode/)).toBeNull();
     // ⚠ 用正则而不是整串相等：说明条里带破折号与弯引号，逐字抄一遍等于把词典值抄进测试
     // （词典改一个标点这里就假红，而这条判据要管的是"有没有翻"，不是"标点长什么样"）。
     expect(screen.getAllByText(/They do not sync with each other/).length).toBeGreaterThan(0);
@@ -574,13 +573,9 @@ describe('常驻守卫（第 9 条）· 每个页面/分段在 en-US 下整页�
     );
     await screen.findByRole('heading', { name: 'Keyword Library' });
     await expectDataLanded();
-    // 🔴 点名扫这句：它是本页最容易被漏翻、又最不能漏的一句（漏了就成了"假调研数据"）。
+    // 演示边界由全局细条承担，页面里不再重复 Demo mode 提示。
     expectRendered('Add manually');
-    expect(
-      screen.getByText(
-        'Monthly volume and competition difficulty are preset static values in demo mode; the frontend neither fetches nor computes them.',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/Demo mode/)).toBeNull();
 
     expect(unexplainedCjkText(), MESSAGE).toEqual([]);
   });
@@ -647,7 +642,7 @@ describe('常驻守卫（第 9 条）· 每个页面/分段在 en-US 下整页�
   it('AutoBuildProjectPage：自动采集屏全英文，含那句常驻的演示提示', () => {
     renderWithProviders(<AutoBuildProjectPage />, { locale: 'en-US' });
     // 🔴 点名扫这句：它是本页最容易被漏翻、又最不能漏的一句（漏了就成了"假抓取"）。
-    expectRendered('Demo mode does not fetch web pages. The extracted fields are preset data.');
+    expect(screen.queryByText(/Demo mode/)).toBeNull();
 
     expect(unexplainedCjkText(), MESSAGE).toEqual([]);
   });
@@ -842,14 +837,9 @@ describe('常驻守卫（第 9 条）· 每个页面/分段在 en-US 下整页�
     );
     await screen.findByRole('heading', { name: 'Article Studio' });
     await expectDataLanded();
-    // 🔴 点名扫这三处：演示模式提示（DR-85 的三句口径：不调模型 / 不自动跑 / 刷新即重置，
-    // 漏了用户会以为排期真的会到点出稿）、页题、与方向工作区的主按钮。
-    expect(
-      screen.getByText(
-        'Demo mode: directions, templates and articles are preset samples. ' +
-          'AI generation does not call a model, schedules do not fire on their own, and a reload resets everything.',
-      ),
-    ).toBeInTheDocument();
+    // 🔴 点名扫这三处：页题、方向工作区的主按钮，以及（反向）页面不重复 Demo mode 提示。
+    // 演示边界由全局细条承担。
+    expect(screen.queryByText(/Demo mode/)).toBeNull();
     expect(screen.getAllByText('Directions').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Prompt templates').length).toBeGreaterThan(0);
 

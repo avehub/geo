@@ -30,6 +30,11 @@ function pathname(): string {
   return screen.getByTestId('pathname').textContent ?? '';
 }
 
+/** DOM 顺序判据：`a` 在 `b` 之前。 */
+function precedes(a: HTMLElement, b: HTMLElement): boolean {
+  return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+}
+
 function renderPage(route = '/projects/new') {
   return renderWithProviders(
     <>
@@ -83,5 +88,20 @@ describe('NewProjectPage · 双入口（spec §7）', () => {
 
     expect(screen.getByText(COPY.subtitle)).toBeInTheDocument();
     expect(mockInvoke.allCalls()).toEqual([]);
+  });
+
+  it('④ 提示栏紧跟页头副标题，位于两张卡片之上', () => {
+    renderPage();
+
+    const subtitle = screen.getByText(COPY.subtitle);
+    const hint = screen.getByText(COPY.sameFields);
+    const autoTitle = screen.getByText(COPY.autoTitle);
+    const manualTitle = screen.getByText(COPY.manualTitle);
+
+    // 🔴 位置也是契约的一部分：同一条「字段口径一致」提示若掉到卡片下方，
+    // 用户会在做完选择之后才读到它，等于没有在决策点上给出信息。
+    expect(precedes(subtitle, hint)).toBe(true);
+    expect(precedes(hint, autoTitle)).toBe(true);
+    expect(precedes(hint, manualTitle)).toBe(true);
   });
 });

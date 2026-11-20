@@ -77,6 +77,7 @@ export default function ProjectListPage() {
           t('project.list.exportJsonFileName', { brand: project.brand_name }),
           JSON.stringify(payload, null, 2),
           false,
+          t('common.exportDialogTitle'),
         );
         if (saved !== null) message.success(t('project.list.jsonExported'));
         return;
@@ -94,6 +95,7 @@ export default function ProjectListPage() {
         t('project.list.exportCsvFileName', { brand: project.brand_name, label }),
         csv,
         true,
+        t('common.exportDialogTitle'),
       );
       if (saved !== null) message.success(t('project.list.csvExported', { label }));
     } catch (error) {
@@ -131,6 +133,11 @@ export default function ProjectListPage() {
           </>
         }
       />
+
+      {/* 页面提示栏固定在页头副标题下；表格操作说明先于表格出现。 */}
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 12, fontSize: 12 }}>
+        {t('project.list.hint')}
+      </Typography.Paragraph>
 
       {listQuery.isError && (
         <Alert
@@ -175,6 +182,7 @@ export default function ProjectListPage() {
         <ProjectTable
           projects={listQuery.data ?? []}
           loading={listQuery.isPending || listQuery.isFetching}
+          onOpenOverview={(project) => navigate(`/projects/${project.id}/overview`)}
           onOpenEntityCard={(project) => navigate(`/projects/${project.id}/entity-card`)}
           onOpenPrompts={(project) => navigate(`/projects/${project.id}/prompts`)}
           onToggleArchive={(project) =>
@@ -185,10 +193,6 @@ export default function ProjectListPage() {
           onTagsChange={(project, tags) => tagsMutation.mutate({ project, tags })}
         />
       </SectionCard>
-
-      <Typography.Paragraph type="secondary" style={{ marginTop: 12, fontSize: 12 }}>
-        {t('project.list.hint')}
-      </Typography.Paragraph>
     </div>
   );
 }

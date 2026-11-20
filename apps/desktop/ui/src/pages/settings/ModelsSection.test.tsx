@@ -41,40 +41,83 @@ function renderModels(locale?: 'zh-CN' | 'en-US') {
   return renderAtRoute(<SettingsPage />, '/settings/:section', '/settings/models', locale);
 }
 
+type TestUser = ReturnType<typeof userEvent.setup>;
+
+/** 飞书式重排后服务商是下拉选择；按可见标签选中一项。 */
+async function chooseProvider(
+  user: TestUser,
+  label: string,
+  fieldLabel = '模型服务商',
+) {
+  await user.click(screen.getByLabelText(fieldLabel));
+  const option = await waitFor(() => {
+    const node = [...document.querySelectorAll('.ant-select-item-option')].find(
+      (candidate) => candidate.getAttribute('title') === label,
+    );
+    if (!node) throw new Error(`未找到服务商选项：${label}`);
+    return node as HTMLElement;
+  });
+  await user.click(option);
+}
+
+async function waitForBaseUrl(value = 'https://api.deepseek.com/v1', label = '接口地址') {
+  await waitFor(() => expect(screen.getByLabelText(label)).toHaveValue(value));
+}
+
 describe('设置 · 模型服务商段', () => {
   beforeEach(() => mockInvoke.reset());
 
-  it('展示 Provider 的 base_url 与默认模型（只读）', async () => {
+  it('所有服务商的接口地址都是可编辑输入框，并预填官方默认地址', async () => {
     stub();
     renderModels();
 
-    expect(await screen.findByText('https://api.deepseek.com/v1')).toBeInTheDocument();
-    const model = screen.getByLabelText('默认模型');
-    expect(model).toHaveValue('deepseek-chat');
-    expect(model).toBeDisabled();
+    const input = await screen.findByLabelText('接口地址');
+    expect(input).toBeEnabled();
+    expect(input).toHaveValue('https://api.deepseek.com/v1');
+    expect(screen.getByText('留空时使用默认模型 deepseek-chat')).toBeInTheDocument();
   });
 
-  it('切换 Provider 后展示对应的 base_url 与默认模型', async () => {
+  it('页面顺序（飞书式）：接口地址 → API Key → 模型名与拉取按钮', async () => {
+    stub();
+    renderModels();
+    await waitForBaseUrl();
+
+    const baseUrl = screen.getByLabelText('接口地址');
+    const apiKey = screen.getByText('API Key', { selector: 'label' });
+    const modelName = screen.getByLabelText('模型名');
+    const fetch = screen.getByRole('button', { name: /拉取模型列表/ });
+
+    expect(
+      baseUrl.compareDocumentPosition(apiKey) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      apiKey.compareDocumentPosition(modelName) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      modelName.compareDocumentPosition(fetch) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('切换 Provider 后接口地址换成该家的官方默认值，默认模型提示同步更新', async () => {
     stub();
     const user = userEvent.setup();
     renderModels();
-    await screen.findByText('https://api.deepseek.com/v1');
+    await waitForBaseUrl();
 
-    // Task 8：单选钮的名字改由 `settings.providers.<id>` 渲染，不再读 fixture 的
-    // `label_zh`（那是后端产出自然语言的泄漏面）。zh 值逐字取自 `LlmProvider::label_zh()`。
-    await user.click(screen.getByRole('radio', { name: 'Kimi（月之暗面）' }));
+    // 服务商名由 `settings.providers.<id>` 渲染，不再读 fixture 的 `label_zh`。
+    await chooseProvider(user, 'Kimi（月之暗面）');
 
-    expect(await screen.findByText('https://api.moonshot.cn/v1')).toBeInTheDocument();
-    expect(screen.getByLabelText('默认模型')).toHaveValue('moonshot-v1-8k');
+    await waitForBaseUrl('https://api.moonshot.cn/v1');
+    expect(screen.getByText('留空时使用默认模型 moonshot-v1-8k')).toBeInTheDocument();
   });
 
   it('选「自定义」后填接口地址与模型名，保存时随设置一起提交', async () => {
     stub();
     const user = userEvent.setup();
     renderModels();
-    await screen.findByText('https://api.deepseek.com/v1');
+    await waitForBaseUrl();
 
-    await user.click(screen.getByRole('radio', { name: /自定义/ }));
+    await chooseProvider(user, '自定义服务商');
     await user.type(await screen.findByLabelText('接口地址'), 'https://api.internal/v1');
     await user.type(screen.getByLabelText('模型名'), 'my-model');
     await user.click(screen.getByRole('button', { name: /保存设置/ }));
@@ -86,14 +129,39 @@ describe('设置 · 模型服务商段', () => {
     expect(saved.model.model).toBe('my-model');
   });
 
+  /**
+   * 2026-11-06 用户报障：自定义服务商只填了接口地址、模型名留空也能保存，
+   * 之后自动建档在 `LlmFactory::config_from_settings` 就返回 `missing_model`，
+   * 静默降级成建项资料。这里在**保存前**把不可用配置标出来。
+   */
+  it('自定义服务商未填模型名时，就地告警（该配置会让 AI 功能降级）', async () => {
+    stub();
+    const user = userEvent.setup();
+    renderModels();
+    await waitForBaseUrl();
+
+    await chooseProvider(user, '自定义服务商');
+
+    expect(
+      await screen.findByText('自定义服务商必须填写模型名，否则自动建档等 AI 功能会降级。'),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('模型名'), 'my-model');
+    await waitFor(() =>
+      expect(
+        screen.queryByText('自定义服务商必须填写模型名，否则自动建档等 AI 功能会降级。'),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it('🔴 显式保存（DR-28）：改了但没点保存 ⇒ 一次 settings_update 都不发', async () => {
     stub();
     const user = userEvent.setup();
     renderModels();
-    await screen.findByText('https://api.deepseek.com/v1');
+    await waitForBaseUrl();
 
-    await user.click(screen.getByRole('radio', { name: 'Kimi（月之暗面）' }));
-    await screen.findByText('https://api.moonshot.cn/v1');
+    await chooseProvider(user, 'Kimi（月之暗面）');
+    await waitForBaseUrl('https://api.moonshot.cn/v1');
     expect(screen.getByText('有未保存的修改')).toBeInTheDocument();
 
     // 等过防抖窗口（500ms）：自动保存段这时候已经写库了，本段必须一次都没写。
@@ -105,15 +173,13 @@ describe('设置 · 模型服务商段', () => {
     stub();
     const user = userEvent.setup();
     renderModels();
-    await screen.findByText('https://api.deepseek.com/v1');
+    await waitForBaseUrl();
 
-    await user.click(screen.getByRole('radio', { name: /自定义/ }));
+    await chooseProvider(user, '自定义服务商');
     await user.type(await screen.findByLabelText('接口地址'), 'https://api.internal/v1');
-    // Task 8：单选钮的名字改由 `settings.providers.<id>` 渲染，不再读 fixture 的
-    // `label_zh`（那是后端产出自然语言的泄漏面）。zh 值逐字取自 `LlmProvider::label_zh()`。
-    await user.click(screen.getByRole('radio', { name: 'Kimi（月之暗面）' }));
+    await chooseProvider(user, 'Kimi（月之暗面）');
 
-    expect(await screen.findByText('https://api.moonshot.cn/v1')).toBeInTheDocument();
+    await waitForBaseUrl('https://api.moonshot.cn/v1');
     await user.click(screen.getByRole('button', { name: /保存设置/ }));
 
     await waitFor(() => expect(mockInvoke.callsOf('settings_update')).toHaveLength(1));
@@ -166,7 +232,7 @@ describe('设置 · 模型服务商段', () => {
     // 后端的 `message`（`'未配置 API Key'`）变成稳定 `code` 的词典模板。
     // 断言由正则收紧成**全字符串**——强度只增不减。
     expect(
-      await screen.findByText('还没有配置 API Key，请先在「设置」里填写并保存'),
+      await screen.findByText('还没有配置 API Key，请先填写并保存'),
     ).toBeInTheDocument();
   });
 
@@ -198,7 +264,7 @@ describe('设置 · 模型服务商段', () => {
 
     await user.click(screen.getByRole('button', { name: /测试连接/ }));
 
-    expect(await screen.findByText(/deepseek-chat/)).toBeInTheDocument();
+    expect(await screen.findByText('812 ms')).toBeInTheDocument();
     const labels = [...document.querySelectorAll('.ant-descriptions-item-label')].map(
       (node) => node.textContent,
     );
@@ -226,7 +292,7 @@ describe('设置 · 模型服务商段', () => {
     renderModels('en-US');
 
     expect(await screen.findByRole('heading', { name: 'Model providers' })).toBeInTheDocument();
-    expect(screen.getByText('Model provider')).toBeInTheDocument();
+    expect(screen.getAllByText('Model provider').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByLabelText('Model name')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Save settings/ })).toBeInTheDocument();
   });
@@ -236,10 +302,9 @@ describe('设置 · 模型服务商段', () => {
     renderModels();
 
     expect(await screen.findByRole('heading', { name: '模型服务商' })).toBeInTheDocument();
-    // ⚠ `getByText` 换成 `getAllByText`：拆段之后「模型服务商」这一个串同时是**菜单项**、
-    // **分段标题**与**卡片标题**（`settings.sections.models` 与 `settings.page.modelCard`
-    // 的 zh 值逐字相同，刻意不改文案）。断言强度不减：仍然要求它上屏，且至少两处
-    // （标题 + 卡片）——菜单项那一处由 `SettingsLayout.test.tsx` 的"恰好 5 项"钉住。
+    // ⚠ `getByText` 换成 `getAllByText`：拆段之后「模型服务商」同时是**菜单项**与
+    // **分段标题**。断言强度不减：仍然要求它上屏且至少两处——菜单项那一处由
+    // `SettingsLayout.test.tsx` 的"恰好 5 项"钉住。
     expect(screen.getAllByText('模型服务商').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByLabelText('模型名')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /保存设置/ })).toBeInTheDocument();
@@ -290,29 +355,37 @@ describe('设置 · 模型服务商段（Task 4：中转站 / 协议 / 拉取模
     mockInvoke.stubAlways('secret_delete', () => null);
   }
 
-  /** 单选钮的可读名（antd 把文案放在包着 input 的 label 里）。 */
-  function radioNames(): string[] {
-    return screen
-      .getAllByRole('radio')
-      .map((radio) => radio.closest('label')?.textContent ?? '');
+  /** 当前**可见**下拉里的选项标题（antd 把选项文案放在 `title` 上）。 */
+  function optionTitles(): string[] {
+    const dropdowns = [...document.querySelectorAll('.ant-select-dropdown')].filter(
+      (node) => !node.classList.contains('ant-select-dropdown-hidden'),
+    );
+    const visible = dropdowns.at(-1);
+    return visible === undefined
+      ? []
+      : [...visible.querySelectorAll('.ant-select-item-option')].map(
+          (node) => node.getAttribute('title') ?? '',
+        );
   }
 
   async function renderAndWait() {
     renderModels();
-    await screen.findByText('https://api.deepseek.com/v1');
+    await waitForBaseUrl();
   }
 
   it('厂商一共 12 项，顺序对上；标签取自词典而不是手抄', async () => {
     stubSeed();
+    const user = userEvent.setup();
     await renderAndWait();
 
     expect(SEED_SETTINGS.providers.map((info) => info.provider)).toEqual(EXPECTED_PROVIDER_ORDER);
-    expect(radioNames()).toEqual(
+    await user.click(screen.getByLabelText('模型服务商'));
+    await waitFor(() => expect(optionTitles()).toHaveLength(12));
+    expect(optionTitles()).toEqual(
       EXPECTED_PROVIDER_ORDER.map(
         (id) => zhCN.settings.providers[id as keyof typeof zhCN.settings.providers],
       ),
     );
-    expect(screen.getAllByRole('radio')).toHaveLength(12);
   });
 
   it('「模型协议」只在选自定义时出现（spec §6：预设厂商的协议由后端固定）', async () => {
@@ -322,11 +395,11 @@ describe('设置 · 模型服务商段（Task 4：中转站 / 协议 / 拉取模
 
     expect(screen.queryByText('模型协议')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('radio', { name: /自定义服务商/ }));
+    await chooseProvider(user, '自定义服务商');
     expect(await screen.findByLabelText('模型协议')).toBeInTheDocument();
 
     // 切回预设厂商 ⇒ 控件消失（不是置灰）
-    await user.click(screen.getByRole('radio', { name: 'DeepSeek（深度求索）' }));
+    await chooseProvider(user, 'DeepSeek（深度求索）');
     await waitFor(() => expect(screen.queryByText('模型协议')).not.toBeInTheDocument());
   });
 
@@ -335,7 +408,7 @@ describe('设置 · 模型服务商段（Task 4：中转站 / 协议 / 拉取模
     const user = userEvent.setup();
     await renderAndWait();
 
-    await user.click(screen.getByRole('radio', { name: /自定义服务商/ }));
+    await chooseProvider(user, '自定义服务商');
     // ⚠ 两档标签都从**下拉里**读（`.ant-select-item-option` 的 title），不用 `findByTitle`：
     // 当前选中项自己也在 DOM 里带一个同名 title，`findByTitle('OpenAI 兼容')` 会一次命中两处。
     // 也不用 `findAllByRole('option')`：antd 那两个 role=option 节点是给读屏软件的隐藏副本，
@@ -344,11 +417,7 @@ describe('设置 · 模型服务商段（Task 4：中转站 / 协议 / 拉取模
     await screen.findByTitle('Anthropic 原生');
     // 🔴 到这里下拉已经展开了；再点一次那个 label 会把它**收起来**（收起动画期间节点还在、
     // 只是 `pointer-events: none`），后面那条点击就会报"无法进行指针交互"。
-    expect(
-      [...document.querySelectorAll('.ant-select-item-option')].map((node) =>
-        node.getAttribute('title'),
-      ),
-    ).toEqual(['OpenAI 兼容', 'Anthropic 原生']);
+    expect(optionTitles()).toEqual(['OpenAI 兼容', 'Anthropic 原生']);
     await user.click(screen.getByTitle('Anthropic 原生'));
 
     await user.type(await screen.findByLabelText('接口地址'), GATEWAY_BASE_URL);
@@ -417,7 +486,7 @@ describe('设置 · 模型服务商段（Task 4：中转站 / 协议 / 拉取模
     await user.click(screen.getByRole('button', { name: /拉取模型列表/ }));
 
     expect(
-      await screen.findByText('还没有配置 API Key，请先在「设置」里填写并保存'),
+      await screen.findByText('还没有配置 API Key，请先填写并保存'),
     ).toBeInTheDocument();
     expect(screen.getByText('拉取失败不会清掉你已经填的模型名。')).toBeInTheDocument();
     expect(screen.getByLabelText('模型名')).toHaveValue('my-model');
@@ -430,13 +499,13 @@ describe('设置 · 模型服务商段（Task 4：中转站 / 协议 / 拉取模
     const user = userEvent.setup();
     await renderAndWait();
 
-    await user.click(screen.getByRole('radio', { name: /自定义服务商/ }));
+    await chooseProvider(user, '自定义服务商');
     await user.type(await screen.findByLabelText('接口地址'), GATEWAY_BASE_URL);
     await user.click(screen.getByRole('button', { name: /拉取模型列表/ }));
 
     expect(
       await screen.findByText(
-        '没有取回模型名。演示模式不访问外部接口，自定义服务商请直接手输模型名。',
+        '没有取回模型名；请检查服务商配置，或直接手输模型名。',
       ),
     ).toBeInTheDocument();
   });
@@ -453,7 +522,7 @@ describe('设置 · 模型服务商段（Task 4：中转站 / 协议 / 拉取模
     await user.click(screen.getByRole('button', { name: /拉取模型列表/ }));
     expect(await screen.findByText('已取回 1 个预置模型名')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('radio', { name: 'Kimi（月之暗面）' }));
+    await chooseProvider(user, 'Kimi（月之暗面）');
 
     await waitFor(() =>
       expect(screen.queryByText('已取回 1 个预置模型名')).not.toBeInTheDocument(),
@@ -466,9 +535,9 @@ describe('设置 · 模型服务商段（Task 4：中转站 / 协议 / 拉取模
     stubSeed();
     const user = userEvent.setup();
     renderModels('en-US');
-    await screen.findByText('https://api.deepseek.com/v1');
+    await waitForBaseUrl('https://api.deepseek.com/v1', 'Base URL');
 
-    await user.click(screen.getByRole('radio', { name: 'Custom' }));
+    await chooseProvider(user, 'Custom', 'Model provider');
     expect(await screen.findByLabelText('Model protocol')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Fetch model list/ })).toBeInTheDocument();
   });

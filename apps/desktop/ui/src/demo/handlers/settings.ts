@@ -120,6 +120,29 @@ export function requireKnownProvider(db: DemoDb, raw: string): string {
 }
 
 /**
+ * 搜索专用 / OAuth 的**非模型**钥匙串位（镜像 `settings_service.rs` 的常量表，逐个逐字）。
+ *
+ * 它们能存 Key，但绝不能当 `model.provider`——两套命令在 Rust 侧是
+ * `parse_secret_provider`（宽）与 `parse_llm_provider`（严）两条路径。
+ */
+const NON_MODEL_SECRET_PROVIDERS = ['metaso', 'google_oauth', 'gsc', 'bing_oauth', 'bing_wmt'] as const;
+
+/**
+ * `parse_secret_provider`(service:512-526) 的替身：模型厂商 **加** 上面五个非模型位。
+ *
+ * 🔴 只给 `secret_*` 三条命令用。`llm_provider_test` / `llm_models_list` / `settings_update`
+ * 仍然走 {@link requireKnownProvider}——把 `metaso` 放进模型厂商清单，
+ * 用户就能把「对话模型」切成一个根本没有对话接口的搜索位。
+ */
+export function requireSecretProvider(db: DemoDb, raw: string): string {
+  const normalized = raw.trim().toLowerCase();
+  if ((NON_MODEL_SECRET_PROVIDERS as readonly string[]).includes(normalized)) {
+    return normalized;
+  }
+  return requireKnownProvider(db, raw);
+}
+
+/**
  * `Option<String>` 入参的收窄：非字符串一律 `null`，**不在这里 trim**
  * ——trim 是 `update()` 的第 ③ 步（service:129-131），顺序照抄。
  */

@@ -3,6 +3,7 @@
 > **状态**：正式交底产出物（计划 `docs/superpowers/plans/2026-09-18-plan-a-i18n-foundation-and-demo-backend.md` §A-4 第 39 条）
 > **基线 commit**：`08790a4`（分支 `feat/settings-redesign-demo-i18n`）· **行号核准日期**：2026-09-23
 > **门禁**：cargo 22 targets / 515 passed / 0 failed；vitest 42 files / 635 tests；`CHECK_EXIT=0`
+> 🔴 **2026-11-19 界面口径更新**：demo 提示统一收口到全局 `DemoModeStrip`（32px 细条 + `demo.aboutBody`）；本文各条提到的 `staticNote` / `demoBody` / `demoNotice` 等**模块级常驻提示已不再渲染**，但对应的 demo 与真后端能力差异本身不变。
 >
 > **2026-09-28 增补（§4b · E-33 … E-45）**：M3–M7 demo 闭环那一轮新增 13 条，设计规格见
 > `2026-09-28-demo-m3-m7-closed-loop-design.md`。该轮的 `mise run check` **全绿**（`CHECK_EXIT=0`）：
@@ -329,7 +330,7 @@
 | E-59 | `crates/geo-domain/src/entity_card.rs:76-81` 的 `ProductSpec` 只有 `name` / `params` / `note` 三个字段，**没有** `price`；且这个结构体**没有** `deny_unknown_fields`（同文件里只有 `EntityFields:112` 有）⇒ 多出来的键被 serde **静默丢弃**、不报错 | `api/types.ts` 的 `ProductSpec` 多一个**可选** `price?: string | null`（DR-60：报价是**产品**的属性——一个厂家多款产品价格差一个量级，一个区间串既说不清也改不动）。实体卡页那张「产品与参数」字段卡按 JSON 原文编辑，报价就写在每个产品里；知识库的同步块把它拼成「报价：…」一行（`components/kb-view.ts` 的 `productBody`），`demo/seed/entity-cards.ts` 的两个产品各带一条报价口径 | 产品负责人本轮明确要求（需求第 2 条）。🔴 代价四条：① 桌面端把带 `price` 的产品清单发给真后端，`price` **静默消失**（比报错更坏：用户以为存上了，回读时才发现没了）⇒ Plan C 的 **P0** 是先给 domain 的 `ProductSpec` 加 `price`（含 `validate()` 的长度上限）再把前端的可选去掉；`products` 在库里是 JSON 文本列，加键按 `#[serde(default)]` 走就**不需要数据迁移**（老行读出来是 `None`），但 `deny_unknown_fields` 那一支要复核；② 报价从"一个顶层字段"变成"每个产品一格"⇒ `entity_card_update_field` 的**深层路径**（`products[0].price`）在 demo 里只校验 + 留痕、**不写回卡**（§B-2③：domain 的 `get_at` / `set_at` 不移植），界面上改报价是**整条产品清单一次写回**（顶层路径 `products`）；真后端接上之后要裁"到底支不支持深层写"——种子里那条修订留痕用的正是深层路径 `products[0].price`，两侧的口径必须一致，否则时间线上会出现一条"改了但没改"的留痕；③ 完整率**不含** `price`（它是产品对象里的键，不是顶层字段）⇒"有产品但一个报价都没填"在完整率上看不出来，Plan C 要裁报价算不算必填；④ `ProductSpec` 是前端唯一一处**有据偏离**后端 DTO 的地方（`api/types.ts` 的注释里点名了 E-59），复审时别把它当成"前端乱加字段" |
 | E-60 | `apps/desktop/src-tauri/src/ipc/mod.rs` 的 `generate_handler![]` 里没有任何 `kb_*`；`crates/**` 里没有 `KbEntry` / `KbModule` / `KbEntryKind` / `KbSource` / `KbSyncedBlock` 这些 DTO，`geo-store` 的迁移里也没有知识条目这张表；`contracts/error-codes.json` 冻结（本轮**零新增**错误码） | 7 条命令 + `demo/handlers/kb.ts`；`api/types-kb.ts` 定义 **10 模块 / 6 形式 / 5 来源 / 2 源头**四个枚举与 `KbEntry` / `KbSyncedBlock` / `KbBoard` 三个 DTO；`api/kb.ts` 是唯一调用出口（组件不直接 `invoke`）。种子（`demo/seed/kb.ts`）是 12 条落库条目 + 10 行生成池，其中 4 条是"从实体卡迁出来"的 `source: 'imported'`。返回形状三种不一致是**刻意**的（board 回聚合、add/generate 回新增、update/detach 回单条、delete/verify 回快照），照 M1.5 与 M2 的既有契约 | 与 E-33 / E-46 / E-52 / E-55 同族（规则 8）。🔴 代价四条：① 桌面端点进知识库当场 `ipc/unknown_command`，「demo 独有命令」43 → **50**；② `kb_entry` 这张表与四个枚举在 Rust 侧**还没有真值源**，Plan C 要裁"知识条目是不是独立表、`origin_block_id` 怎么存"（见 E-61）；③ 新增的四个 `field` 记号（`kb_entry_id` / `kb_block_id` / `kb_title` / `kb_modules`）进了 `fields.*` 词典 ⇒ 真后端发这些 `params` 时键名必须**逐字**一致，否则界面上露机器记号（与 M3–M7 那一批同族）；④ 「引用进 Prompt 题库」**刻意不做**（DR-72 末段）：条目正文是"事实"、题库条目是"用户会怎么问"，两者不同构，硬映射会产出一堆不能用的题（M1.5 的关键词 / FAQ 才是题库的正确上游）⇒ 与 E-52 / E-54 那两个"复用既有命令"的出口不同，知识库的复用出口只有**导出**与 M6 内容生成的上下文（Plan C 裁定） | 🔴 **2026-11-04 部分转正**：`kb_board` / `kb_entry_add` / `kb_entry_update` / `kb_entry_delete` / `kb_entry_verify` 已落 Rust（`geo-domain::kb` + 迁移 `20261104000004_kb.sql` + `KbRepo` / `KbService`）；`kb_generate` 仍 demo-only。命令面因此 50 → **55**、pending 55 → **50**。
 | E-61 | 真后端要支持"跟着实体卡自动更新"，只有两条路：要么**存**一份同步块（就得有一套刷新协议 + 过期判定），要么在查询时 JOIN 投影。Rust 侧今天两样都没有（没有知识层这个实体） | 🔴 **同步块不落库**：`kb_board` 每次调用都由 `demo/handlers/kb.ts` 的 `projectSyncedBlocks()` 从 `entityCards` / `projects` / `competitors` / `assets` **现场投影**出 17 个块（DR-68 的逐字清单：实体卡 7 个字段 + 项目 6 类信息，数组字段**每个元素一块**，空值不投影），库里零字节 ⇒「基于实体卡信息变动而自动更新」是**结构性**成立的（没有第二份数据 ⇒ 不可能过期、不需要刷新协议、也没有"忘了同步"这个 bug 类；判据在 `demo/handlers/kb.test.ts`：改实体卡的产品报价 → 下一次 board 就是新值）。只有**副本**落库（`kb_entry_detach`，Notion 的 Unlink 同族），副本用 `stale_ids`（源头 `updated_at` 晚于副本 `verified_at ?? updated_at`）标过期；「重新同步」= 前端用 `components/kb-view.ts` 的 `composeSyncedRow` 按**当前**投影重算标题与正文，再走既有的 `kb_entry_update`（**不加命令**） | DR-67 的裁定（抄的是 Notion synced block / Confluence include 那一族成熟知识库的做法）。🔴 代价四条：① 真后端要复刻"不落库的投影"，就得在 `kb_board` 的查询里 JOIN 四张表并**逐字**照 DR-68 的清单（每个字段落哪个模块、算哪种素材形式）⇒ 那张清单是**契约**不是实现细节，Plan C 要把它抄成 Rust 侧的纯函数并配契约测试（漏一个字段就是"实体卡上有、知识库里没有"，而这种漏在 demo 里永远看不见）；② 投影里**一个界面标签都不许有**（规则 7）⇒ `KbSyncedBlock` 只装数据，"别名：""报价："这些词由前端查词典拼；真后端若图省事把拼好的中文字符串塞进 `value`，双语就废了；③ `stale` 判定在 demo 里只是**两个时间戳比大小**（规则 9 允许），真后端若要按"核实周期 + 变更历史"判定，那是 `geo-domain` 的纯函数，demo 不移植；④ 块的 `id` 由 `origin` + `field_path`（+ 下标）**纯函数派生**（`entity_card:products[0]`），副本的 `origin_block_id` 存的就是这个串 ⇒ 真后端要么沿用这条派生规则（那么"删掉第 1 个产品之后 `products[1]` 变成 `products[0]`，老副本会指到**另一个**产品上"这条**必须裁**），要么给同步块一个稳定主键。两种都行，但**不能一半一半** |
-| E-62 | 知识成文要**按实体卡 + 模块调模型**并跑**合规扫描**（规则 6：生成内容默认 `PendingReview`、禁绝对化用语）；知识覆盖率 / 可信度评分是 `geo-domain` 的纯函数；图片 / 视频 / 文档要有**本地存储与缩略图**（`geo-store` 存文件）。Rust 侧今天四样都没有 | ① `kb_generate`（`demo/handlers/kb.ts`）**不调模型、不跑合规扫描**：从 `demo/seed/kb.ts` 的 `SEED_KB_GENERATED_POOL`（10 行，与初始库零重叠，由 `demo/seed.test.ts` 钉住）里按 `modules` 挑、跳过标题完全相同的、取前 `target_count` 条（`LIBRARY_GENERATE_MIN..MAX`，**复用**素材库那一档常量），挑不出来回**空数组**（不是错误）；产物一律 `source: 'generated'` + `status: 'pending_review'` + `verified_at: null`。② `KbStats` 七格只是**数数**（模块 / 条目 / 同步块 / 待审核 / 未核实 / 多媒体 / 待重新同步），没有覆盖率与评分。③ 媒体条目只存 `url` + `mime` **字面量**，不下载、不探测、不生成缩略图，界面上不出现 `<img>` / `<video>`。④ 全文搜索是前端 `includes`（标题 / 正文 / 标签），**不进命令契约**。界面四处常驻说明：`kb.demoHint`（页首）、`kb.generate.demoBody` + `kb.generate.complianceUnchecked`（生成弹窗）、`kb.entry.mediaNoPreview`（媒体条目） | 规则 9 + 规则 2 + 规则 6（与 E-52 / E-53 / E-57 同族，这是**第三次**登记同一批债）。🔴 代价四条：① 生成结果与**项目本身无关**（任何项目点生成都得到同一批字面量），走查的是产物形态（模块 / 形式 / 审核态），**不是知识质量** ⇒ 那两句免责说明必须常驻，否则产品负责人会拿演示数据评审"AI 写知识"的水平；② 合规扫描在 demo 里**零覆盖**（与 E-53 ③ / E-57 ③ 是同一条债）：池子里的字面量是人工写好的，绝对化用语那道闸门这一轮**没有对价**，Plan C 要连同"扫描不过 ⇒ 不许采用"这条分支一起补测，届时 `complianceUnchecked` 那句退役；③ 导出闸门（`api/kb-compose.ts` 的 `isExportable`：落库条目只收 `approved`、同步块排除 `disputed`）今天**由前端组装层持有**（判据在 `api/kb-compose.test.ts`），真后端若改成由命令产出知识包，闸门必须一起搬过去——搬漏了就是把**待审的知识喂给撰稿模型或贴到客户官网上**（与 E-53 ② 同形，规则 6 最坏的失败形态）；④ 因为项目来源的同步块**没有**审核态、始终可交付，"两个导出按钮都置灰"只在**一条可交付的都没有**时出现（新建项目还没填官网 / 行业 / 地域、也没有实体卡）——设计规格 §13 第 10 步的旧措辞（"把全部条目打回待审后就置灰"）**不准确，已同步改正** | 🔴 **2026-11-04 部分转正**：`kb_generate` 已落 Rust（按实体卡 + 模块调模型，产物 `generated` + `pending_review`，标题等值去重，命中广告法红线词整批拒绝）。媒体文件本地存储 / 缩略图、知识覆盖率与可信度评分仍**未落**。
+| E-62 | 知识成文要**按实体卡 + 模块调模型**并跑**合规扫描**（规则 6：生成内容默认 `PendingReview`、禁绝对化用语）；知识覆盖率 / 可信度评分是 `geo-domain` 的纯函数；图片 / 视频 / 文档要有**本地存储与缩略图**（`geo-store` 存文件）。Rust 侧今天四样都没有 | ① `kb_generate`（`demo/handlers/kb.ts`）**不调模型、不跑合规扫描**：从 `demo/seed/kb.ts` 的 `SEED_KB_GENERATED_POOL`（10 行，与初始库零重叠，由 `demo/seed.test.ts` 钉住）里按 `modules` 挑、跳过标题完全相同的、取前 `target_count` 条（`LIBRARY_GENERATE_MIN..MAX`，**复用**素材库那一档常量），挑不出来回**空数组**（不是错误）；产物一律 `source: 'generated'` + `status: 'pending_review'` + `verified_at: null`。② `KbStats` 七格只是**数数**（模块 / 条目 / 同步块 / 待审核 / 未核实 / 多媒体 / 待重新同步），没有覆盖率与评分。③ 媒体条目只存 `url` + `mime` **字面量**，不下载、不探测、不生成缩略图，界面上不出现 `<img>` / `<video>`。④ 全文搜索是前端 `includes`（标题 / 正文 / 标签），**不进命令契约**。界面常驻说明：`kb.demoHint`（页首，🔴 2026-11-06 产品确认**只在 demo 运行时渲染**，桌面端不显示）、`kb.generate.demoBody` + `kb.generate.complianceUnchecked`（生成弹窗）、`kb.entry.mediaNoPreview`（媒体条目） | 规则 9 + 规则 2 + 规则 6（与 E-52 / E-53 / E-57 同族，这是**第三次**登记同一批债）。🔴 代价四条：① 生成结果与**项目本身无关**（任何项目点生成都得到同一批字面量），走查的是产物形态（模块 / 形式 / 审核态），**不是知识质量** ⇒ 那两句免责说明必须常驻，否则产品负责人会拿演示数据评审"AI 写知识"的水平；② 合规扫描在 demo 里**零覆盖**（与 E-53 ③ / E-57 ③ 是同一条债）：池子里的字面量是人工写好的，绝对化用语那道闸门这一轮**没有对价**，Plan C 要连同"扫描不过 ⇒ 不许采用"这条分支一起补测，届时 `complianceUnchecked` 那句退役；③ 导出闸门（`api/kb-compose.ts` 的 `isExportable`：落库条目只收 `approved`、同步块排除 `disputed`）今天**由前端组装层持有**（判据在 `api/kb-compose.test.ts`），真后端若改成由命令产出知识包，闸门必须一起搬过去——搬漏了就是把**待审的知识喂给撰稿模型或贴到客户官网上**（与 E-53 ② 同形，规则 6 最坏的失败形态）；④ 因为项目来源的同步块**没有**审核态、始终可交付，"两个导出按钮都置灰"只在**一条可交付的都没有**时出现（新建项目还没填官网 / 行业 / 地域、也没有实体卡）——设计规格 §13 第 10 步的旧措辞（"把全部条目打回待审后就置灰"）**不准确，已同步改正** | 🔴 **2026-11-04 部分转正**：`kb_generate` 已落 Rust（按实体卡 + 模块调模型，产物 `generated` + `pending_review`，标题等值去重，命中广告法红线词整批拒绝）。媒体文件本地存储 / 缩略图、知识覆盖率与可信度评分仍**未落**。
 
 ## §4g 知识库重构（M1.2b）与文章管理 Article Studio（M6）那一轮新增的差异条目（E-63 … E-66）
 
@@ -445,7 +446,7 @@
 
 | 编号 | 后端行为（真值源） | demo 行为 | 理由与代价 |
 |---|---|---|---|
-| E-67 | Rust 侧零 `search_*` 命令与 DTO；真后端要落需要五张表 + 三个 OAuth 客户端 + 三份 CSV 解析 + 令牌刷新与配额退避 + **映射表与目录表的 Rust 版**（§6 全清单） | **6 条命令只有 demo 侧实现**（`demo/handlers/search.ts` + `search-import.ts`），`IPC_COMMANDS` 99 → **105**、demo 独有族 59 → **65**，Rust 侧仍 40 条；🔴 但**归一 / 求和 / 重算 / 筛选 / 区间收敛在前端 compose 层真做**（DR-99），demo 与桌面端将来共用同一份 | 规则 8。🔴 代价四条：① 桌面端点进「站长数据」当场 `ipc/unknown_command`，**不屏蔽**（与前六轮同族）；② **OAuth 一条都没实现**（连假授权流程都没有），demo 能走查的只有导入 / 填报 / 汇总 / 筛选 / 机会处置五件事；③ 🔴 **映射表与目录表将来会有两份**（TS 与 Rust），口径漂移的风险与 `api/constants.ts` ↔ `csv_io.rs` 同族，Plan C 必须把"改一处同步另一处"写成判据；④ `search_board` 不分页（DR-97 ⚠），明细上万行时前端要扛，真后端必须改形态 | 🔴 **2026-11-04 部分转正**：`search_board` / `search_source_upsert` / `search_source_remove` / `search_opportunity_update` 已落 Rust（`geo-domain::search` + `search_opportunity` + 迁移 `20261104000007_search_sources_opportunities.sql` + `SearchRepo` / `SearchService`）。源目录、绑定推导、凭证引用串已落地；🔴 **2026-11-04 再转正 `search_source_test`**：可探测源真发一次 HTTP GET，OAuth 源只报缺少授权，人工源不需探测；`check_detail` 已改为结构化 `{ code, params }`（前端 `checkDetails.<code>` 词典渲染）。🔴 **2026-11-05 转正 `search_metric_import_csv`（A2a）**：只承诺百度《AI 流量分析》五列与规范列名；TS / Rust 双解析器对拍、其它源映射表仍待后续切片。`search_board` 的指标 / AI 汇总 / C 类留档 / 自建索引 / 流量分布暂返回空值。命令面 65 → **71**、pending 40 → **34**。
+| E-67 | Rust 侧零 `search_*` 命令与 DTO；真后端要落需要五张表 + 三个 OAuth 客户端 + 三份 CSV 解析 + 令牌刷新与配额退避 + **映射表与目录表的 Rust 版**（§6 全清单） | **6 条命令只有 demo 侧实现**（`demo/handlers/search.ts` + `search-import.ts`），`IPC_COMMANDS` 99 → **105**、demo 独有族 59 → **65**，Rust 侧仍 40 条；🔴 但**归一 / 求和 / 重算 / 筛选 / 区间收敛在前端 compose 层真做**（DR-99），demo 与桌面端将来共用同一份 | 规则 8。🔴 代价四条：① 桌面端点进「站长数据」当场 `ipc/unknown_command`，**不屏蔽**（与前六轮同族）；② **OAuth 一条都没实现**（连假授权流程都没有），demo 能走查的只有导入 / 填报 / 汇总 / 筛选 / 机会处置五件事；③ 🔴 **映射表与目录表将来会有两份**（TS 与 Rust），口径漂移的风险与 `api/constants.ts` ↔ `csv_io.rs` 同族，Plan C 必须把"改一处同步另一处"写成判据；④ `search_board` 不分页（DR-97 ⚠），明细上万行时前端要扛，真后端必须改形态 | 🔴 **2026-11-04 部分转正**：`search_board` / `search_source_upsert` / `search_source_remove` / `search_opportunity_update` 已落 Rust（`geo-domain::search` + `search_opportunity` + 迁移 `20261104000007_search_sources_opportunities.sql` + `SearchRepo` / `SearchService`）。源目录、绑定推导、凭证引用串已落地；🔴 **2026-11-04 再转正 `search_source_test`**：可探测源真发一次 HTTP GET，OAuth 源只报缺少授权，人工源不需探测；`check_detail` 已改为结构化 `{ code, params }`（前端 `checkDetails.<code>` 词典渲染）。🔴 **2026-11-05 转正 `search_metric_import_csv`（A2a）**：只承诺百度《AI 流量分析》五列与规范列名；TS / Rust 双解析器对拍、其它源映射表仍待后续切片。`search_board` 的指标 / AI 汇总 / C 类留档**已真实**（2026-11-07 测试报告 P2-04 核对）；仍返回空值的只有**自建索引三件套** `self_index_summary` / `self_index_snapshots` / `traffic_split`（DR-111 的唯一输入，待接）。命令面 65 → **71**、pending 40 → **34**。
 | E-68 | 6 条规则是 `geo-domain` 纯函数（阈值常量、可单测、可复算），机会由规则算出并与既有处方去重排序 | `SEED_SEARCH_OPPORTUNITIES` **手工写死 6 条**（每规则一条），翻状态不重算、**导入 CSV 也不会长出新机会**；🔴 但**汇总数字会随导入真变**（DR-99）⇒ 这一页是"一半真一半假" | 规则 9 + 规则 2。🔴 代价四条：① 走查验的是"一条机会长什么样 + 采纳/忽略状态机 + 三个跳转入口"，**验不了**"规则判定准不准"；② 规则 2/4/5 依赖 `geo-crawler` 的真实页面清单与 robots 解析，而 demo 那份是 `SEED_SITE_PAGES` 静态值 ⇒ 这三条规则在 demo 里**结构性不可能真判定**；③ `confidence` 是种子写死的，与 M4 那道 `REVIEW_CONFIDENCE_FLOOR` 门槛的**真实计算**无关；④ 🔴 **"汇总真变、机会不变"这个不对称最容易被误读**成"分析坏了"，`webmasterData.staticNote` 必须把这句话写进去 |
 | E-69 | OAuth 令牌是账号级长期凭据，需要 `SECRET_KIND` 放开到 `search`、`parse_provider` 不再只认 `LlmProvider`、refresh_token 轮转、"令牌过期"的稳定错误码 | `secret_ref` 只是个字符串（`keyring://search/<kind>`），演示模式**不写系统钥匙串**（`components/SecretStatus.tsx` 那句提示已在） | 规则 3。🔴 本轮**刻意用两段引用串**（DR-96），与 **E-56** 那个三段串 `keyring://site/<kind>/<project_id>`（`parse_secret_ref` 会返回 `None`）**方向相反**：本轮的结论反过来给 E-56 指了一条正解——**凭据账号级 + 绑定项目级**，Plan C 处理 E-56 时应当一并裁定 |
 | E-70 | 🔴 **本条 2026-10-12 反转**（原草案写的是"真后端也不应做跨源归一"）。修订后：真后端**应当**做分层归一（A 类可加 / B 类重算 / C 类独有），但**同样不得**跨量纲相加、不得对比率取平均、不得静默截断区间 | 归一在**前端 compose 层真做**（DR-95 / DR-107 / DR-109 / DR-110），合计行常驻区间 + 参与源清单 + 完整性旗标 | §3.7 结论 4 + 产品负责人裁定 3。🔴 反转理由照录在 DR-95"我错在哪"：原裁定把"术语能否统一"与"数值能否相加"混成一件事，用后者的风险否决了前者。代价三条：① 归一逻辑将来要在 TS 与 Rust 各有一份（同 E-67 ③）；② **映射表版本化**是硬义务——百度《AI 流量分析》至今无字段文档，平台改口径而我们没记版本，历史数字就无法解释；③ 合计数字一旦被追问，要能当场摊开"哪几个源、各自截至哪天、谁被采样了"——**给数字同时给得出账**，否则比不给更糟 |
@@ -593,3 +594,78 @@
 10. **组合总览（2026-10-29）**：左侧栏「项目 → 组合总览」；3 个 active 项目（1 个有结论、2 个待采集）；
     走查筛选（全部 / 有结论 / 待采集 / 有告警）、搜索、三种排序、分布指标切换与行内下钻；
     确认归档项目不出现、待采集行不显示 0%。
+
+## §4k 2026-11-05 真实搜索 / 诊断口径 / 设置真相收口
+
+> 本轮不新增命令（仍 105），Rust 侧改动集中在 `geo-llm::search`、`CollectionService`、`diagnosis_build`、`search_opportunity`、`site_service`、`settings` 与报告 delta。
+
+| 编号 | 收口内容 | 仍未收口的部分 |
+|---|---|---|
+| E-33 | `collection_start` / `collection_task_retry` 已接官方搜索：Kimi/百度/豆包先搜后答，千问 `enable_search`，DeepSeek 借用 Kimi/百度搜索，秘塔官方搜索 + 当前模型，元宝 Chrome 浏览器自动化。 | GSC/Bing/百度站长 OAuth、真实站点写回、截图仅元宝浏览器通道有；API 通道保留原始回答 + 引用，没有引擎页面截图。 |
+| E-48 | `privacy` / `storage` / `model.protocol` 已落库；`export_dir` 读 `last_export_dir`；`secret_*` 接受 `metaso` 搜索专用 Key。 | `anthropic` 协议只可保存、不可调用；`storage_open_dir` / `storage_change_dir` 仍未实现；导出成功后回写 `last_export_dir` 未接。 |
+| E-64 | 文章 10 条命令已落 Rust（前一轮），本轮补上设置真相与报告 delta。 | `article_list` 带 review 写副作用、`article_direction_add` 带 id 就地改仍未拆命令；运行历史/失败重试未做。 |
+| E-67 | `search_board` 现在返回真实机会；`site_board.pool` 真实生成；指标 / AI 汇总 / C 类留档已真实（2026-11-07 核对）。 | OAuth 一条未接；平台映射仍只承诺百度 AI 五列；`search_board` 不分页；**自建索引三件套仍空**（`self_index_summary` / `self_index_snapshots` / `traffic_split`）。 |
+| E-68 | DR-100 六条机会规则已落 `geo-domain` 纯函数，demo 仍静态。 | 规则阈值是首版保守值；DTO 没有 `avg_position`，无法按引擎/位次分桶取经验区间；demo 静态机会与真后端不会逐条一致。 |
+| E-69 | `secret_*` 已允许 `metaso` 搜索 Key。 | OAuth refresh_token / 令牌过期错误码仍未实现。 |
+| E-70 | 分层归一仍在前端 `api/search-compose.ts`；`search_board` 只给原始行。 | TS/Rust 双解析器与映射表仍需 fixture 对拍；后端若加聚合命令必须复用同一口径。 |
+
+## §4m 2026-11-06 GSC OAuth 拉数（E-76）
+
+> 本轮新增 **1 条命令**（`IPC_COMMANDS` 105 → **106**，Rust 注册同增）。不新增迁移；Bing / 百度站长保持原状。
+
+| 编号 | 真后端 | demo | 判据与代价 |
+|---|---|---|---|
+| E-76 | `search_oauth_begin` 只支持 GSC：PKCE + loopback，client secret（可空）走 `keyring://llm/google_oauth`，token 走 `keyring://search/gsc`；回调后立即拉 `searchAnalytics/query` 并落库。Bing 仍是 API key / 手工，百度站长无读 API | `search_oauth_begin` 固定回 `validation/failed { field: "oauth", reason: "not_allowed" }`；抽屉只在 `runtime === 'tauri' && source.kind === 'gsc'` 渲染授权按钮与 client secret 面板；demo 的 GSC `binding` 增加非敏感 `client_id` 占位值 | 规则 2 / 规则 8 / 规则 11。🔴 代价三条：① demo 走查看不到真实授权与拉数，只能验证入口隐藏与「不伪造」；② 真后端目前只做 authorization_code 兑换，**refresh_token 轮转与 token 过期后的稳定错误码仍未接**（E-69 的剩余项）；③ GSC 拉数只映射 query × page 的 clicks / impressions / ctr，**avg_position 仍无 DTO 字段**，与 E-68 / E-70 的后续切片一致 |
+
+## §4l 2026-11-06 GSC OAuth 与 PDF/XLSX 导出
+
+| 编号 | 收口内容 | 边界 |
+|---|---|---|
+| E-67 / E-69 | 新增 `search_oauth_begin`（GSC PKCE + loopback），token 只进 `keyring://search/gsc`，client secret 只进 `keyring://llm/google_oauth`；授权后自动拉 Search Analytics 并落 `search_metrics`。 | Bing 仍是 API key / 手工通道；百度站长没有读 API，不伪造 OAuth；百度统计 OAuth 未接。 |
+| E-42 | `export_write_file` 增加 `format: pdf / xlsx`：PDF 用无头 Chrome 打印 HTML，XLSX 用 `rust_xlsxwriter` 写 CSV 行；demo 对 pdf/xlsx 返回 `validation/failed`，不伪造二进制文件。 | Word/PNG 仍未做；PDF 依赖目标机器可启动 Chrome；超大 HTML 受 data URL 长度限制。 |
+
+## §4n 2026-11-06 百度站长「路径 C：控制系统 Chrome（CDP）」（E-77）
+
+> 本轮新增 **2 条命令**（`IPC_COMMANDS` 106 → **108**，Rust 注册同增）。不新增迁移；GSC / Bing / 百度统计路径不变。
+
+| 编号 | 真后端 | demo | 判据与代价 |
+|---|---|---|---|
+| E-77 | `search_browser_open` 只支持 `baidu_ziyuan` / `baidu_ziyuan_ai`：用 `default_executable()` 找系统 Chrome/Edge，`Command` 启动到独立 profile（`<browser_profile_dir>/<kind>`）并轮询 `/json/version` 取 `webSocketDebuggerUrl`（≤20s）；**不 kill Chrome**。`search_browser_capture` 用 `Browser::connect(ws_url)` 找含 `ziyuan.baidu.com` 的 tab（否则第一个），`Tab::evaluate` 收集可见 `<table>` 的 TSV，逐张交给既有 `SearchService::import_metrics`；第一张有数据的表成功即返回，全部失败回 `validation/failed { field: "payload", reason: "parse_failed" }`（detail 带每张表的行级摘要） | 两条都固定回 `validation/failed { field: "browser", reason: "not_allowed" }`；侧滑只在 `runtime === 'tauri' && (baidu_ziyuan \| baidu_ziyuan_ai)` 渲染「打开系统 Chrome」「读取当前页」 | 规则 11 / 规则 8 / 规则 2。🔴 代价四条：① 百度后台 DOM 会变，`<table>` 选择器只能按「可见表格 + 表头识别」做启发式，没有选择器级契约；② 复用独立 profile 的登录态会过期，过期时页面是登录页，采集必然 `parse_failed`，不自动重登；③ Chrome 已在同一 `user-data-dir` 运行时新进程可能不再监听调试端口（profile 锁），表现为 `debug_port_timeout`；④ 无自动化测试启动真实 Chrome，只覆盖纯函数与连接失败路径 |
+
+## §4o 2026-11-06 Bing Webmaster OAuth 拉数（E-78）
+
+> 本轮**不新增命令**（仍 108）。Bing 与 GSC 共用 `search_oauth_begin`；不新增迁移。
+
+| 编号 | 真后端 | demo | 判据与代价 |
+|---|---|---|---|
+| E-78 | `bing_wmt` 的 `binding_fields` 增加非敏感 `client_id`。`search_oauth_begin` 支持 Bing：普通授权码 + 固定 loopback `http://127.0.0.1:17654/oauth2callback`（Bing 要求精确匹配），scope `Webmaster.read`，client secret 走 `keyring://llm/bing_oauth`、token 走 `keyring://search/bing_wmt`。回调后立即请求 `GetQueryStats`（Bearer）并映射 query / impressions / clicks / ctr；`refresh_all_bing` 支持过期 token 轮换。 | 抽屉在 `runtime === 'tauri' && source.kind === 'bing_wmt'` 才渲染「开始 Bing 授权」、固定回调地址提示与 `bing_oauth` client secret 面板；demo 下三者都不渲染，`search_oauth_begin` 仍回 `validation/failed { field: "oauth", reason: "not_allowed" }`。 | 规则 2 / 规则 3 / 规则 8 / 规则 11。🔴 代价三条：① `GetQueryStats` 是官方旧 JSON 通道，网络资料标注其可能已随 2026-08-31 的 SOAP/POX 退役一同失效；404 / 解析失败只报 `search_fetch_failed`，不伪造数据，功能是否可用取决于 Bing 是否仍保留该端点；② demo 完全验不了 Bing 授权与拉数，只能验证入口门禁与「不伪造」；③ 固定端口 17654 被占用时授权起点回 `validation/failed { field: "oauth", reason: "not_allowed" }`，不退回随机端口（会破坏 redirect URI 精确匹配）。 |
+
+## §4p 2026-11-06 Bing 改走官方 API Key（E-79，撤销 E-78 的 OAuth 路径）
+
+> 本轮**不新增命令**（仍 108），**不改迁移**。E-78 记录的 Bing OAuth 流程整条移除。
+
+| 编号 | 真后端 | demo | 判据与代价 |
+|---|---|---|---|
+| E-79 | 线下验证：Bing Webmaster Tools 的 OAuth 控制台拒绝 `http://localhost:17654/oauth2callback`（提示“不是有效的 http 或 https url”），且控制台不支持事后修改回调地址。因此 Bing 改用官方 API Key：`GetQueryStats?siteUrl=…&apikey=…`（实测 `GetUserSites` / `GetQueryStats` / `GetRankAndTrafficStats` 均返回真实数据）。Key 只进 `keyring://llm/bing_wmt`（`secret_*` 新增 `bing_wmt` provider，仍不是模型厂商）；`bing_wmt` 的 `binding_fields` 回落到只用 `siteUrl`；`search_oauth_begin` 只支持 `gsc`；`refresh_all_bing` 只走 API Key（无 Key 跳过，不伪造失败）。 | 抽屉在 `runtime === 'tauri' && source.kind === 'bing_wmt'` 渲染 `SecretStatusPanel provider="bing_wmt"`（API Key）与出处提示；**不再**渲染「开始 Bing 授权」、回调地址提示与 `bing_oauth` client secret 面板。demo 下两者都不渲染（demo 的 `secret_*` 只认 7 个模型厂商，不伪造凭据位）。 | 规则 2 / 规则 3 / 规则 8 / 规则 11。🔴 代价三条：① Bing OAuth（`build_bing_authorization` / `bing_oauth_exchange` / `refresh_bing_token` / `BingOAuthFlow`）已删，`BingAuth::Bearer` 变体保留但无流程产出；若 Bing 未来放开 loopback，需要重新引入（git 历史可查）；② demo 完全验不了 Bing 取数，只能验「面板不出现 + 不伪造」；③ API Key 走查询串，**不得**出现在日志 / 错误 / 界面回显（目前只在内存里拼 URL，失败统一 `search_fetch_failed`）。 |
+| E-80 | 百度站长路径 C 的 `Tab::evaluate` 把 `return_by_value` 写死为 `false`，数组结果只回 objectId ⇒ `RemoteObject.value` 恒为 `None`，表现为「读取当前页永远失败」。脚本改为回 `JSON.stringify(tables)` 字符串，再由 `parse_tables_payload` 还原。失败码从 `validation/failed + not_allowed`（前端只显示“系统浏览器不被允许”）改为 `browser/unavailable { reason }`，新增 `no_table_found` 子原因。 | demo 不变（仍 `validation/failed { field: "browser", reason: "not_allowed" }`）。 | 规则 7 / 规则 8。🔴 代价：`parse_tables_payload` 只认字符串载荷，脚本若被改成回数组会立刻退化为 `evaluate_failed`（`extract_script_returns_a_json_string_not_an_array` 已钉）。 |
+
+
+## §4q 2026-11-07 测试报告修复引入的两条新差异（E-81 / E-82）
+
+> 来源：`docs/superpowers/test-reports/2026-11-07-local-debug-full-test.md` 的 P2-09 / P2-08 修复。
+> 两条都是**真后端变严、demo 保持原样**：demo 的能力边界（规则 9）本来就不做领域判定，
+> 但"真后端会拒、demo 会收"这件事必须登记，否则走查的人会把 demo 的宽容当成真后端行为。
+
+| 编号 | 后端行为（真值源） | demo 行为 | 理由与代价 |
+|---|---|---|---|
+| E-81 | `SitePatchService::add`（手工录入）对标题 + 正文跑 `geo_domain::compliance` 红线扫描，命中整条拒绝（`compliance/violation` + `terms`），与生成路径同一构造器；「人工录入 = approved」语义不变。 | `demo/handlers/site-patch.ts` 的 `site_patch_add` **不扫**红线（规则 9：demo 没有合规扫描器），含红线词的草稿照收且仍 `pending_review`/`approved` 按既有 demo 口径。 | 规则 6 / 规则 9。🔴 代价两条：① 走查时在 demo 里能存进红线词、桌面端存不进，**两侧观感不同**，`site.demoBody` / 静态提示需把"演示模式未执行合规扫描"写清楚（既有 `library.faq.complianceUnchecked` 同族文案已覆盖素材层，站点层待补）；② `site_patch_save` 改正文仍不扫（真后端同），属 P2-09 残留绕过，待产品裁定"只在正文变化时扫 + 存量清洗"后另开 task。 |
+| E-82 | `SettingsRepo::update` 与 `validate_settings` 拒绝 authority 段含 `@` 的代理地址（`validation/failed { field: "proxy.url", reason: "not_allowed" }`，**不回显 value**）；协议非法的回显抹掉 userinfo。 | demo 的 `settings_update` **不镜像**这两条判据（demo 本就不落库、不真发请求），含凭据的代理地址照收。 | 规则 3 / 规则 9。🔴 代价一条：设置页在 demo 里填 `http://u:p@h:8080` 会"保存成功"，桌面端会拒——走查脚本不得把 demo 的成功当成契约；`demo/handlers/settings.ts` 的判据计数注释已同步为 13 项。 |
+
+## §4q 2026-11-19 生成依据 grounding（E-83）
+
+> 本轮**不新增命令**（仍 120），**不改迁移**。设计见
+> `2026-11-19-generation-grounding-design.md`。
+
+| 编号 | 后端行为（真值源） | demo 行为 | 理由与代价 |
+|---|---|---|---|
+| E-83 | 关键词 / FAQ / 知识库 / Prompt 题库 / 文章方向与文章生成的模型上下文统一由 `geo_domain::grounding` 装配：实体卡 `official` 字段进「官方口径事实」，`pending` / `disputed` 只进「待确认/存疑」并显式标注不得断言；知识库只收 `approved` 且 `verified_at` 非空，按用途模块过滤 + 焦点词排序 + 字符预算；五个入口共用 `【引用规则】`。文章模板 `kb_modules` 从“只记录”变为真实参与检索。 | demo 仍按 E-52 / E-53 / E-62 / E-66 返回预置池或克隆题库，**不调模型、不装配 grounding**；`staticNote` / `demoBody` 继续常驻。 | 规则 9 / 规则 2 / 规则 6。🔴 代价三条：① demo 无法走查“参考了什么”，只能走查产物形态；② `pending` / `disputed` 虽被隔离并标注，模型仍可能误用，必须靠人工评审兜底；③ 知识检索是焦点词子串匹配 + 预算截断，没有向量检索，长尾同义表述可能召回不到。 |

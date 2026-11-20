@@ -39,10 +39,11 @@
 
 ### 当前关键不变量
 
-- **命令面**：`api/client.ts` 的 `IPC_COMMANDS` 是单一清单；2026-11-05 核对为 **105 条 = 105 条 Rust + 0 条 demo-only**（关键词与 FAQ 各 5 条、知识库 6 条、站点 5 条、补丁 6 条、站长 6 条、采集 6 条、解析/核查 4 条、诊断/行动 9 条、报告 1 条、本机环境与模型清单 2 条、文章管理 10 条已全部转正）。
-  demo 后端必须 105 条全覆盖；Rust 注册按规格 / 差异台账，demo-only 命令桌面端报 `ipc/unknown_command`，**不屏蔽**（规则 8）。
+- **命令面**：`api/client.ts` 的 `IPC_COMMANDS` 是单一清单；2026-11-06 核对为 **108 条 = 108 条 Rust + 0 条 demo-only**（关键词与 FAQ 各 5 条、知识库 6 条、站点 5 条、补丁 6 条、站长 9 条（含 GSC OAuth 起点与百度站长系统 Chrome 取数两条）、采集 6 条、解析/核查 4 条、诊断/行动 9 条、报告 1 条、本机环境与模型清单 2 条、文章管理 10 条已全部转正）。
+  demo 后端必须 108 条全覆盖；Rust 注册按规格 / 差异台账，demo-only 命令桌面端报 `ipc/unknown_command`，**不屏蔽**（规则 8）。
 - **demo 边界**：去重率、字段完整率、样本量分级、机会判定等领域算法只在 Rust 纯函数里真算；demo 只呈现预置值 / 静态清单（规则 9）。
-- **站点接入 demo**：`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成交接文件，**不真的改线上站点**；`site.demoBody` / `site.staticNote` 常驻。
+- **站点接入 demo**：`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成交接文件，**不真的改线上站点**；站点页保留运行时中立的交接说明。
+- **演示提示**：2026-11-19 产品裁定，模块页与弹窗不再重复「演示模式 / 预置样本」提示，统一由全局 `DemoModeStrip`（32px 细条 + `demo.aboutBody` 弹层）承担；只在 `runtime === 'demo'` 出现。
 - **文章管理 demo**：没有真定时任务，`next_run_at` 只是显示值；生成物一律 `pending_review`，不做合规扫描。
 - **站长数据**：A 类可加、B 类只重算不平均、C 类单独展示并标平台；百度统计会话数不进曝光合计；合计行必须给汇总区间、参与源、完整性旗标；搜狗 / 360 为二期。
 - **项目概览**：结果区按「最近一个有结论轮次」锚定；待办按项目累计；M9 组合只给计数 + min/median/max，不对比率取平均、不求和、不做跨项目环比，默认排除归档。
@@ -61,7 +62,7 @@
   `docs/superpowers/specs/2026-10-29-portfolio-overview-design.md`
   🔴 只给**计数 + 分布 + 逐项目行**；比率不平均、不求和、不做跨项目环比；未采集≠0 分，
   归档默认排除；组合层风险本轮只取**未读告警**（完整队列在项目概览）。
-  🔴 **命令面零新增**（仍 105）：按项目并行 `collection_board` + `diagnosis_overview`，
+  🔴 **命令面零新增**（当时仍 105；2026-11-06 GSC OAuth 后为 106，百度浏览器取数后为 108）：按项目并行 `collection_board` + `diagnosis_overview`，
   再走 `api/portfolio-compose.ts` 的 `buildProjectSnapshot` / `summarizePortfolio` /
   `filterPortfolioRows`；M9 真后端应换成一个 `portfolio_overview`（E-73）。
   🔴 demo 项目从 2 个增到 **4 个**（3 active + 1 archived）：新增 `澄川水处理设备` /

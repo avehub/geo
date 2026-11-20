@@ -59,6 +59,14 @@
 - **公共检查码去 demo 化**：`site_cms_not_configured` / `search_binding_blocked` 的文案不再夹带「演示模式不收密码 / 不发请求」；WordPress 通道说明也改成运行时中立，demo 的凭据边界只由 `site.channels.demoCredentials` 承担。
 - **测试**：demo 与 tauri 两侧分别钉住（`*.demo.test.tsx` / `*.live.test.tsx`），设置段测试不再用 demo 文案断言 tauri 运行时。
 
+### 2026-11-19 demo 提示收口：只保留全局细条
+
+- **产品裁定**：模块页与弹窗不再重复「演示模式 / 预置样本 / 不调模型 / 不联网 / 不收凭据 / 不写钥匙串」提示；统一由 `components/ui/DemoModeStrip.tsx` 的 32px 细条 + `demo.aboutBody` 弹层承担。
+- **已移除**：FAQ / 关键词 / 知识库 / 行动 / 诊断 / 解析 / 报告 / 采集 / 站点 / 站长数据 / 文章管理 / 组合总览 / 自动采集 / 设置各段的页头与页内提示，以及 FAQ、关键词、知识库、文稿、补丁、采集、纠正等弹窗 / 抽屉的演示提示。
+- **保留**：运行时中立的能力与合规说明（例如「未执行合规扫描」「{{format}} 暂未接入导出」「生成内容默认待人工审核」）；demo 专属行为差异仍按 `runtime` 切换，但不再重复「演示模式」字样。
+- **唯一真值**：`demo.aboutBody` 记完整边界——静态种子、刷新即重置、不触达真实引擎 / 线上站点、不调模型、不做合规扫描、密钥不入钥匙串、排期不自动运行。
+- **测试**：各页面 / 弹窗测试从「demo 文案必须出现」改为「页面不再出现 `演示模式`」；`DemoModeStrip.test.tsx` 正向钉住 `aboutBody` 的完整口径。
+
 ### 2026-11-06 百度站长路径 C：控制系统 Chrome（命令面 106 → 108）
 
 - 新增 `search_browser_open(project_id, kind)` 与 `search_browser_capture(project_id, kind, ws_url, period_start, period_end)`，**只支持 `baidu_ziyuan` / `baidu_ziyuan_ai`**；其它 kind 回 `validation/failed { field: "kind", reason: "not_allowed" }`。
@@ -77,7 +85,7 @@
 ## 2. 当前 demo 边界
 
 - **领域算法**：去重率、字段完整率、样本量分级、机会判定等只在 Rust 纯函数里真算；demo 只呈现预置值或静态清单（规则 9）。
-- **站点接入**：demo 不真的改线上站点；`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成交接文件；`site.demoBody` / `site.staticNote` 常驻。
+- **站点接入**：demo 不真的改线上站点；`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成交接文件。模块页不再重复演示提示，统一由全局 `DemoModeStrip` 说明；站点页保留运行时中立的交接说明。
 - **文章管理**：demo 没有真定时任务；桌面端有一个 **60 秒轮询**的排期扫描器（启动即跑一次，之后每分钟扫 `enabled=1 AND next_run_at <= now`），到点调模型生成文章并把排期推进；标题重复时不新增文章但照常推进，避免每分钟重试。生成物一律 `pending_review`。
 - **站长数据**：demo 的 OAuth 一条都没实现；Tauri 侧 2026-11-06 起支持 GSC OAuth 拉数。demo 仍只走导入 / 填报 / 汇总 / 筛选 / 机会处置。归一 / 求和 / 重算 / 筛选 / 区间收敛在前端 `api/search-compose.ts` 真做；机会清单是静态 6 条。
 - **项目概览**：M9 组合只有数据层、没有页面；`summarizePortfolio` 只给计数 + 每个指标的 min/median/max 分布 + 逐项目行。
@@ -141,6 +149,65 @@
 - 完整页面/文案/导航回填、设置五段细节与新建项目两入口的走查清单，以规格为准。
 - 2026-11-06：**页面提示栏位置统一**——页面级提示固定在 `PageHeader` 副标题下。新建项目「两条路字段口径一致」提示从两张卡片下方移到页头下；项目列表的表格操作提示从表尾移到页头下。判据是 `NewProjectPage.test.tsx` / `ProjectListPage.test.tsx` 的 DOM 顺序断言（提示在页头之后、主体之前）。
 
+### 2026-11-19 自动建档抓取修复（空壳页 / 客户端跳转 / 裸域名跳 www）
+
+- 用户报障：新建项目的「填网址自动采集」抓到的网页内容大部分为空，实体卡字段几乎全空。
+- 根因（`crates/geo-crawler`）：
+  1. 真实站点常用 `HTTP 200 + <script>window.location…</script>` 或 `<meta http-equiv=refresh>`
+     做跳转；旧实现把 `script` 整棵丢掉，壳页正文 0 字却算「抓取成功」，白占 `max_pages`
+     配额，并让 `crawler/empty` 永不触发。
+  2. 空正文页面与正常页面同等计入 8 页预算，角色配额也被空页占掉，最终 `combined_text`
+     只剩导航或为空。
+  3. 302 / 客户端跳转落点与已抓页面重复时按请求 URL 去重，同一最终页会重复占配额。
+  4. `example.com` → `www.example.com` 的站点被 `Url::origin()` 判成跨域，首页跳过去后
+     站内链接全被丢弃。
+- 修复：
+  - `ExtractedPage` 新增 `client_redirect`；`extract` 在正文 < `MIN_USABLE_TEXT_CHARS`（40 字）时
+    识别 meta refresh 与 `location.href/assign/replace`，只接受同站目标。
+  - `crawl_site` 跟随客户端跳转（最多 3 跳、逐跳过 robots）；正文 < 40 字的页面记
+    `empty_content` 并**不占**配额；按最终 URL 去重。
+  - `discover::same_site` 统一站点判定：主机相等或只差 `www.` 前缀，协议可 http → https；
+    `seed_urls` 同步。
+  - HTTP 302 的落点也做同站校验：跳到另一个注册域或内网地址的响应一律拒收（记 `fetch_failed`）。
+  - `combined_text` 跨页逐行去重，并先给每页均分预算、再回填短页面剩余额度：
+    重复导航不再吃掉 12k 预算，超大首页也不会把「关于 / 产品 / 联系」挤掉。
+  - `crawler/empty` 的 `skipped` 增加稳定记号 `empty_content`（zh/en 词典 + 守卫测试同步）。
+- 实测：`www.ouhor.com` 修复前 8 页里 2 页 0 字（`/products/`、
+  `/shiyanshijiaobanruhuaxilie/` 都是 `window.location` 壳页），修复后 8 页全部有正文，
+  跳转落点分别为 `/shuxiandiandongjiaobanli/` 与产品页。
+- 命令面不变（120 条），无 DTO / 迁移变化。
+
+### 2026-11-20 采集页「引擎接入」：`login_required` 给得出入口
+
+- 用户报障：多引擎采集页里豆包任务失败，原因写「需要登录」（`FailureReason::LoginRequired`），
+  但页面上没有任何补 Key 或扫码的入口；其他引擎同样会被这个死路绊住。
+- 根因：后端的接入要求只写在 Rust 里——`CollectionService::engine_bundle` 按引擎取对应服务商
+  的钥匙串位（`secret_for_provider`），取不到就回 `LoginRequired`；元宝没有 Key，靠本机浏览器
+  扫码登录态。界面对这张映射一无所知，只能把「需要登录」四个字原样端出来。
+- 本轮改动（**命令面不变，仍 120 条**）：
+  - 新增 `ui/src/api/engine-access.ts`：引擎 → 必需钥匙串位 / 浏览器登录的唯一映射
+    （`doubao→volcengine_ark`、`kimi→moonshot`、`qwen→ali_bailian`、`baidu_ai→baidu_qianfan`、
+    `deepseek→deep_seek`、`metaso→metaso` **加**当前对话模型、`yuanbao→browser_login`），
+    与 `engine_provider()` / `engine_bundle()` 对齐；纯函数，21 条守卫测试。
+  - 采集页新增「引擎接入」弹窗（`EngineAccessModal` + `use-engine-access`）：逐引擎列出接入要求与
+    状态（已接入 / 待配置 Key / 未检查 / 需扫码登录），展开即可用 `SecretStatusPanel` **就地**
+    写 Key（复用 `secret_status` / `secret_set` / `secret_delete`，不新增命令），
+    不必再去设置页切换「当前模型服务商」才能给某个采集引擎配 Key。元宝只解释真实流程
+    （受控 Chrome + 用户自己扫码，3 分钟），不代登录（规则 11）。
+  - 轮次级提示：当前轮次有 `login_required` 失败时，在任务队列上方汇总「有 N 条任务因
+    『需要登录』失败 + 涉及引擎」，按钮直达对应引擎的接入项；任务行同时给「去接入」，
+    元宝的失败任务把「重跑」写作「登录并重跑」（重跑会打开浏览器窗口等待扫码）。
+  - 排一轮采集弹窗：勾选引擎时先做预检，确认缺 Key 的引擎就地警告（不拦排队），
+    并给「去接入」入口——避免整轮跑完才发现某几家全失败。
+- demo 同步：`demo/handlers/secret.ts` 的 provider 判定改为 `requireSecretProvider`，
+  镜像 Rust `parse_secret_provider`（模型厂商 ∪ `metaso` / `google_oauth` / `gsc` / `bing_wmt` /
+  `bing_oauth`）。此前 demo 只认模型厂商，设置页「采集与频控」与本次接入弹窗里的 `metaso`
+  都会回 `llm/config unknown_provider`，与 E-48 / E-69 描述的真后端不符（本轮一并修正，
+  不是新的 demo-only 差异）。
+- 验收：`api/engine-access.test.ts`（映射/状态/聚合）、`CollectionPage.test.tsx` 新增 4 条
+  （提示条 + 任务行入口 / 焦点展开 / 配 Key 后状态翻转 / 排一轮预检）、`demo/handlers/secret.test.ts`
+  新增 2 条（metaso 密钥位、仍不能当模型厂商）。
+
 ### M1.5 素材层（关键词库 / FAQ 常见问题库）
 
 - 规格：`docs/superpowers/specs/2026-09-30-keyword-faq-library-design.md`（DR-37…DR-44；落地回填在 §12）。
@@ -153,7 +220,7 @@
 - 规格：`docs/superpowers/specs/2026-09-30-site-connect-patch-bench-design.md`。
 - 先读该文 §2 的全球市场调研与 §3 的裁定：覆盖层 / CMS 连接器 / 仓库代理 / 落地包交接四条路径各自的代价都在里面。
 - 二级项「站点接入」排在**行动中心之后、报告之前**。
-- 演示模式**不会**真的改到线上站点：`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成可下载的交接文件，所以 `site.demoBody` 与 `site.staticNote` 两句必须常驻（规则 6 / 规则 9）。
+- 演示模式**不会**真的改到线上站点：`publish` / `unpublish` / `rollback` 只翻状态 + 记事件 + 生成可下载的交接文件。演示边界统一由全局 `DemoModeStrip` 说明（2026-11-19 产品裁定），页面不再重复提示。
 - 该轮新增 `site_*` 共 11 条，**只有 demo 侧实现**；连同前面几轮当时共 43 条，差异见 §4e E-55…E-57。
 - E-56 记的是凭据面：真后端的 `secret_set` 只认 `provider`、`parse_secret_ref` 只吃两段，站点通道那个三段引用串在 Rust 侧还没有落点。
 
@@ -179,7 +246,7 @@
 
 **归一、机会与分布**
 - **归一 / 求和 / 重算 / 筛选 / 区间收敛在前端 `api/search-compose.ts` 真做**（DR-99，demo 与桌面端将来共用同一份纯函数）。
-- **机会清单是静态 6 条**（DR-100 的判定是 `geo-domain` 纯函数，demo 不算，规则 9）⇒ 这一页“**汇总数字真变、机会清单不变**”的不对称是刻意的，`staticNote` 必须常驻说明。
+- **机会清单是静态 6 条**（DR-100 的判定是 `geo-domain` 纯函数，demo 不算，规则 9）⇒ 这一页“**汇总数字真变、机会清单不变**”的不对称是刻意的；说明已收口到全局 `DemoModeStrip` 的 `demo.aboutBody`，页面不再重复。
 - 接入建议（DR-111）的分布数字走 `search_board` 的 `traffic_split`（demo 是只读种子表，真后端由 `analytics` 组的**来源分析**算出）；**没有分布就显示空态，绝不端一份内置的市场份额推荐**。
 - **四条会被反复踩的口径**（产品负责人 2026-10-12 裁定后的版本）：
   1. 二级项叫**「站长数据」**（en `Webmaster Data`），排在**解析与核查之后、诊断与归因之前**（DR-91）。
@@ -291,8 +358,8 @@
   - **M4 自动解析流水线（2026-11-05）**：采集完成后 `InsightService::parse_round` 自动补齐解析：LLM 抽取提及 / 位次 / 情感 / 回答形态 / 风险 / 事实问题 / 引用来源，落 `answer_insights` / `fact_check_issues` / `collection_citations`，并重算 `fact_check_summaries`。解析使用用户当前配置的「模型服务商」，与采集引擎 Key 相互独立；幂等跳过已解析记录，启动续跑会补齐中断的解析。解析失败只记日志、不回滚采集；`REVIEW_CONFIDENCE_FLOOR` 已收进 `geo-domain`，前端测试通过 `test/truth-source.ts` 解析真值源。
   - **M5 / M6 读路径**：`diagnosis_overview` / `diagnosis_competitors` / `diagnosis_funnel` / `diagnosis_engines` / `action_board` 已落 Rust；迁移 `20261105000011_diagnosis_action_read.sql` 建 `diagnosis_snapshots` + `action_boards`。诊断四视图按轮次读整份类型化快照（缺失回 `null` / `[]`），行动看板按项目读快照（缺失回空数组）；写路径与告警已读 / 处方状态仍 demo-only。
   - **采集执行（A 方案）**：`collection_start` / `collection_task_retry` 已落 Rust。只走官方 API，复用「模型服务商」Key 覆盖豆包 / DeepSeek / Kimi / 千问 / 百度五家；元宝 / 秘塔标 `Skipped`。`collection_start` 建轮次 + `题目数 × 引擎数 × 重复次数` 条任务后立即返回，后台顺序执行；`collection_task_retry` 只重跑 `failed` 任务并 +1 尝试次数。采集只落原始回答，提及 / 位次 / 情感仍待 M4 解析。
-  - **文章管理（Article Studio）**：10 条 `article_*` 已落 Rust；迁移 `20261105000012_articles.sql` 建方向 / 模板 / 排期 / 文章四张表。方向与文章生成调模型，产物恒 `pending_review`；槽位替换统一走 `geo-domain::article::render_prompt`。没有后台 cron，`next_run_at` 只是显示值；`article_list` 的 review 与 `article_direction_add` 的 id 仍按 demo 契约承担写副作用（E-64 契约债）。
-  - **生成依据 grounding（2026-11-19）**：新增 `geo-domain::grounding`（纯函数）与 `services::generation`（纯 Prompt 组装）。关键词 / FAQ / 知识库 / Prompt 题库 / 文章方向与文章生成统一读取实体卡与知识库：实体卡 `official` 字段进「官方口径事实」，`pending`/`disputed` 只进「待确认/存疑」并标注不得断言；知识库只收 `approved` 且 `verified_at` 非空、按用途模块过滤 + 焦点词排序 + 预算截断；五个入口共用 `【引用规则】`。命令面零新增、迁移零新增；demo 仍按 E-52 / E-53 / E-62 / E-66 返回预置池。
+  - **文章管理（Article Studio）**：10 条 `article_*` 已落 Rust；迁移 `20261105000012_articles.sql` 建方向 / 模板 / 排期 / 文章四张表。方向与文章生成调模型，产物恒 `pending_review`；槽位替换统一走 `geo-domain::article::render_prompt`，模板 `kb_modules` 已真正参与 grounding 检索（2026-11-19）。没有后台 cron，`next_run_at` 只是显示值；`article_list` 的 review 与 `article_direction_add` 的 id 仍按 demo 契约承担写副作用（E-64 契约债）。
+  - **生成依据 grounding（2026-11-19）**：新增 `geo-domain::grounding`（纯函数）与 `services::generation`（纯 Prompt 组装）。关键词 / FAQ / 知识库 / Prompt 题库 / 文章方向与文章生成统一读取实体卡与知识库：实体卡 `official` 字段进「官方口径事实」，`pending`/`disputed` 只进「待确认/存疑」并标注不得断言；知识库只收 `approved` 且 `verified_at` 非空、按用途模块过滤 + 焦点词排序 + 预算截断；五个入口共用 `【引用规则】`。命令面零新增、迁移零新增；demo 仍按 E-52 / E-53 / E-62 / E-66 返回预置池（E-83 登记差异）。
   - **内容生成与站点补丁生成**：`content_generate` / `site_patch_generate` 已落 Rust。两者都调模型并跑红线词扫描，产物恒待审（文稿 `pending_review`、补丁 `draft` + `pending_review`）；模板目录内置在 `geo-domain::action`，补丁通道按类型映射。
   - **本机环境与模型清单**：`app_environment` / `llm_models_list` 已落 Rust。环境事实读真实数据目录、库文件大小与已应用迁移数；三项系统权限没有原生探针，如实回 `not_determined`，`export_dir` 恒 `null`。模型清单按界面草稿地址真发 `GET {base_url}/models`，Key 只读钥匙串。
   - **M7 报告组装**：`report_render` 已落 Rust（`geo-domain::report` + `ReportService`）。从既有诊断快照 / 核查问题 / 行动看板 / 证据记录组装三种版本（老板版只有结论，执行版全节，白标版去掉漏斗与核查明细），`include_evidence` 追加证据附录；不调模型、不生成散文。白标未传 `white_label` 时返回 `null`（demo 回落到种子示例机构），`model_versions` 从引擎汇总的 `model` 去重汇总。

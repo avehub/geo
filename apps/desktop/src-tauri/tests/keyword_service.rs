@@ -255,6 +255,59 @@ async fn generate_persists_model_candidates_as_pending_review() {
 }
 
 #[tokio::test]
+async fn generate_accepts_chinese_intent_labels_from_model() {
+    // 与 FAQ 同族的缺陷：提示词给模型看的是中文意图，落库契约只认 snake_case。
+    // 模型原样回填中文标签时，旧实现整批以 `llm/deserialize` 失败。
+    let (state, _server, _secrets) =
+        state_with_bodies(vec![keyword_json(&[("工业除尘器", "core", "品类认知")])]).await;
+    let project_id = project(&state).await;
+    let service = KeywordService::from_state(&state);
+
+    let created = service
+        .generate(
+            project_id,
+            KeywordGenerateOptions {
+                kinds: vec![KeywordKind::Core],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect("中文意图标签也应可用");
+    assert_eq!(created.len(), 1);
+    assert_eq!(
+        created[0].intent,
+        geo_domain::IntentCategory::CategoryAwareness
+    );
+}
+
+#[tokio::test]
+async fn generate_skips_candidates_with_unrequested_kind() {
+    // 模型多给一条用户没勾的类型：只丢这一条，不让整批 `llm/deserialize` 失败。
+    let (state, _server, _secrets) = state_with_bodies(vec![keyword_json(&[
+        ("工业除尘器", "core", "category_awareness"),
+        ("宏宇泵业", "brand", "brand_comparison"),
+    ])])
+    .await;
+    let project_id = project(&state).await;
+    let service = KeywordService::from_state(&state);
+
+    let created = service
+        .generate(
+            project_id,
+            KeywordGenerateOptions {
+                kinds: vec![KeywordKind::Core],
+                target_count: 5,
+            },
+            now(),
+        )
+        .await
+        .expect("多出的类型应被跳过而不是整批失败");
+    assert_eq!(created.len(), 1);
+    assert_eq!(created[0].kind, KeywordKind::Core);
+}
+
+#[tokio::test]
 async fn generate_skips_texts_already_in_the_library() {
     let (state, _server, _secrets) = state_with_bodies(vec![keyword_json(&[
         ("工业除尘器", "core", "category_awareness"),

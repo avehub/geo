@@ -355,7 +355,9 @@ fn the_guard_sees_every_production_site() {
         ("services/generation.rs", 0),
         ("services/project_service.rs", 10),
         ("services/project_transfer.rs", 2),
-        ("services/prompt_service.rs", 13),
+        // 2026-11-19 产品裁定允许删空题库：`delete_items` 的 `ids out_of_range`
+        // 校验移除，prompt_service 的生产站点 13 → 12。
+        ("services/prompt_service.rs", 12),
         ("services/entity_card_service.rs", 2),
         ("services/settings_service.rs", 13),
         ("services/keyword_service.rs", 3),
@@ -419,6 +421,6 @@ fn the_guard_sees_every_production_site() {
         assert_eq!(actual, *want, "{name} 的生产站点数变了，守卫清单要同步");
         total += actual;
     }
-    assert_eq!(total, 122, "壳侧生产站点总数");
+    assert_eq!(total, 121, "壳侧生产站点总数");
     assert_eq!(FILES.len(), expected.len(), "FILES 与期望表要一一对应");
 }

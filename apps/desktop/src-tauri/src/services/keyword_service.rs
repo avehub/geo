@@ -39,7 +39,8 @@ pub struct KeywordGenerateOptions {
 struct KeywordCandidate {
     text: String,
     kind: KeywordKind,
-    intent: geo_domain::IntentCategory,
+    /// 模型输出原文；中文标签与 snake_case id 都在落库前归一。
+    intent: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -242,9 +243,6 @@ impl KeywordService {
                     if item.text.trim().is_empty() {
                         return Err("text_required".to_string());
                     }
-                    if !options.kinds.contains(&item.kind) {
-                        return Err("kind_not_requested".to_string());
-                    }
                 }
                 Ok(())
             },
@@ -262,6 +260,13 @@ impl KeywordService {
             if text.is_empty() || !seen.insert(text.clone()) {
                 continue;
             }
+            if !options.kinds.contains(&candidate.kind) {
+                continue;
+            }
+            let Some(intent) = geo_domain::IntentCategory::from_id_or_label(&candidate.intent)
+            else {
+                continue;
+            };
             if !compliance::is_clean(&text) {
                 return Err(compliance_violation(&text));
             }
@@ -270,7 +275,7 @@ impl KeywordService {
                 project_id,
                 text,
                 kind: candidate.kind,
-                intent: candidate.intent,
+                intent,
                 monthly_volume: None,
                 difficulty: None,
                 priority: 3,

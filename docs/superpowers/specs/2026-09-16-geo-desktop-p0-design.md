@@ -245,7 +245,7 @@ LLM 不可用（无 Key 或调用失败）时**降级为纯模板展开**，并�
 `content_hash = sha256(排序后的 "intent|weight|text" 拼接)`；`metric_spec_version = "geo-metrics-v1"`；`engine_scope` 记录生成时选定的引擎列表（P0-A 为空数组，P0-B 写入实际引擎）。同一项目二次采集默认沿用最新 prompt 集版本。
 
 **FR-M2-6 管理**
-表格支持增删改、批量选择、按意图/分组/来源筛选、`weight` 1–5 调整、`repeat_count` 1–3 调整、`tags` 增删；任何修改后重算 `content_hash` 与 `item_count` 并落库。人工新增的条目 `source` 固定为 `manual`（来源是指标口径，不能由调用方自称模板/AI 生成）；删除不允许把快照删空，要清空请删除整个题库（与 CSV 空导入同一条纪律）。CSV 导入导出列固定为 `text,intent,weight,group_name,tags,source,repeat_count`，导入做表头校验、逐行校验并返回错误行报告（行号 + 原因），部分成功允许。
+表格支持增删改、批量选择、按意图/分组/来源筛选、`weight` 1–5 调整、`repeat_count` 1–3 调整、`tags` 增删；任何修改后重算 `content_hash` 与 `item_count` 并落库。人工新增的条目 `source` 固定为 `manual`（来源是指标口径，不能由调用方自称模板/AI 生成）；删除允许把快照删空（2026-11-19 产品裁定：最后一条也必须能删；删空后是一份 `item_count = 0` 的快照，留在版本列表里，可继续生成新版本或整份删除，不视为数据丢失）。CSV 导入导出列固定为 `text,intent,weight,group_name,tags,source,repeat_count`，导入做表头校验、逐行校验并返回错误行报告（行号 + 原因），部分成功允许。
 
 **验收**：一键生成 ≥60 条、覆盖 7 类意图、重复对为 0；同项目二次生成默认沿用同一版本口径；CSV 导出再导入后条目数与文本一致。
 

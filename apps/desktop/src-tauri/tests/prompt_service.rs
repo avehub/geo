@@ -746,7 +746,7 @@ async fn delete_items_removes_the_selection_and_reindexes() {
 }
 
 #[tokio::test]
-async fn delete_items_rejects_unknown_ids_and_refuses_to_empty_the_set() {
+async fn delete_items_rejects_unknown_ids_but_allows_emptying_the_set() {
     let (state, _server, _secrets) = prompt_state().await;
     let project = seeded_project(&state).await;
     let svc = service(&state);
@@ -760,31 +760,24 @@ async fn delete_items_rejects_unknown_ids_and_refuses_to_empty_the_set() {
         .await
         .expect_err("不存在的条目要报 not_found");
     assert_eq!(unknown.code, "prompt_item/not_found");
-
-    let everything: Vec<geo_domain::PromptId> = set.items.iter().map(|item| item.id).collect();
-    let emptied = svc
-        .delete_items(set.id, &everything, now())
-        .await
-        .expect_err("删光条目应当被拒");
-    assert_eq!(emptied.code, "validation/failed");
-    // 「不许删空」表达成数量区间：一次最多删 `条目总数 - 1` 条。
-    // 「要清空请删除整个题库快照」是**建议**，属文案，由词典模板给（AGENTS 规则 7）。
-    assert_eq!(emptied.params["field"], "ids");
-    assert_eq!(emptied.params["reason"], "out_of_range");
+    let after_unknown = svc.get(set.id).await.unwrap();
     assert_eq!(
-        emptied.params["expected"],
-        format!("<{}", set.items.len()),
-        "{:?}",
-        emptied.params
+        after_unknown.items.len(),
+        set.items.len(),
+        "拒绝时不得改动数据"
     );
-    assert_eq!(emptied.params["value"], set.items.len().to_string());
+
+    // 2026-11-19 产品裁定：最后一条也必须能删，删空是合法操作。
+    let everything: Vec<geo_domain::PromptId> = set.items.iter().map(|item| item.id).collect();
+    let emptied = svc.delete_items(set.id, &everything, now()).await.unwrap();
+    assert!(emptied.items.is_empty(), "全选删除后条目应为空");
+    assert_eq!(emptied.sample_size_grade, SampleSizeGrade::Insufficient);
+    assert_ne!(emptied.content_hash, set.content_hash);
 
     let stored = svc.get(set.id).await.unwrap();
-    assert_eq!(
-        stored.items.len(),
-        set.items.len(),
-        "两次拒绝都不得改动数据"
-    );
+    assert!(stored.items.is_empty(), "删除必须落库");
+    assert_eq!(stored.content_hash, emptied.content_hash);
+    assert_eq!(stored.sample_size_grade, SampleSizeGrade::Insufficient);
 }
 
 /// 编辑路径的 `(field, reason)` 组合（裁定 R-H 第二档：存量没覆盖的每个组合补一条）。

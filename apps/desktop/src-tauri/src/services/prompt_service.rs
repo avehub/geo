@@ -425,11 +425,7 @@ impl PromptService {
         let request = ChatRequest::new(vec![
             ChatMessage::system(EXPANSION_SYSTEM),
             ChatMessage::user(expansion_prompt(
-                project,
-                context,
-                intents,
-                existing,
-                grounding,
+                project, context, intents, existing, grounding,
             )),
         ])
         .json();
@@ -634,8 +630,8 @@ impl PromptService {
 
     /// 批量删除条目（spec FR-M2-6「删」+ 批量选择）。
     ///
-    /// 不允许把快照删空：空题库还会留在版本列表里，看起来像数据丢了；
-    /// 要清空请显式删除整个快照（与 CSV 空导入同一条纪律）。
+    /// 允许把快照删空（2026-11-19 产品裁定：最后一条也必须能删）。删空后仍是
+    /// 一份 0 条快照，会在版本列表里显示 `item_count = 0`，可继续生成新版本或整份删除。
     pub async fn delete_items(
         &self,
         set_id: PromptSetId,
@@ -650,14 +646,6 @@ impl PromptService {
             if !set.items.iter().any(|item| item.id == *id) {
                 return Err(GeoError::not_found("prompt_item", id).into());
             }
-        }
-        if ids.len() >= set.items.len() {
-            // 「不许删空」表达成数量区间：一次最多删 `条目总数 - 1` 条。
-            // 「要清空请删除整个题库快照」是**建议**，属文案，由词典模板给（AGENTS 规则 7）。
-            return Err(GeoError::validation("ids", "out_of_range")
-                .with_param("expected", format!("<{}", set.items.len()))
-                .with_param("value", ids.len())
-                .into());
         }
         let mut items: Vec<PromptItem> = set
             .items
